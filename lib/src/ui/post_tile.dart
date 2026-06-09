@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import 'common.dart';
 import 'post_detail_screen.dart';
+import 'post_video.dart';
 import 'profile_screen.dart';
 
 /// A single post row with author, text and engagement actions.
@@ -177,10 +178,7 @@ class _MediaPreview extends StatelessWidget {
         child: AspectRatio(
           aspectRatio: 16 / 9,
           child: media.isVideo
-              ? Container(
-                  color: Colors.black12,
-                  child: const Center(child: Icon(Icons.play_circle, size: 48)),
-                )
+              ? PostVideo(url: url)
               : Image.network(url, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) =>
                       const ColoredBox(color: Colors.black12)),

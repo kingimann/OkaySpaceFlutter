@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import 'common.dart';
 import 'post_detail_screen.dart';
+import 'post_video.dart';
 import 'profile_screen.dart';
 
 /// A full-screen, vertically-swiping reels feed.
@@ -92,18 +93,16 @@ class _ReelPage extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Media / thumbnail.
+        // Media: autoplaying looped video, or a cover image.
         if (url != null && url.isNotEmpty)
-          Image.network(url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black))
+          (media?.isVideo ?? false)
+              ? PostVideo(url: url, autoPlay: true, looping: true)
+              : Image.network(url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      const ColoredBox(color: Colors.black))
         else
           const ColoredBox(color: Color(0xFF101820)),
-        if (media?.isVideo ?? false)
-          const Center(
-            child: Icon(Icons.play_circle_outline,
-                color: Colors.white70, size: 72),
-          ),
         // Bottom gradient for legibility.
         const DecoratedBox(
           decoration: BoxDecoration(
