@@ -13,6 +13,7 @@ export 'src/core/api_exception.dart';
 export 'src/core/token_store.dart';
 
 // Services
+export 'src/services/admin_service.dart';
 export 'src/services/ads_service.dart';
 export 'src/services/auth_service.dart';
 export 'src/services/communities_service.dart';
@@ -22,6 +23,7 @@ export 'src/services/groups_service.dart';
 export 'src/services/marketplace_service.dart';
 export 'src/services/messaging_service.dart';
 export 'src/services/notifications_service.dart';
+export 'src/services/oauth_service.dart';
 export 'src/services/payments_service.dart';
 export 'src/services/roadside_service.dart';
 export 'src/services/stories_service.dart';

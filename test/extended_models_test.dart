@@ -70,5 +70,7 @@ void main() {
     expect(api.payments, isNotNull);
     expect(api.ads, isNotNull);
     expect(api.support, isNotNull);
+    expect(api.admin, isNotNull);
+    expect(api.oauth, isNotNull);
   });
 }

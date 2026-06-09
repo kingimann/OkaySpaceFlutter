@@ -5,6 +5,7 @@ import 'common.dart';
 import 'communities_screen.dart';
 import 'edit_profile_screen.dart';
 import 'groups_screen.dart';
+import 'roadside_screen.dart';
 import 'support_screen.dart';
 import 'wallet_screen.dart';
 
@@ -240,6 +241,15 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const GroupsScreen(),
+                      )),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.car_repair),
+                      title: const Text('Roadside assistance'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const RoadsideScreen(),
                       )),
                     ),
                     const Divider(height: 1),

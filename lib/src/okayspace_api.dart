@@ -1,6 +1,7 @@
 import 'core/api_client.dart';
 import 'core/api_config.dart';
 import 'core/token_store.dart';
+import 'services/admin_service.dart';
 import 'services/ads_service.dart';
 import 'services/auth_service.dart';
 import 'services/communities_service.dart';
@@ -10,6 +11,7 @@ import 'services/groups_service.dart';
 import 'services/marketplace_service.dart';
 import 'services/messaging_service.dart';
 import 'services/notifications_service.dart';
+import 'services/oauth_service.dart';
 import 'services/payments_service.dart';
 import 'services/roadside_service.dart';
 import 'services/stories_service.dart';
@@ -60,6 +62,8 @@ class OkaySpaceApi {
     payments = PaymentsService(this.client);
     ads = AdsService(this.client);
     support = SupportService(this.client);
+    admin = AdminService(this.client);
+    oauth = OAuthService(this.client);
   }
 
   /// Shared low-level client. Use it directly for endpoints not yet wrapped by
@@ -110,6 +114,12 @@ class OkaySpaceApi {
 
   /// `/support` — help-desk tickets.
   late final SupportService support;
+
+  /// `/admin` — moderation, finance and platform ops (admin accounts only).
+  late final AdminService admin;
+
+  /// `/oauth` — OAuth apps, authorization flow and connections.
+  late final OAuthService oauth;
 
   /// Whether a credential (session token or API key) is currently stored.
   Future<bool> get isAuthenticated => client.isAuthenticated;
