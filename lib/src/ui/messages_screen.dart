@@ -48,20 +48,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
             itemBuilder: (context, i) {
               final c = items[i];
               final title = _title(c);
-              return ListTile(
-                leading: Avatar(
-                    url: c.avatar ?? c.otherUser?.picture, name: title),
-                title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: c.lastMessage?.text != null
-                    ? Text(c.lastMessage!.text!,
-                        maxLines: 1, overflow: TextOverflow.ellipsis)
-                    : null,
-                trailing: c.unreadCount > 0
-                    ? Badge(label: Text('${c.unreadCount}'))
-                    : (c.lastMessageAt != null
-                        ? Text(shortAgo(c.lastMessageAt!),
-                            style: Theme.of(context).textTheme.bodySmall)
-                        : null),
+              return _ConversationTile(
+                conversation: c,
+                title: title,
                 onTap: () async {
                   await Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => ChatScreen(conversation: c, title: title),
@@ -73,6 +62,112 @@ class _MessagesScreenState extends State<MessagesScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A styled conversation row: avatar (with online dot), name, last-message
+/// preview, timestamp and an unread badge.
+class _ConversationTile extends StatelessWidget {
+  const _ConversationTile({
+    required this.conversation,
+    required this.title,
+    required this.onTap,
+  });
+
+  final ConversationView conversation;
+  final String title;
+  final VoidCallback onTap;
+
+  /// A short preview of the last message, with an icon label for non-text types.
+  String _preview() {
+    final m = conversation.lastMessage;
+    if (m == null) return '';
+    if (m.deleted) return 'Message deleted';
+    if (m.text != null && m.text!.isNotEmpty) return m.text!;
+    return switch (m.type) {
+      'media' => '📷 Photo',
+      'voice' => '🎤 Voice message',
+      'gif' => 'GIF',
+      'post' => 'Shared a post',
+      'place' => '📍 Location',
+      'money' => '💸 Payment',
+      _ => 'New message',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final unread = conversation.unreadCount > 0;
+    final online = conversation.otherUser?.online ?? false;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Avatar(
+              url: conversation.avatar ?? conversation.otherUser?.picture,
+              name: title,
+              radius: 26),
+          if (online)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF22C55E),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: scheme.surface, width: 2),
+                ),
+              ),
+            ),
+        ],
+      ),
+      title: Text(title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(
+        _preview(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: unread ? scheme.onSurface : scheme.outline,
+          fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (conversation.lastMessageAt != null)
+            Text(shortAgo(conversation.lastMessageAt!),
+                style: TextStyle(
+                    fontSize: 12,
+                    color: unread ? scheme.primary : scheme.outline,
+                    fontWeight: unread ? FontWeight.bold : FontWeight.normal)),
+          const SizedBox(height: 4),
+          if (unread)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text('${conversation.unreadCount}',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold)),
+            )
+          else
+            const SizedBox(height: 18),
+        ],
+      ),
+      onTap: onTap,
     );
   }
 }
