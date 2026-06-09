@@ -98,27 +98,59 @@ class _ListingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final photo = listing.photos.isNotEmpty ? listing.photos.first : null;
+    final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: () => Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => ListingDetailScreen(listingId: listing.id),
       )),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: photo != null
-                  ? Image.network(photo,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const ColoredBox(
-                          color: Colors.black12,
-                          child: Icon(Icons.image_not_supported)))
-                  : const ColoredBox(
-                      color: Colors.black12,
-                      child: Center(child: Icon(Icons.shopping_bag_outlined))),
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (photo != null)
+                    Image.network(photo,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => ColoredBox(
+                            color: scheme.surfaceContainerHighest,
+                            child: const Icon(Icons.image_not_supported)))
+                  else
+                    ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: const Center(
+                            child: Icon(Icons.shopping_bag_outlined))),
+                  // Price chip.
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(_price(listing),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13)),
+                    ),
+                  ),
+                  // Saved heart.
+                  if (listing.savedByMe || listing.likedByMe)
+                    const Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Icon(Icons.favorite, color: Colors.redAccent, size: 20),
+                    ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 6),
@@ -126,8 +158,24 @@ class _ListingCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w600)),
-          Text(_price(listing),
-              style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+          Row(
+            children: [
+              if (listing.condition != null) ...[
+                Text(listing.condition!,
+                    style: TextStyle(color: scheme.outline, fontSize: 12)),
+                if (listing.locality != null)
+                  Text(' · ',
+                      style: TextStyle(color: scheme.outline, fontSize: 12)),
+              ],
+              if (listing.locality != null)
+                Expanded(
+                  child: Text(listing.locality!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: scheme.outline, fontSize: 12)),
+                ),
+            ],
+          ),
         ],
       ),
     );

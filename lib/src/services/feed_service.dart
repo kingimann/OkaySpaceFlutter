@@ -41,6 +41,10 @@ class FeedService {
           {Map<String, dynamic>? query}) async =>
       _posts(await _client.getJson('/hashtags/$tag', query: query));
 
+  /// The current user's bookmarked posts.
+  Future<List<Post>> bookmarks() async =>
+      _posts(await _client.getJson('/bookmarks'));
+
   /// Currently trending hashtags (raw payloads).
   Future<List<Map<String, dynamic>>> trendingHashtags() async {
     final data = await _client.getJson('/hashtags/trending');

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'bookmarks_screen.dart';
 import 'communities_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
@@ -394,6 +395,15 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const FriendsScreen(),
+                      )),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.bookmark_border),
+                      title: const Text('Bookmarks'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const BookmarksScreen(),
                       )),
                     ),
                     const Divider(height: 1),
