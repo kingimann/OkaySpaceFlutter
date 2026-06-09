@@ -16,10 +16,13 @@ export 'src/core/token_store.dart';
 export 'src/services/auth_service.dart';
 export 'src/services/communities_service.dart';
 export 'src/services/feed_service.dart';
+export 'src/services/friends_service.dart';
 export 'src/services/groups_service.dart';
 export 'src/services/marketplace_service.dart';
 export 'src/services/messaging_service.dart';
+export 'src/services/notifications_service.dart';
 export 'src/services/stories_service.dart';
+export 'src/services/users_service.dart';
 export 'src/services/wallet_service.dart';
 
 // Models
@@ -29,6 +32,7 @@ export 'src/models/community.dart';
 export 'src/models/group.dart';
 export 'src/models/listing.dart';
 export 'src/models/message.dart';
+export 'src/models/notification.dart';
 export 'src/models/post.dart';
 export 'src/models/post_create.dart';
 export 'src/models/public_user.dart';

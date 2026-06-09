@@ -23,7 +23,7 @@ class PostAuthor {
   final bool idVerified;
   final bool phoneVerified;
   final bool emailVerified;
-  final List<Badge> badges;
+  final List<UserBadge> badges;
 
   factory PostAuthor.fromJson(Map<String, dynamic> json) => PostAuthor(
         userId: asString(json['user_id']),
@@ -34,7 +34,7 @@ class PostAuthor {
         idVerified: asBool(json['id_verified']),
         phoneVerified: asBool(json['phone_verified']),
         emailVerified: asBool(json['email_verified']),
-        badges: asModelList(json['badges'], Badge.fromJson),
+        badges: asModelList(json['badges'], UserBadge.fromJson),
       );
 }
 

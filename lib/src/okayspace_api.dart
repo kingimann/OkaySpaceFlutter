@@ -4,10 +4,13 @@ import 'core/token_store.dart';
 import 'services/auth_service.dart';
 import 'services/communities_service.dart';
 import 'services/feed_service.dart';
+import 'services/friends_service.dart';
 import 'services/groups_service.dart';
 import 'services/marketplace_service.dart';
 import 'services/messaging_service.dart';
+import 'services/notifications_service.dart';
 import 'services/stories_service.dart';
+import 'services/users_service.dart';
 import 'services/wallet_service.dart';
 
 /// Entry point for the OkaySpace REST API.
@@ -46,6 +49,9 @@ class OkaySpaceApi {
     groups = GroupsService(this.client);
     marketplace = MarketplaceService(this.client);
     wallet = WalletService(this.client);
+    users = UsersService(this.client);
+    friends = FriendsService(this.client);
+    notifications = NotificationsService(this.client);
   }
 
   /// Shared low-level client. Use it directly for endpoints not yet wrapped by
@@ -75,6 +81,15 @@ class OkaySpaceApi {
 
   /// `/wallet`, `/money` — balance, transfers and top-ups.
   late final WalletService wallet;
+
+  /// `/users` — public profiles, search, following, subscribe/tip/poke.
+  late final UsersService users;
+
+  /// `/friends` — friend list, requests and the request lifecycle.
+  late final FriendsService friends;
+
+  /// `/notifications` — list, unread count and read/dismiss actions.
+  late final NotificationsService notifications;
 
   /// Whether a credential (session token or API key) is currently stored.
   Future<bool> get isAuthenticated => client.isAuthenticated;

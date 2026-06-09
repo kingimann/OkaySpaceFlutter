@@ -35,7 +35,7 @@ class PublicUser {
   final bool verified;
   final bool online;
   final String role;
-  final List<Badge> badges;
+  final List<UserBadge> badges;
   final bool isFollowing;
   final bool isFollowedBy;
   final String? friendStatus;
@@ -57,7 +57,7 @@ class PublicUser {
         verified: asBool(json['verified']),
         online: asBool(json['online']),
         role: asString(json['role'], 'user'),
-        badges: asModelList(json['badges'], Badge.fromJson),
+        badges: asModelList(json['badges'], UserBadge.fromJson),
         isFollowing: asBool(json['is_following']),
         isFollowedBy: asBool(json['is_followed_by']),
         friendStatus: asStringOrNull(json['friend_status']),
