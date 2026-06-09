@@ -4,6 +4,8 @@ import '../../okayspace_api.dart';
 import 'common.dart';
 import 'communities_screen.dart';
 import 'edit_profile_screen.dart';
+import 'groups_screen.dart';
+import 'support_screen.dart';
 import 'wallet_screen.dart';
 
 /// Public profile of another user, with a follow toggle.
@@ -229,6 +231,24 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const CommunitiesScreen(),
+                      )),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.group_work_outlined),
+                      title: const Text('Groups'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const GroupsScreen(),
+                      )),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.support_agent_outlined),
+                      title: const Text('Support'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const SupportScreen(),
                       )),
                     ),
                     const Divider(height: 1),
