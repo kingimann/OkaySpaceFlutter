@@ -14,6 +14,8 @@ dependencies:
   dio: ^5.7.0
   # Secure, persistent storage for the session token / API key.
   flutter_secure_storage: ^9.2.2
+  # Pick photos for the story composer (works on web + mobile).
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
