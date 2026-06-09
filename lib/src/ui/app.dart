@@ -7,12 +7,58 @@ import 'home_shell.dart';
 class OkaySpaceApp extends StatelessWidget {
   const OkaySpaceApp({super.key});
 
+  static const _seed = Color(0xFF5B5BD6);
+
+  ThemeData _theme(Brightness brightness) {
+    final scheme = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
+    return ThemeData(
+      colorScheme: scheme,
+      useMaterial3: true,
+      scaffoldBackgroundColor: scheme.surface,
+      appBarTheme: AppBarTheme(
+        centerTitle: false,
+        scrolledUnderElevation: 0.5,
+        backgroundColor: scheme.surface,
+        titleTextStyle: TextStyle(
+          color: scheme.onSurface,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: scheme.outlineVariant.withValues(alpha: 0.5),
+        space: 1,
+        thickness: 1,
+      ),
+      inputDecorationTheme: const InputDecorationTheme(
+        border: OutlineInputBorder(),
+        filled: true,
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: scheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'OkaySpace',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      theme: _theme(Brightness.light),
+      darkTheme: _theme(Brightness.dark),
+      themeMode: ThemeMode.system,
       home: const RootGate(),
     );
   }

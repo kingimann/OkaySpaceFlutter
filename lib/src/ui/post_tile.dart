@@ -64,30 +64,65 @@ class PostTile extends StatelessWidget {
             Text(post.text),
           ],
           if (post.media.isNotEmpty) _MediaPreview(media: post.media.first),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              IconButton(
-                onPressed: onLike,
-                iconSize: 20,
-                visualDensity: VisualDensity.compact,
-                icon: Icon(
-                  post.likedByMe ? Icons.favorite : Icons.favorite_border,
-                  color: post.likedByMe ? Colors.red : null,
-                ),
+              _PostAction(
+                icon: post.likedByMe ? Icons.favorite : Icons.favorite_border,
+                count: post.likesCount,
+                color: post.likedByMe ? Colors.red : null,
+                onTap: onLike,
               ),
-              Text('${post.likesCount}'),
-              const SizedBox(width: 20),
-              const Icon(Icons.mode_comment_outlined, size: 18),
-              const SizedBox(width: 6),
-              Text('${post.repliesCount}'),
-              const SizedBox(width: 20),
-              const Icon(Icons.repeat, size: 18),
-              const SizedBox(width: 6),
-              Text('${post.repostsCount}'),
+              _PostAction(
+                  icon: Icons.mode_comment_outlined, count: post.repliesCount),
+              _PostAction(icon: Icons.repeat, count: post.repostsCount),
+              _PostAction(
+                icon: post.bookmarkedByMe
+                    ? Icons.bookmark
+                    : Icons.bookmark_border,
+                count: post.bookmarksCount,
+              ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A single icon + formatted count engagement button.
+class _PostAction extends StatelessWidget {
+  const _PostAction({
+    required this.icon,
+    required this.count,
+    this.color,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final int count;
+  final Color? color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = Theme.of(context).colorScheme.outline;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: color ?? muted),
+            if (count > 0) ...[
+              const SizedBox(width: 6),
+              Text(formatCount(count),
+                  style: TextStyle(color: color ?? muted, fontSize: 13)),
+            ],
+          ],
+        ),
       ),
     );
   }

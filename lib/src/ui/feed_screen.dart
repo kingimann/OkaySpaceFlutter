@@ -102,11 +102,12 @@ class _FeedScreenState extends State<FeedScreen> {
           future: _feed,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const FeedSkeleton();
             }
             if (snapshot.hasError) {
               return CenteredMessage(
                 message: 'Could not load feed.\n${messageFor(snapshot.error)}',
+                icon: Icons.cloud_off_outlined,
                 onRetry: _reload,
               );
             }
@@ -116,7 +117,32 @@ class _FeedScreenState extends State<FeedScreen> {
               separatorBuilder: (_, i) =>
                   i == 0 ? const SizedBox.shrink() : const Divider(height: 1),
               itemBuilder: (context, i) {
-                if (i == 0) return _StoryTray(future: _stories);
+                if (i == 0) {
+                  return Column(
+                    children: [
+                      _StoryTray(future: _stories),
+                      if (posts.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 100),
+                          child: Column(
+                            children: [
+                              Icon(Icons.dynamic_feed_outlined,
+                                  size: 56,
+                                  color:
+                                      Theme.of(context).colorScheme.outline),
+                              const SizedBox(height: 12),
+                              Text('Your feed is empty.\nTap the pencil to post.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outline)),
+                            ],
+                          ),
+                        ),
+                    ],
+                  );
+                }
                 final post = posts[i - 1];
                 return PostTile(post: post, onLike: () => _toggleLike(post));
               },
@@ -161,20 +187,35 @@ class _StoryTray extends StatelessWidget {
                   child: Column(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(2),
+                      padding: const EdgeInsets.all(2.5),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          width: 2.5,
-                          color: item.hasUnviewed
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).dividerColor,
-                        ),
+                        gradient: item.hasUnviewed
+                            ? const LinearGradient(
+                                begin: Alignment.topRight,
+                                end: Alignment.bottomLeft,
+                                colors: [
+                                  Color(0xFFFEDA75),
+                                  Color(0xFFD62976),
+                                  Color(0xFF962FBF),
+                                ],
+                              )
+                            : null,
+                        color: item.hasUnviewed
+                            ? null
+                            : Theme.of(context).colorScheme.outlineVariant,
                       ),
-                      child: Avatar(
-                          url: item.userPicture,
-                          name: item.userName,
-                          radius: 28),
+                      child: Container(
+                        padding: const EdgeInsets.all(2.5),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                        ),
+                        child: Avatar(
+                            url: item.userPicture,
+                            name: item.userName,
+                            radius: 26),
+                      ),
                     ),
                     const SizedBox(height: 4),
                     SizedBox(

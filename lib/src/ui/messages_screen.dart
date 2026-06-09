@@ -41,6 +41,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         child: AsyncList<ConversationView>(
           future: _conversations,
           emptyMessage: 'No conversations yet.',
+          emptyIcon: Icons.forum_outlined,
           builder: (context, items) => ListView.separated(
             itemCount: items.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
@@ -137,6 +138,7 @@ class _ChatScreenState extends State<ChatScreen> {
             child: AsyncList<Message>(
               future: _messages,
               emptyMessage: 'Say hello 👋',
+              emptyIcon: Icons.waving_hand_outlined,
               builder: (context, items) => ListView.builder(
                 reverse: true,
                 padding: const EdgeInsets.all(12),
@@ -144,7 +146,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 itemBuilder: (context, i) {
                   // Newest first when reversed.
                   final msg = items[items.length - 1 - i];
-                  return _MessageBubble(message: msg);
+                  // In a direct chat, anything not sent by the other person is
+                  // ours. Group chats fall back to left-aligned.
+                  final otherId = widget.conversation.otherUser?.userId;
+                  final mine = otherId != null && msg.senderId != otherId;
+                  return _MessageBubble(message: msg, mine: mine);
                 },
               ),
             ),
@@ -184,9 +190,10 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.message, this.mine = false});
 
   final Message message;
+  final bool mine;
 
   @override
   Widget build(BuildContext context) {
@@ -194,28 +201,40 @@ class _MessageBubble extends StatelessWidget {
     final text = message.deleted
         ? 'Message deleted'
         : (message.text ?? '[${message.type}]');
+    final bg = mine ? scheme.primary : scheme.surfaceContainerHighest;
+    final fg = mine ? scheme.onPrimary : scheme.onSurface;
+    const radius = Radius.circular(18);
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         constraints: BoxConstraints(
             maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
+          color: bg,
+          borderRadius: BorderRadius.only(
+            topLeft: radius,
+            topRight: radius,
+            bottomLeft: mine ? radius : const Radius.circular(4),
+            bottomRight: mine ? const Radius.circular(4) : radius,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(text,
                 style: TextStyle(
+                    color: fg,
                     fontStyle: message.deleted
                         ? FontStyle.italic
                         : FontStyle.normal)),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(shortAgo(message.createdAt),
-                style: Theme.of(context).textTheme.labelSmall),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: fg.withValues(alpha: 0.7))),
           ],
         ),
       ),

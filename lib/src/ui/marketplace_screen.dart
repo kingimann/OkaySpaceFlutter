@@ -71,6 +71,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         child: AsyncList<Listing>(
           future: _listings,
           emptyMessage: 'No listings found.',
+          emptyIcon: Icons.storefront_outlined,
           builder: (context, items) => GridView.builder(
             padding: const EdgeInsets.all(12),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
