@@ -6,6 +6,8 @@ import 'communities_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
 import 'groups_screen.dart';
+import 'messages_screen.dart';
+import 'post_tile.dart';
 import 'roadside_screen.dart';
 import 'support_screen.dart';
 import 'wallet_screen.dart';
@@ -28,12 +30,14 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<PublicUser> _profile;
+  late Future<List<Post>> _posts;
   bool _following = false;
 
   @override
   void initState() {
     super.initState();
     _profile = _load();
+    _posts = api.users.posts(widget.userId);
   }
 
   Future<PublicUser> _load() async {
@@ -54,8 +58,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _message() async {
+    try {
+      final conv = await api.messaging.startDirect(widget.userId);
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ChatScreen(
+            conversation: conv, title: conv.otherUser?.name ?? 'Chat'),
+      ));
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: FutureBuilder<PublicUser>(
@@ -65,32 +83,126 @@ class _ProfileScreenState extends State<ProfileScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return CenteredMessage(message: messageFor(snapshot.error));
+            return CenteredMessage(
+                message: messageFor(snapshot.error), icon: Icons.error_outline);
           }
           final u = snapshot.data!;
           return ListView(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.zero,
             children: [
-              Center(child: Avatar(url: u.picture, name: u.name, radius: 48)),
-              const SizedBox(height: 16),
-              Center(
-                child: Text(u.name,
-                    style: Theme.of(context).textTheme.headlineSmall),
+              // Gradient banner with overlapping avatar.
+              SizedBox(
+                height: 150,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      height: 100,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [scheme.primary, darken(scheme.primary, 0.22)],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 56,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: scheme.surface,
+                            shape: BoxShape.circle,
+                          ),
+                          child:
+                              Avatar(url: u.picture, name: u.name, radius: 44),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              if (u.username != null)
-                Center(child: Text(u.handle)),
-              if (u.headline != null) ...[
-                const SizedBox(height: 8),
-                Center(child: Text(u.headline!)),
-              ],
-              if (u.bio != null) ...[
-                const SizedBox(height: 16),
-                Text(u.bio!, textAlign: TextAlign.center),
-              ],
-              const SizedBox(height: 24),
-              FilledButton.tonal(
-                onPressed: _toggleFollow,
-                child: Text(_following ? 'Following' : 'Follow'),
+              const SizedBox(height: 8),
+              Center(
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(u.name,
+                            style: Theme.of(context).textTheme.headlineSmall),
+                        if (u.verified) ...[
+                          const SizedBox(width: 6),
+                          const Icon(Icons.verified,
+                              size: 20, color: Colors.blue),
+                        ],
+                      ],
+                    ),
+                    if (u.username != null)
+                      Text(u.handle,
+                          style: TextStyle(color: scheme.outline)),
+                    if (u.headline != null && u.headline!.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(u.headline!),
+                    ],
+                  ],
+                ),
+              ),
+              if (u.bio != null && u.bio!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                  child: Text(u.bio!, textAlign: TextAlign.center),
+                ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _toggleFollow,
+                        child: Text(_following ? 'Following' : 'Follow'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _message,
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        label: const Text('Message'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, thickness: 6),
+              FutureBuilder<List<Post>>(
+                future: _posts,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final posts = snap.data ?? const [];
+                  if (posts.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: Text('No posts yet.')),
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (final p in posts) ...[
+                        PostTile(post: p),
+                        const Divider(height: 1),
+                      ],
+                    ],
+                  );
+                },
               ),
             ],
           );
