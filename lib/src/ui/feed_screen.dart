@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'notifications_screen.dart';
 import 'post_tile.dart';
+import 'search_screen.dart';
+import 'story_viewer.dart';
 
 /// Home feed: a story tray followed by the post list, with a composer.
 class FeedScreen extends StatefulWidget {
@@ -15,6 +18,7 @@ class FeedScreen extends StatefulWidget {
 class _FeedScreenState extends State<FeedScreen> {
   late Future<List<Post>> _feed;
   late Future<List<StoryTrayItem>> _stories;
+  int _unread = 0;
 
   @override
   void initState() {
@@ -25,6 +29,17 @@ class _FeedScreenState extends State<FeedScreen> {
   void _load() {
     _feed = api.feed.homeFeed();
     _stories = api.stories.tray();
+    api.notifications.unreadCount().then((count) {
+      if (mounted) setState(() => _unread = count);
+    }).catchError((_) {});
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const NotificationsScreen(),
+    ));
+    final count = await api.notifications.unreadCount().catchError((_) => 0);
+    if (mounted) setState(() => _unread = count);
   }
 
   Future<void> _reload() async {
@@ -58,6 +73,25 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('OkaySpace'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const SearchScreen(),
+            )),
+          ),
+          IconButton(
+            tooltip: 'Notifications',
+            onPressed: _openNotifications,
+            icon: _unread > 0
+                ? Badge(label: Text('$_unread'), child: const Icon(Icons.notifications_none))
+                : const Icon(Icons.notifications_none),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _compose,
         child: const Icon(Icons.edit),
@@ -121,7 +155,10 @@ class _StoryTray extends StatelessWidget {
               final item = items[i];
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Column(
+                child: GestureDetector(
+                  onTap: () => StoryViewerScreen.open(
+                      context, item.userId, item.userName),
+                  child: Column(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(2),
@@ -150,6 +187,7 @@ class _StoryTray extends StatelessWidget {
                       ),
                     ),
                   ],
+                  ),
                 ),
               );
             },

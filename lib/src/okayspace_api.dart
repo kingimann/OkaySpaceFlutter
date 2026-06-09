@@ -1,6 +1,7 @@
 import 'core/api_client.dart';
 import 'core/api_config.dart';
 import 'core/token_store.dart';
+import 'services/ads_service.dart';
 import 'services/auth_service.dart';
 import 'services/communities_service.dart';
 import 'services/feed_service.dart';
@@ -9,7 +10,10 @@ import 'services/groups_service.dart';
 import 'services/marketplace_service.dart';
 import 'services/messaging_service.dart';
 import 'services/notifications_service.dart';
+import 'services/payments_service.dart';
+import 'services/roadside_service.dart';
 import 'services/stories_service.dart';
+import 'services/support_service.dart';
 import 'services/users_service.dart';
 import 'services/wallet_service.dart';
 
@@ -52,6 +56,10 @@ class OkaySpaceApi {
     users = UsersService(this.client);
     friends = FriendsService(this.client);
     notifications = NotificationsService(this.client);
+    roadside = RoadsideService(this.client);
+    payments = PaymentsService(this.client);
+    ads = AdsService(this.client);
+    support = SupportService(this.client);
   }
 
   /// Shared low-level client. Use it directly for endpoints not yet wrapped by
@@ -90,6 +98,18 @@ class OkaySpaceApi {
 
   /// `/notifications` — list, unread count and read/dismiss actions.
   late final NotificationsService notifications;
+
+  /// `/roadside` — roadside assistance requests and lifecycle.
+  late final RoadsideService roadside;
+
+  /// `/payments` — checkout, payment intents, identity and payout setup.
+  late final PaymentsService payments;
+
+  /// `/ads` — advertiser account, campaigns and ad serving.
+  late final AdsService ads;
+
+  /// `/support` — help-desk tickets.
+  late final SupportService support;
 
   /// Whether a credential (session token or API key) is currently stored.
   Future<bool> get isAuthenticated => client.isAuthenticated;
