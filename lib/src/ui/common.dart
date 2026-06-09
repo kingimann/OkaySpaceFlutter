@@ -1,9 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../okayspace_api.dart';
 
 /// A single API instance shared across the demo app.
 final OkaySpaceApi api = OkaySpaceApi();
+
+/// App-wide theme mode (system/light/dark), persisted across launches.
+final ThemeController themeController = ThemeController();
+
+/// Holds the selected [ThemeMode] and persists it to secure storage.
+class ThemeController extends ValueNotifier<ThemeMode> {
+  ThemeController() : super(ThemeMode.system) {
+    _load();
+  }
+
+  static const _key = 'okayspace.theme_mode';
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  Future<void> _load() async {
+    try {
+      final stored = await _storage.read(key: _key);
+      if (stored != null) {
+        value = ThemeMode.values.firstWhere(
+          (m) => m.name == stored,
+          orElse: () => ThemeMode.system,
+        );
+      }
+    } catch (_) {/* fall back to system */}
+  }
+
+  Future<void> set(ThemeMode mode) async {
+    value = mode;
+    try {
+      await _storage.write(key: _key, value: mode.name);
+    } catch (_) {/* best effort */}
+  }
+}
 
 /// Extracts a user-facing message from any error thrown by the client.
 String messageFor(Object? error) =>

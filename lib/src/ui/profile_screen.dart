@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'edit_profile_screen.dart';
 
 /// Public profile of another user, with a follow toggle.
 class ProfileScreen extends StatefulWidget {
@@ -117,36 +118,44 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     widget.onSignedOut();
   }
 
-  Future<void> _editBio(User user) async {
-    final controller = TextEditingController(text: user.bio ?? '');
-    final newBio = await showDialog<String>(
+  Future<void> _editProfile(User user) async {
+    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => EditProfileScreen(user: user),
+    ));
+    if (saved == true && mounted) setState(() => _me = api.auth.me());
+  }
+
+  Future<void> _pickTheme() async {
+    final current = themeController.value;
+    final mode = await showModalBottomSheet<ThemeMode>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Edit bio'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 3,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(title: Text('Appearance', style: TextStyle(fontWeight: FontWeight.bold))),
+            for (final m in ThemeMode.values)
+              ListTile(
+                title: Text(switch (m) {
+                  ThemeMode.system => 'System default',
+                  ThemeMode.light => 'Light',
+                  ThemeMode.dark => 'Dark',
+                }),
+                trailing: m == current ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(context, m),
+              ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              child: const Text('Save')),
-        ],
       ),
     );
-    if (newBio == null) return;
-    try {
-      await api.auth.updateProfile({'bio': newBio});
-      setState(() => _me = api.auth.me());
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
+    if (mode != null) themeController.set(mode);
   }
+
+  String _themeLabel(ThemeMode m) => switch (m) {
+        ThemeMode.system => 'System',
+        ThemeMode.light => 'Light',
+        ThemeMode.dark => 'Dark',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +177,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return CenteredMessage(message: messageFor(snapshot.error));
+            return CenteredMessage(
+                message: messageFor(snapshot.error), icon: Icons.error_outline);
           }
           final u = snapshot.data!;
           return ListView(
@@ -181,20 +191,27 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                     style: Theme.of(context).textTheme.headlineSmall),
               ),
               Center(child: Text(u.handle)),
-              const SizedBox(height: 24),
+              if (u.headline != null && u.headline!.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Center(child: Text(u.headline!)),
+              ],
+              if (u.bio != null && u.bio!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(u.bio!, textAlign: TextAlign.center),
+              ],
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () => _editProfile(u),
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Edit profile'),
+              ),
+              const SizedBox(height: 16),
               Card(
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.info_outline),
-                      title: const Text('Bio'),
-                      subtitle: Text(u.bio ?? 'Add a bio'),
-                      trailing: const Icon(Icons.edit, size: 18),
-                      onTap: () => _editBio(u),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.account_balance_wallet_outlined),
+                      leading:
+                          const Icon(Icons.account_balance_wallet_outlined),
                       title: const Text('Wallet'),
                       trailing: Text(
                           '${u.currency} ${u.walletBalance.toStringAsFixed(2)}'),
@@ -204,6 +221,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       leading: const Icon(Icons.stars_outlined),
                       title: const Text('Level'),
                       trailing: Text('${u.levelTitle} · ${u.points} pts'),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.brightness_6_outlined),
+                      title: const Text('Appearance'),
+                      trailing: Text(_themeLabel(themeController.value)),
+                      onTap: _pickTheme,
                     ),
                   ],
                 ),

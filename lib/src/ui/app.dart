@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'common.dart';
 import 'home_shell.dart';
+import 'register_screen.dart';
 
 /// Root widget for the OkaySpace demo app.
 class OkaySpaceApp extends StatelessWidget {
@@ -53,13 +54,16 @@ class OkaySpaceApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'OkaySpace',
-      debugShowCheckedModeBanner: false,
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
-      themeMode: ThemeMode.system,
-      home: const RootGate(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeController,
+      builder: (context, mode, _) => MaterialApp(
+        title: 'OkaySpace',
+        debugShowCheckedModeBanner: false,
+        theme: _theme(Brightness.light),
+        darkTheme: _theme(Brightness.dark),
+        themeMode: mode,
+        home: const RootGate(),
+      ),
     );
   }
 }
@@ -196,6 +200,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('Sign in'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) =>
+                              RegisterScreen(onSignedIn: widget.onSignedIn),
+                        )),
+                child: const Text("Don't have an account? Create one"),
               ),
             ],
           ),
