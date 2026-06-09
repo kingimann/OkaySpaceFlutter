@@ -10,10 +10,10 @@ class ApiConfig {
   });
 
   /// Production, versioned API (recommended).
-  static const String productionV1 = 'https://nampo-backend.onrender.com/api/v1';
+  static const String productionV1 = 'https://okayspace-api.onrender.com/api/v1';
 
   /// Production, unversioned legacy API.
-  static const String productionLegacy = 'https://nampo-backend.onrender.com/api';
+  static const String productionLegacy = 'https://okayspace-api.onrender.com/api';
 
   final String baseUrl;
   final Duration connectTimeout;

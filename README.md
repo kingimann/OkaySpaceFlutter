@@ -5,7 +5,7 @@ A new Flutter project created with FlutLab - https://flutlab.io
 ## OkaySpace API client
 
 This app talks to the OkaySpace REST API
-(`https://nampo-backend.onrender.com/api/v1`) through a hand-written,
+(`https://okayspace-api.onrender.com/api/v1`) through a hand-written,
 Dio-based client under `lib/src/`. Import it via the barrel file:
 
 ```dart
