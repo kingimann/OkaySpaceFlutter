@@ -4,6 +4,7 @@ import 'feed_screen.dart';
 import 'marketplace_screen.dart';
 import 'messages_screen.dart';
 import 'profile_screen.dart';
+import 'reels_screen.dart';
 
 /// The signed-in app shell: a bottom navigation bar over the main tabs.
 class HomeShell extends StatefulWidget {
@@ -22,6 +23,7 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final tabs = [
       const FeedScreen(),
+      const ReelsScreen(),
       const MessagesScreen(),
       const MarketplaceScreen(),
       MyProfileScreen(onSignedOut: widget.onSignedOut),
@@ -37,6 +39,10 @@ class _HomeShellState extends State<HomeShell> {
               icon: Icon(Icons.home_outlined),
               selectedIcon: Icon(Icons.home),
               label: 'Feed'),
+          NavigationDestination(
+              icon: Icon(Icons.play_circle_outline),
+              selectedIcon: Icon(Icons.play_circle),
+              label: 'Reels'),
           NavigationDestination(
               icon: Icon(Icons.chat_bubble_outline),
               selectedIcon: Icon(Icons.chat_bubble),
