@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'communities_screen.dart';
 import 'edit_profile_screen.dart';
+import 'wallet_screen.dart';
 
 /// Public profile of another user, with a follow toggle.
 class ProfileScreen extends StatefulWidget {
@@ -213,8 +215,21 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       leading:
                           const Icon(Icons.account_balance_wallet_outlined),
                       title: const Text('Wallet'),
-                      trailing: Text(
+                      subtitle: Text(
                           '${u.currency} ${u.walletBalance.toStringAsFixed(2)}'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const WalletScreen(),
+                      )),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.groups_outlined),
+                      title: const Text('Communities'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const CommunitiesScreen(),
+                      )),
                     ),
                     const Divider(height: 1),
                     ListTile(
