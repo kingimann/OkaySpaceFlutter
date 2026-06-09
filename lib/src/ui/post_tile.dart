@@ -2,19 +2,25 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'post_detail_screen.dart';
 import 'profile_screen.dart';
 
 /// A single post row with author, text and engagement actions.
+///
+/// Tapping the row opens the post's detail/thread. Set [tappable] to false to
+/// disable that (e.g. when the row is already inside a detail view).
 class PostTile extends StatelessWidget {
-  const PostTile({super.key, required this.post, this.onLike});
+  const PostTile(
+      {super.key, required this.post, this.onLike, this.tappable = true});
 
   final Post post;
   final VoidCallback? onLike;
+  final bool tappable;
 
   @override
   Widget build(BuildContext context) {
     final author = post.author;
-    return Padding(
+    final content = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -87,6 +93,12 @@ class PostTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (!tappable) return content;
+    return InkWell(
+      onTap: () => PostDetailScreen.open(context, post),
+      child: content,
     );
   }
 }
