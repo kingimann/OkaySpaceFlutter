@@ -72,6 +72,26 @@ cd build/web && python3 -m http.server 8000   # http://localhost:8000
   browser, so that backend must allow your deployed origin. If requests fail
   only in the deployed build, check the backend's CORS allow-list.
 
+## Building for Android
+
+Requires the Android SDK (with **platform 36** + **build-tools 36**) and a
+JDK (17–21). The project uses **AGP 8.9.1 / Gradle 8.11.1 / Kotlin 2.1.0**.
+
+```bash
+# point Flutter at your SDK if needed:
+flutter config --android-sdk /path/to/Android/sdk
+# install the required packages:
+sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+flutter build apk            # release APK -> build/app/outputs/flutter-apk/
+flutter build apk --debug    # debug APK
+flutter build appbundle      # Play Store bundle
+```
+
+If you see *"Dependency … requires Android Gradle plugin 8.9.1 or higher"*,
+your local checkout is on the old AGP — pull latest (already fixed in
+`android/settings.gradle.kts`).
+
 ## Getting Started
 
 A few resources to get you started if this is your first Flutter project:
