@@ -127,10 +127,10 @@ void main() {
     });
 
     test('serializes a reply with media', () {
-      final json = PostCreate(
+      final json = const PostCreate(
         text: 'a reply',
         parentId: 'p_1',
-        media: const [PostMedia(type: 'image', base64: 'AAAA')],
+        media: [PostMedia(type: 'image', base64: 'AAAA')],
       ).toJson();
 
       expect(json['parent_id'], 'p_1');

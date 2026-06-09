@@ -14,11 +14,24 @@ export 'src/core/token_store.dart';
 
 // Services
 export 'src/services/auth_service.dart';
+export 'src/services/communities_service.dart';
 export 'src/services/feed_service.dart';
+export 'src/services/groups_service.dart';
+export 'src/services/marketplace_service.dart';
+export 'src/services/messaging_service.dart';
+export 'src/services/stories_service.dart';
+export 'src/services/wallet_service.dart';
 
 // Models
 export 'src/models/auth_response.dart';
 export 'src/models/badge.dart';
+export 'src/models/community.dart';
+export 'src/models/group.dart';
+export 'src/models/listing.dart';
+export 'src/models/message.dart';
 export 'src/models/post.dart';
 export 'src/models/post_create.dart';
+export 'src/models/public_user.dart';
+export 'src/models/story.dart';
 export 'src/models/user.dart';
+export 'src/models/wallet.dart';
