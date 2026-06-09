@@ -1,7 +1,7 @@
 /// OkaySpace API client for Flutter.
 ///
 /// A hand-written, Dio-based client for the OkaySpace REST API
-/// (`https://nampo-backend.onrender.com/api/v1`). Import this single file to
+/// (`https://okayspace-v0vx.onrender.com/api/v1`). Import this single file to
 /// access the client, services and models.
 library;
 
