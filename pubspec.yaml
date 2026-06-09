@@ -10,6 +10,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Networking layer for the OkaySpace REST API.
+  dio: ^5.7.0
+  # Secure, persistent storage for the session token / API key.
+  flutter_secure_storage: ^9.2.2
 
 dev_dependencies:
   flutter_test:
