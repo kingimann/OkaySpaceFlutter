@@ -34,8 +34,11 @@ jobs:
       - name: Build web
         run: flutter build web --release --base-href "/OkaySpaceFlutter/"
 
+      # enablement:true turns Pages on via the API if it isn't already enabled.
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
