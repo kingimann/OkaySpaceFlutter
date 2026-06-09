@@ -253,19 +253,8 @@ class _StoryTrayTile extends StatelessWidget {
               padding: const EdgeInsets.all(2.5),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: item.hasUnviewed
-                    ? const LinearGradient(
-                        begin: Alignment.topRight,
-                        end: Alignment.bottomLeft,
-                        colors: [
-                          Color(0xFFFEDA75),
-                          Color(0xFFD62976),
-                          Color(0xFF962FBF),
-                        ],
-                      )
-                    : null,
                 color: item.hasUnviewed
-                    ? null
+                    ? OkayColors.primary
                     : Theme.of(context).colorScheme.outlineVariant,
               ),
               child: Container(

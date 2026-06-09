@@ -19,6 +19,7 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="OkaySpace">
+  <meta name="theme-color" content="#0B141A">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -31,6 +32,10 @@
 
   <title>OkaySpace</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* Match okayspace.ca background so there's no flash before Flutter paints. */
+    html, body { margin: 0; background-color: #0B141A; }
+  </style>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

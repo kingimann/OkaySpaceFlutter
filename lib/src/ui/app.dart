@@ -8,18 +8,50 @@ import 'register_screen.dart';
 class OkaySpaceApp extends StatelessWidget {
   const OkaySpaceApp({super.key});
 
-  static const _seed = Color(0xFF5B5BD6);
+  /// The okayspace.ca dark color scheme, mapped role-for-role.
+  static const ColorScheme _darkScheme = ColorScheme(
+    brightness: Brightness.dark,
+    primary: OkayColors.primary,
+    onPrimary: Colors.white,
+    primaryContainer: OkayColors.primaryActive,
+    onPrimaryContainer: Colors.white,
+    secondary: OkayColors.primary,
+    onSecondary: Colors.white,
+    surface: OkayColors.bg,
+    onSurface: OkayColors.textPrimary,
+    surfaceContainerLowest: OkayColors.bg,
+    surfaceContainerLow: OkayColors.surface,
+    surfaceContainer: OkayColors.surface,
+    surfaceContainerHigh: OkayColors.surfaceAlt,
+    surfaceContainerHighest: OkayColors.surfaceAlt,
+    onSurfaceVariant: OkayColors.textSecondary,
+    outline: OkayColors.textMuted,
+    outlineVariant: OkayColors.border,
+    error: OkayColors.danger,
+    onError: Colors.white,
+  );
+
+  /// A light counterpart (okayspace is dark-only; this keeps the toggle usable)
+  /// using the same teal accent.
+  static final ColorScheme _lightScheme = ColorScheme.fromSeed(
+    seedColor: OkayColors.primary,
+    brightness: Brightness.light,
+  );
 
   ThemeData _theme(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
+    final scheme = brightness == Brightness.dark ? _darkScheme : _lightScheme;
+    final headerColor =
+        brightness == Brightness.dark ? OkayColors.surface : scheme.surface;
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
       scaffoldBackgroundColor: scheme.surface,
       appBarTheme: AppBarTheme(
         centerTitle: false,
-        scrolledUnderElevation: 0.5,
-        backgroundColor: scheme.surface,
+        scrolledUnderElevation: 0,
+        elevation: 0,
+        backgroundColor: headerColor,
+        foregroundColor: scheme.onSurface,
         titleTextStyle: TextStyle(
           color: scheme.onSurface,
           fontSize: 20,
@@ -27,26 +59,45 @@ class OkaySpaceApp extends StatelessWidget {
           letterSpacing: -0.3,
         ),
       ),
-      dividerTheme: DividerThemeData(
-        color: scheme.outlineVariant.withValues(alpha: 0.5),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: headerColor,
+        indicatorColor: scheme.primary.withValues(alpha: 0.18),
+        elevation: 0,
+      ),
+      dividerTheme: const DividerThemeData(
+        color: OkayColors.border,
         space: 1,
         thickness: 1,
       ),
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(),
+      inputDecorationTheme: InputDecorationTheme(
         filled: true,
+        fillColor: brightness == Brightness.dark
+            ? OkayColors.surfaceAlt
+            : scheme.surfaceContainerHighest,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(48),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: OkayColors.primary,
+        foregroundColor: Colors.white,
       ),
       cardTheme: CardThemeData(
         elevation: 0,
         color: scheme.surfaceContainerLow,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
     );

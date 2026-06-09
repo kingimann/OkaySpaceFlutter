@@ -6,12 +6,31 @@ import '../../okayspace_api.dart';
 /// A single API instance shared across the demo app.
 final OkaySpaceApi api = OkaySpaceApi();
 
+/// Exact design tokens pulled from the okayspace.ca web app (WhatsApp-style
+/// dark theme with a teal accent).
+abstract final class OkayColors {
+  static const bg = Color(0xFF0B141A);
+  static const surface = Color(0xFF1F2C33);
+  static const surfaceAlt = Color(0xFF2A3942);
+  static const primary = Color(0xFF00A884);
+  static const primaryHover = Color(0xFF06CF9C);
+  static const primaryActive = Color(0xFF008F6F);
+  static const bubbleOut = Color(0xFF005C4B); // outgoing chat bubble
+  static const textPrimary = Color(0xFFE9EDEF);
+  static const textSecondary = Color(0xFFAEBAC1);
+  static const textMuted = Color(0xFF8696A0);
+  static const border = Color(0x2E8696A0); // rgba(134,150,160,0.18)
+  static const danger = Color(0xFFEF4444);
+  static const warning = Color(0xFFF6C455);
+}
+
 /// App-wide theme mode (system/light/dark), persisted across launches.
 final ThemeController themeController = ThemeController();
 
 /// Holds the selected [ThemeMode] and persists it to secure storage.
 class ThemeController extends ValueNotifier<ThemeMode> {
-  ThemeController() : super(ThemeMode.system) {
+  // OkaySpace's web app is dark-only, so we default to dark to match it.
+  ThemeController() : super(ThemeMode.dark) {
     _load();
   }
 

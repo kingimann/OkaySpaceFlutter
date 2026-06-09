@@ -1,11 +1,11 @@
 {
-    "name": "hello_world",
-    "short_name": "hello_world",
+    "name": "OkaySpace",
+    "short_name": "OkaySpace",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0B141A",
+    "theme_color": "#0B141A",
+    "description": "Social, maps, marketplace, payments and roadside — all in one.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

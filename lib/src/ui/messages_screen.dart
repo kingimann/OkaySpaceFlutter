@@ -201,8 +201,8 @@ class _MessageBubble extends StatelessWidget {
     final text = message.deleted
         ? 'Message deleted'
         : (message.text ?? '[${message.type}]');
-    final bg = mine ? scheme.primary : scheme.surfaceContainerHighest;
-    final fg = mine ? scheme.onPrimary : scheme.onSurface;
+    final bg = mine ? OkayColors.bubbleOut : scheme.surfaceContainerHighest;
+    final fg = mine ? OkayColors.textPrimary : scheme.onSurface;
     const radius = Radius.circular(18);
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
