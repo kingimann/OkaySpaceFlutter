@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'post_detail_screen.dart';
+import 'profile_screen.dart';
 
 /// The user's notifications, with mark-all-read and per-item dismiss.
 class NotificationsScreen extends StatefulWidget {
@@ -31,6 +33,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await _reload();
     } catch (e) {
       if (mounted) showError(context, e);
+    }
+  }
+
+  /// Marks read and navigates to whatever the notification points at:
+  /// the related post, otherwise the actor's profile.
+  Future<void> _open(AppNotification n) async {
+    api.notifications.markRead(n.id).then((_) {
+      if (mounted) _reload();
+    }).catchError((_) {});
+
+    if (n.postId != null) {
+      try {
+        final post = await api.feed.getPost(n.postId!);
+        if (mounted) PostDetailScreen.open(context, post);
+      } catch (e) {
+        if (mounted) showError(context, e);
+      }
+    } else if (n.actorId != null) {
+      if (mounted) ProfileScreen.open(context, n.actorId!);
     }
   }
 
@@ -104,7 +125,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       : Icon(Icons.circle,
                           size: 10,
                           color: Theme.of(context).colorScheme.primary),
-                  onTap: () => api.notifications.markRead(n.id).catchError((_) {}),
+                  onTap: () => _open(n),
                 ),
               );
             },
