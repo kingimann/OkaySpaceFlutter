@@ -254,7 +254,7 @@ class _StoryTrayTile extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: item.hasUnviewed
-                    ? OkayColors.primary
+                    ? Theme.of(context).colorScheme.primary
                     : Theme.of(context).colorScheme.outlineVariant,
               ),
               child: Container(

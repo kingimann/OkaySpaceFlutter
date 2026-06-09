@@ -27,6 +27,60 @@ abstract final class OkayColors {
 /// App-wide theme mode (system/light/dark), persisted across launches.
 final ThemeController themeController = ThemeController();
 
+/// App-wide accent color, persisted across launches.
+final AccentController accentController = AccentController();
+
+/// A selectable accent, mirroring okayspace.ca's accent themes.
+class AccentOption {
+  const AccentOption(this.label, this.color);
+  final String label;
+  final Color color;
+}
+
+/// The accent palette from okayspace.ca.
+const List<AccentOption> kAccents = [
+  AccentOption('Default', OkayColors.primary), // teal #00A884
+  AccentOption('Emerald', Color(0xFF10B981)),
+  AccentOption('Ocean', Color(0xFF06B6D4)),
+  AccentOption('Carbon', Color(0xFFA1A1AA)),
+  AccentOption('Nebula', Color(0xFFA855F7)),
+  AccentOption('Sunset', Color(0xFFF97316)),
+  AccentOption('Midnight', Color(0xFF6366F1)),
+  AccentOption('Rosé', Color(0xFFF43F5E)),
+];
+
+/// Holds the selected accent [Color] and persists it to secure storage.
+class AccentController extends ValueNotifier<Color> {
+  AccentController() : super(OkayColors.primary) {
+    _load();
+  }
+
+  static const _key = 'okayspace.accent';
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  Future<void> _load() async {
+    try {
+      final stored = await _storage.read(key: _key);
+      final argb = stored == null ? null : int.tryParse(stored);
+      if (argb != null) value = Color(argb);
+    } catch (_) {/* keep default */}
+  }
+
+  Future<void> set(Color color) async {
+    value = color;
+    try {
+      await _storage.write(key: _key, value: color.toARGB32().toString());
+    } catch (_) {/* best effort */}
+  }
+}
+
+/// Returns a darkened shade of [color] (used for pressed/container tints and
+/// outgoing chat bubbles).
+Color darken(Color color, [double amount = 0.12]) {
+  final hsl = HSLColor.fromColor(color);
+  return hsl.withLightness((hsl.lightness - amount).clamp(0.0, 1.0)).toColor();
+}
+
 /// Holds the selected [ThemeMode] and persists it to secure storage.
 class ThemeController extends ValueNotifier<ThemeMode> {
   // OkaySpace's web app is dark-only, so we default to dark to match it.

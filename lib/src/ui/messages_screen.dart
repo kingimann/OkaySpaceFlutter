@@ -201,7 +201,11 @@ class _MessageBubble extends StatelessWidget {
     final text = message.deleted
         ? 'Message deleted'
         : (message.text ?? '[${message.type}]');
-    final bg = mine ? OkayColors.bubbleOut : scheme.surfaceContainerHighest;
+    // Outgoing bubble = a dark tint of the current accent (teal by default,
+    // matching okayspace.ca's WhatsApp-style chat).
+    final bg = mine
+        ? HSLColor.fromColor(scheme.primary).withLightness(0.22).toColor()
+        : scheme.surfaceContainerHighest;
     final fg = mine ? OkayColors.textPrimary : scheme.onSurface;
     const radius = Radius.circular(18);
     return Align(
