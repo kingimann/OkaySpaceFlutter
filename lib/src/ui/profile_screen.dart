@@ -163,6 +163,67 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         ThemeMode.dark => 'Dark',
       };
 
+  Future<void> _pickAccent() async {
+    final chosen = await showModalBottomSheet<Color>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12, left: 4),
+                child: Text('Accent color',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  for (final a in kAccents)
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context, a.color),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: a.color,
+                              shape: BoxShape.circle,
+                              border: a.color.toARGB32() ==
+                                      accentController.value.toARGB32()
+                                  ? Border.all(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
+                                      width: 3)
+                                  : null,
+                            ),
+                            child: a.color.toARGB32() ==
+                                    accentController.value.toARGB32()
+                                ? const Icon(Icons.check,
+                                    color: Colors.white, size: 20)
+                                : null,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(a.label,
+                              style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (chosen != null) accentController.set(chosen);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -283,6 +344,20 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       title: const Text('Appearance'),
                       trailing: Text(_themeLabel(themeController.value)),
                       onTap: _pickTheme,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.palette_outlined),
+                      title: const Text('Accent color'),
+                      trailing: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      onTap: _pickAccent,
                     ),
                   ],
                 ),

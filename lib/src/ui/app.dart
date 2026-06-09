@@ -38,8 +38,16 @@ class OkaySpaceApp extends StatelessWidget {
     brightness: Brightness.light,
   );
 
-  ThemeData _theme(Brightness brightness) {
-    final scheme = brightness == Brightness.dark ? _darkScheme : _lightScheme;
+  ThemeData _theme(Brightness brightness, Color accent) {
+    final base = brightness == Brightness.dark ? _darkScheme : _lightScheme;
+    final scheme = base.copyWith(
+      primary: accent,
+      onPrimary: Colors.white,
+      secondary: accent,
+      onSecondary: Colors.white,
+      primaryContainer: darken(accent),
+      onPrimaryContainer: Colors.white,
+    );
     final headerColor =
         brightness == Brightness.dark ? OkayColors.surface : scheme.surface;
     return ThemeData(
@@ -90,8 +98,8 @@ class OkaySpaceApp extends StatelessWidget {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
       ),
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: OkayColors.primary,
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: accent,
         foregroundColor: Colors.white,
       ),
       cardTheme: CardThemeData(
@@ -107,13 +115,16 @@ class OkaySpaceApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeController,
-      builder: (context, mode, _) => MaterialApp(
-        title: 'OkaySpace',
-        debugShowCheckedModeBanner: false,
-        theme: _theme(Brightness.light),
-        darkTheme: _theme(Brightness.dark),
-        themeMode: mode,
-        home: const RootGate(),
+      builder: (context, mode, _) => ValueListenableBuilder<Color>(
+        valueListenable: accentController,
+        builder: (context, accent, _) => MaterialApp(
+          title: 'OkaySpace',
+          debugShowCheckedModeBanner: false,
+          theme: _theme(Brightness.light, accent),
+          darkTheme: _theme(Brightness.dark, accent),
+          themeMode: mode,
+          home: const RootGate(),
+        ),
       ),
     );
   }
