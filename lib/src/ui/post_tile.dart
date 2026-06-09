@@ -11,11 +11,18 @@ import 'profile_screen.dart';
 /// disable that (e.g. when the row is already inside a detail view).
 class PostTile extends StatelessWidget {
   const PostTile(
-      {super.key, required this.post, this.onLike, this.tappable = true});
+      {super.key,
+      required this.post,
+      this.onLike,
+      this.tappable = true,
+      this.card = false});
 
   final Post post;
   final VoidCallback? onLike;
   final bool tappable;
+
+  /// When true, render as a rounded surface card with margin (feed style).
+  final bool card;
 
   @override
   Widget build(BuildContext context) {
@@ -95,11 +102,25 @@ class PostTile extends StatelessWidget {
       ),
     );
 
-    if (!tappable) return content;
-    return InkWell(
-      onTap: () => PostDetailScreen.open(context, post),
-      child: content,
-    );
+    Widget result = content;
+    if (tappable) {
+      result = InkWell(
+        onTap: () => PostDetailScreen.open(context, post),
+        child: result,
+      );
+    }
+    if (card) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: result,
+      );
+    }
+    return result;
   }
 }
 
