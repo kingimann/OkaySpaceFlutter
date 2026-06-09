@@ -4,6 +4,7 @@ import '../../okayspace_api.dart';
 import 'common.dart';
 import 'communities_screen.dart';
 import 'edit_profile_screen.dart';
+import 'friends_screen.dart';
 import 'groups_screen.dart';
 import 'roadside_screen.dart';
 import 'support_screen.dart';
@@ -214,6 +215,15 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               Card(
                 child: Column(
                   children: [
+                    ListTile(
+                      leading: const Icon(Icons.people_alt_outlined),
+                      title: const Text('Friends'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const FriendsScreen(),
+                      )),
+                    ),
+                    const Divider(height: 1),
                     ListTile(
                       leading:
                           const Icon(Icons.account_balance_wallet_outlined),
