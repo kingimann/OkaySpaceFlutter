@@ -75,7 +75,6 @@ class _ReelsScreenState extends State<ReelsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canPop = Navigator.canPop(context);
     return Scaffold(
       backgroundColor: Colors.black,
       extendBody: !widget.embedded,
@@ -112,7 +111,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
               },
             ),
           ),
-          // Top overlay: a back button (when this is a pushed route) and the
+          // Top overlay: the sidebar menu (like every other screen) and the
           // Explore / Following tabs, Instagram-style.
           Positioned(
             top: 0,
@@ -124,16 +123,14 @@ class _ReelsScreenState extends State<ReelsScreen> {
                 height: 48,
                 child: Stack(
                   children: [
-                    if (canPop)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: IconButton(
-                          icon: const Icon(Icons.arrow_back,
-                              color: Colors.white),
-                          tooltip: 'Back',
-                          onPressed: () => Navigator.maybePop(context),
-                        ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        icon: const Icon(Icons.menu, color: Colors.white),
+                        tooltip: 'Menu',
+                        onPressed: () => openSidebar(context),
                       ),
+                    ),
                     Center(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
