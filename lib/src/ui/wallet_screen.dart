@@ -410,6 +410,8 @@ class _TransferTile extends StatelessWidget {
                       act(() => api.wallet.declineTransfer(id), 'Declined'),
                 ),
                 FilledButton(
+                  style:
+                      FilledButton.styleFrom(minimumSize: const Size(0, 40)),
                   onPressed: () =>
                       act(() => api.wallet.acceptTransfer(id), 'Accepted'),
                   child: const Text('Accept'),
@@ -418,6 +420,8 @@ class _TransferTile extends StatelessWidget {
             )
           : reversible
               ? OutlinedButton(
+                  style:
+                      OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
                   onPressed: () => act(
                       () => api.wallet.reverseTransfer(id), 'Reversed'),
                   child: const Text('Reverse'),
@@ -487,6 +491,8 @@ class _RequestTile extends StatelessWidget {
                       act(() => api.wallet.declineRequest(id), 'Declined'),
                 ),
                 FilledButton(
+                  style:
+                      FilledButton.styleFrom(minimumSize: const Size(0, 40)),
                   onPressed: () =>
                       act(() => api.wallet.payRequest(id), 'Paid $who'),
                   child: const Text('Pay'),
@@ -494,6 +500,7 @@ class _RequestTile extends StatelessWidget {
               ],
             )
           : OutlinedButton(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
               onPressed: () =>
                   act(() => api.wallet.cancelRequest(id), 'Cancelled'),
               child: const Text('Cancel'),

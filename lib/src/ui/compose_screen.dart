@@ -201,6 +201,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: FilledButton(
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
               onPressed: _canPost ? _post : null,
               child: _posting
                   ? const SizedBox(

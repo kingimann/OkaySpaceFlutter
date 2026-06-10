@@ -450,6 +450,8 @@ class _MapScreenState extends State<MapScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: FilledButton(
+                    style:
+                        FilledButton.styleFrom(minimumSize: const Size(0, 44)),
                     onPressed: () {
                       Navigator.pop(context);
                       _loadAll();

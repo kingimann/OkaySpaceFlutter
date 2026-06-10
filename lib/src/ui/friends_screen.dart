@@ -209,6 +209,8 @@ class _AddFriendScreenState extends State<_AddFriendScreen> {
                     trailing: sent
                         ? const Chip(label: Text('Requested'))
                         : FilledButton.tonal(
+                            style: FilledButton.styleFrom(
+                                minimumSize: const Size(0, 40)),
                             onPressed: () => _send(u),
                             child: const Text('Add'),
                           ),

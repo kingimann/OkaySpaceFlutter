@@ -91,6 +91,7 @@ class _GroupEventsScreenState extends State<GroupEventsScreen> {
                 ].join('\n')),
                 isThreeLine: true,
                 trailing: FilledButton.tonal(
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
                   onPressed: () => _rsvp(e),
                   child: Text(e.going ? 'Going' : 'RSVP'),
                 ),

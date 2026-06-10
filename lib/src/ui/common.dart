@@ -754,6 +754,7 @@ class CenteredMessage extends StatelessWidget {
             const SizedBox(height: 18),
             Center(
               child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
