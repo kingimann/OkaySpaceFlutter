@@ -104,6 +104,46 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
   }
 
+  /// Shows who viewed this story (works for your own stories).
+  Future<void> _showViewers(Story story) async {
+    _timer?.cancel(); // pause auto-advance while the sheet is open
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => FutureBuilder<List<StoryViewer>>(
+        future: api.stories.viewers(story.id),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const SizedBox(
+                height: 160,
+                child: Center(child: CircularProgressIndicator()));
+          }
+          final viewers = snap.data ?? const [];
+          if (viewers.isEmpty) {
+            return const SizedBox(
+                height: 160,
+                child: Center(child: Text('No viewers yet.')));
+          }
+          return ListView.builder(
+            shrinkWrap: true,
+            itemCount: viewers.length,
+            itemBuilder: (context, i) {
+              final v = viewers[i];
+              return ListTile(
+                leading: Avatar(url: v.picture, name: v.name),
+                title: Text(v.name),
+                subtitle: v.username != null ? Text('@${v.username}') : null,
+                trailing: Text(shortAgo(v.viewedAt),
+                    style: Theme.of(context).textTheme.bodySmall),
+              );
+            },
+          );
+        },
+      ),
+    );
+    if (mounted) _start(); // resume
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -190,6 +230,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold)),
                           const Spacer(),
+                          TextButton.icon(
+                            onPressed: () => _showViewers(story),
+                            icon: const Icon(Icons.visibility_outlined,
+                                color: Colors.white, size: 18),
+                            label: Text('${story.viewCount}',
+                                style: const TextStyle(color: Colors.white)),
+                          ),
                           IconButton(
                             icon: const Icon(Icons.close, color: Colors.white),
                             onPressed: () => Navigator.of(context).maybePop(),
