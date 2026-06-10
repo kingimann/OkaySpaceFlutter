@@ -39,7 +39,11 @@ class UsersService {
   Future<List<Map<String, dynamic>>> leaderboard() async {
     final data = await _client.getJson('/points/leaderboard');
     final list = data is Map
-        ? (data['leaderboard'] ?? data['users'] ?? data['items'] ?? data['data'])
+        ? (data['leaders'] ??
+            data['leaderboard'] ??
+            data['users'] ??
+            data['items'] ??
+            data['data'])
         : data;
     if (list is List) {
       return list
