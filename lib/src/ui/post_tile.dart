@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -6,6 +7,85 @@ import 'linked_text.dart';
 import 'post_detail_screen.dart';
 import 'post_video.dart';
 import 'profile_screen.dart';
+
+/// Opens the post overflow menu (report / not interested / copy link).
+Future<void> _showPostMenu(BuildContext context, Post post) async {
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    builder: (_) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.link),
+            title: const Text('Copy link'),
+            onTap: () => Navigator.pop(context, 'copy'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.not_interested),
+            title: const Text('Not interested'),
+            onTap: () => Navigator.pop(context, 'not_interested'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.flag_outlined),
+            title: const Text('Report'),
+            onTap: () => Navigator.pop(context, 'report'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (action == null || !context.mounted) return;
+  switch (action) {
+    case 'copy':
+      await Clipboard.setData(
+          ClipboardData(text: 'https://okayspace.ca/post/${post.id}'));
+      if (context.mounted) showInfo(context, 'Link copied');
+    case 'not_interested':
+      try {
+        await api.feed.notInterested(post.id);
+        if (context.mounted) showInfo(context, "We'll show less like this");
+      } catch (e) {
+        if (context.mounted) showError(context, e);
+      }
+    case 'report':
+      if (context.mounted) await _reportPost(context, post);
+  }
+}
+
+Future<void> _reportPost(BuildContext context, Post post) async {
+  final controller = TextEditingController();
+  final reason = await showDialog<String>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Report post'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: const InputDecoration(
+            hintText: 'Reason', border: OutlineInputBorder()),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: () => Navigator.pop(
+                context, controller.text.trim().isEmpty
+                    ? 'inappropriate'
+                    : controller.text.trim()),
+            child: const Text('Report')),
+      ],
+    ),
+  );
+  if (reason == null || !context.mounted) return;
+  try {
+    await api.feed.report(post.id, reason);
+    if (context.mounted) showInfo(context, 'Reported. Thank you.');
+  } catch (e) {
+    if (context.mounted) showError(context, e);
+  }
+}
 
 /// A single post row with author, text and engagement actions.
 ///
@@ -108,6 +188,12 @@ class PostTile extends StatelessWidget {
                             fontWeight: FontWeight.w600)),
                   ]),
                 ),
+              IconButton(
+                icon: Icon(Icons.more_horiz,
+                    color: Theme.of(context).colorScheme.outline),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _showPostMenu(context, post),
+              ),
             ],
           ),
           if (post.title != null && post.title!.isNotEmpty) ...[

@@ -125,4 +125,14 @@ class FeedService {
   Future<void> recordView(String postId) async {
     await _client.postJson('/posts/$postId/view');
   }
+
+  /// Reports a post.
+  Future<void> report(String postId, String reason) async {
+    await _client.postJson('/posts/$postId/report', body: {'reason': reason});
+  }
+
+  /// Marks a post as "not interested" to tune recommendations.
+  Future<void> notInterested(String postId) async {
+    await _client.postJson('/posts/$postId/not-interested');
+  }
 }
