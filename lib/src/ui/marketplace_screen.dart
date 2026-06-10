@@ -340,6 +340,7 @@ class ListingDetailScreen extends StatefulWidget {
 class _ListingDetailScreenState extends State<ListingDetailScreen> {
   late Future<Listing> _listing;
   late Future<List<ListingComment>> _comments;
+  bool? _saved; // local override once toggled
 
   @override
   void initState() {
@@ -363,15 +364,22 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _toggleSave(Listing l) async {
+    final wasSaved = _saved ?? l.savedByMe;
+    setState(() => _saved = !wasSaved);
     try {
-      await api.marketplace.save(widget.listingId);
+      wasSaved
+          ? await api.marketplace.unsave(widget.listingId)
+          : await api.marketplace.save(widget.listingId);
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Saved')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(wasSaved ? 'Removed' : 'Saved')));
       }
     } catch (e) {
-      if (mounted) showError(context, e);
+      if (mounted) {
+        setState(() => _saved = wasSaved);
+        showError(context, e);
+      }
     }
   }
 
@@ -450,11 +458,16 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _save,
-                            icon: const Icon(Icons.bookmark_border),
-                            label: const Text('Save'),
-                          ),
+                          child: Builder(builder: (context) {
+                            final saved = _saved ?? l.savedByMe;
+                            return OutlinedButton.icon(
+                              onPressed: () => _toggleSave(l),
+                              icon: Icon(saved
+                                  ? Icons.bookmark
+                                  : Icons.bookmark_border),
+                              label: Text(saved ? 'Saved' : 'Save'),
+                            );
+                          }),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
