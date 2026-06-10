@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'api_keys_screen.dart';
+import 'app.dart';
 import 'common.dart';
 
 /// Account, privacy and notification settings, backed by the auth service.
@@ -47,10 +48,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _signOut() async {
     await api.auth.logout();
-    if (mounted) {
-      // Pop back to the root gate; it re-checks auth and shows login.
-      Navigator.of(context).popUntil((r) => r.isFirst);
-    }
+    if (!mounted) return;
+    // Replace the stack with a fresh gate; it re-checks auth and shows login.
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const RootGate()),
+      (route) => false,
+    );
+  }
+
+  Future<void> _pickTheme() async {
+    final current = themeController.value;
+    final mode = await showModalBottomSheet<ThemeMode>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Appearance',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            for (final m in ThemeMode.values)
+              ListTile(
+                title: Text(switch (m) {
+                  ThemeMode.system => 'System default',
+                  ThemeMode.light => 'Light',
+                  ThemeMode.dark => 'Dark',
+                }),
+                trailing: m == current ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(context, m),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (mode != null) themeController.set(mode);
+  }
+
+  String _themeLabel(ThemeMode m) => switch (m) {
+        ThemeMode.system => 'System',
+        ThemeMode.light => 'Light',
+        ThemeMode.dark => 'Dark',
+      };
+
+  Future<void> _pickAccent() async {
+    final chosen = await showModalBottomSheet<Color>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              for (final a in kAccents)
+                GestureDetector(
+                  onTap: () => Navigator.pop(context, a.color),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: a.color,
+                          shape: BoxShape.circle,
+                          border: a.color.toARGB32() ==
+                                  accentController.value.toARGB32()
+                              ? Border.all(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  width: 3)
+                              : null,
+                        ),
+                        child: a.color.toARGB32() ==
+                                accentController.value.toARGB32()
+                            ? const Icon(Icons.check,
+                                color: Colors.white, size: 20)
+                            : null,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(a.label,
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (chosen != null) accentController.set(chosen);
   }
 
   @override
@@ -70,6 +156,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Change password'),
             trailing: const Icon(Icons.chevron_right),
             onTap: _changePassword,
+          ),
+          const Divider(height: 1),
+          _section('Display'),
+          ListTile(
+            leading: const Icon(Icons.brightness_6_outlined),
+            title: const Text('Appearance'),
+            trailing: Text(_themeLabel(themeController.value)),
+            onTap: () async {
+              await _pickTheme();
+              if (mounted) setState(() {});
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Accent color'),
+            trailing: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
+            onTap: _pickAccent,
           ),
           const Divider(height: 1),
           _section('Privacy'),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'group_events_screen.dart';
 import 'post_tile.dart';
 
 /// Browse the groups the current user can see.
@@ -32,10 +33,31 @@ class _GroupsScreenState extends State<GroupsScreen> {
     return '';
   }
 
+  Future<void> _create() async {
+    final id = await showDialog<String>(
+      context: context,
+      builder: (_) => const _CreateGroupDialog(),
+    );
+    if (id == null || !mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => GroupDetailScreen(groupId: id),
+    ));
+    _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Groups')),
+      appBar: AppBar(
+        title: const Text('Groups'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Create group',
+            onPressed: _create,
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<Group>(
@@ -123,7 +145,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Group')),
+      appBar: AppBar(
+        title: const Text('Group'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.event_outlined),
+            tooltip: 'Events',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => GroupEventsScreen(groupId: widget.groupId),
+            )),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: ListView(
@@ -208,6 +241,94 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CreateGroupDialog extends StatefulWidget {
+  const _CreateGroupDialog();
+
+  @override
+  State<_CreateGroupDialog> createState() => _CreateGroupDialogState();
+}
+
+class _CreateGroupDialogState extends State<_CreateGroupDialog> {
+  final _name = TextEditingController();
+  final _description = TextEditingController();
+  bool _private = false;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_name.text.trim().isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      final g = await api.groups.create(
+        name: _name.text.trim(),
+        description:
+            _description.text.trim().isEmpty ? null : _description.text.trim(),
+        isPrivate: _private,
+      );
+      if (mounted) Navigator.pop(context, g.id);
+    } catch (e) {
+      if (mounted) {
+        showError(context, e);
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create group'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(
+                labelText: 'Name', border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _description,
+            maxLines: 2,
+            decoration: const InputDecoration(
+                labelText: 'Description (optional)',
+                border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 4),
+          StatefulBuilder(
+            builder: (context, setLocal) => SwitchListTile(
+              value: _private,
+              onChanged: (v) => setLocal(() => setState(() => _private = v)),
+              title: const Text('Private group'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: _busy
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Create'),
+        ),
+      ],
     );
   }
 }
