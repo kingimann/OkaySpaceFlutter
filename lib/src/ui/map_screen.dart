@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -34,6 +35,10 @@ class _MapScreenState extends State<MapScreen> {
   List<Listing> _listings = const [];
   List<RoadsideRequest> _roadside = const [];
   List<Map<String, dynamic>> _transit = const [];
+
+  /// Active live-ETA share id, when sharing.
+  String? _etaShareId;
+  String? _etaDestination;
 
   @override
   void initState() {
@@ -111,6 +116,69 @@ class _MapScreenState extends State<MapScreen> {
     _loadAll();
   }
 
+  /// Starts a live ETA share to a searched destination and copies the
+  /// public tracking link.
+  Future<void> _shareEta() async {
+    final result = await showDialog<(String, int)>(
+      context: context,
+      builder: (_) => const _ShareEtaDialog(),
+    );
+    if (result == null) return;
+    final (destQuery, minutes) = result;
+    try {
+      double? dLat, dLng;
+      String destName = destQuery;
+      final places = await api.roadside.geocode(destQuery);
+      if (places.isNotEmpty) {
+        final r = places.first;
+        destName = '${r['name'] ?? r['display_name'] ?? destQuery}';
+        final lat = r['lat'] ?? r['latitude'];
+        final lng = r['lng'] ?? r['lon'] ?? r['longitude'];
+        dLat = lat is num ? lat.toDouble() : double.tryParse('$lat');
+        dLng = lng is num ? lng.toDouble() : double.tryParse('$lng');
+      }
+      final share = await api.roadside.startEta(
+        destinationName: destName,
+        destinationLatitude: dLat,
+        destinationLongitude: dLng,
+        initialLatitude: _center.latitude,
+        initialLongitude: _center.longitude,
+        etaMinutes: minutes,
+        ttlMinutes: minutes + 60,
+      );
+      final shareId = '${share['share_id'] ?? share['id'] ?? ''}';
+      if (!mounted) return;
+      if (shareId.isEmpty) {
+        showInfo(context, 'Could not start the ETA share.');
+        return;
+      }
+      setState(() {
+        _etaShareId = shareId;
+        _etaDestination = destName;
+      });
+      final url = 'https://okayspace.ca/eta/$shareId';
+      Clipboard.setData(ClipboardData(text: url));
+      showInfo(context, 'ETA link copied: $url');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _stopEta() async {
+    final id = _etaShareId;
+    if (id == null) return;
+    try {
+      await api.roadside.stopEta(id);
+    } catch (_) {/* already expired is fine */}
+    if (mounted) {
+      setState(() {
+        _etaShareId = null;
+        _etaDestination = null;
+      });
+      showInfo(context, 'ETA sharing stopped');
+    }
+  }
+
   double? _num(dynamic v) =>
       v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
 
@@ -144,6 +212,13 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(
         title: const Text('Map'),
         actions: [
+          IconButton(
+            icon: Icon(
+                _etaShareId != null ? Icons.share_location : Icons.near_me,
+                color: _etaShareId != null ? scheme.primary : null),
+            tooltip: _etaShareId != null ? 'Sharing ETA…' : 'Share my ETA',
+            onPressed: _etaShareId != null ? _stopEta : _shareEta,
+          ),
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: 'Radius',
@@ -242,6 +317,41 @@ class _MapScreenState extends State<MapScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2)),
             ),
 
+          // Active ETA-share banner.
+          if (_etaShareId != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 64,
+              child: Material(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    children: [
+                      Icon(Icons.share_location,
+                          color: scheme.onPrimaryContainer),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                            'Sharing ETA to ${_etaDestination ?? 'destination'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: scheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                      TextButton(
+                        onPressed: _stopEta,
+                        child: const Text('Stop'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // Count pill.
           Positioned(
             left: 12,
@@ -406,6 +516,77 @@ class _MapScreenState extends State<MapScreen> {
               : null,
         ),
       ),
+    );
+  }
+}
+
+/// Destination + minutes input for starting an ETA share.
+class _ShareEtaDialog extends StatefulWidget {
+  const _ShareEtaDialog();
+
+  @override
+  State<_ShareEtaDialog> createState() => _ShareEtaDialogState();
+}
+
+class _ShareEtaDialogState extends State<_ShareEtaDialog> {
+  final _destination = TextEditingController();
+  int _minutes = 15;
+
+  @override
+  void dispose() {
+    _destination.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Share my ETA'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _destination,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Destination',
+              hintText: 'Where are you headed?',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Text('Arriving in'),
+              const SizedBox(width: 12),
+              DropdownButton<int>(
+                value: _minutes,
+                onChanged: (v) => setState(() => _minutes = v ?? _minutes),
+                items: const [
+                  DropdownMenuItem(value: 5, child: Text('5 min')),
+                  DropdownMenuItem(value: 10, child: Text('10 min')),
+                  DropdownMenuItem(value: 15, child: Text('15 min')),
+                  DropdownMenuItem(value: 30, child: Text('30 min')),
+                  DropdownMenuItem(value: 45, child: Text('45 min')),
+                  DropdownMenuItem(value: 60, child: Text('1 hour')),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () {
+            if (_destination.text.trim().isEmpty) return;
+            Navigator.pop(context, (_destination.text.trim(), _minutes));
+          },
+          child: const Text('Share'),
+        ),
+      ],
     );
   }
 }

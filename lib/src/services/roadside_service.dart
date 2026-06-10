@@ -58,6 +58,48 @@ class RoadsideService {
     return const [];
   }
 
+  // --- Live ETA sharing -----------------------------------------------------
+
+  /// Starts a live ETA share; returns the share payload (with `share_id`).
+  Future<Map<String, dynamic>> startEta({
+    String? name,
+    String? destinationName,
+    double? destinationLongitude,
+    double? destinationLatitude,
+    double? initialLongitude,
+    double? initialLatitude,
+    int? etaMinutes,
+    int? ttlMinutes,
+  }) async =>
+      asMapOrNull(await _client.postJson('/eta', body: {
+        if (name != null) 'name': name,
+        if (destinationName != null) 'destination_name': destinationName,
+        if (destinationLongitude != null)
+          'destination_longitude': destinationLongitude,
+        if (destinationLatitude != null)
+          'destination_latitude': destinationLatitude,
+        if (initialLongitude != null) 'initial_longitude': initialLongitude,
+        if (initialLatitude != null) 'initial_latitude': initialLatitude,
+        if (etaMinutes != null) 'eta_minutes': etaMinutes,
+        if (ttlMinutes != null) 'ttl_minutes': ttlMinutes,
+      })) ??
+      const {};
+
+  /// Updates the live position/ETA on an active share.
+  Future<void> updateEta(String shareId,
+      {double? longitude, double? latitude, int? etaMinutes}) async {
+    await _client.postJson('/eta/$shareId/update', body: {
+      if (longitude != null) 'current_longitude': longitude,
+      if (latitude != null) 'current_latitude': latitude,
+      if (etaMinutes != null) 'eta_minutes': etaMinutes,
+    });
+  }
+
+  /// Ends an ETA share.
+  Future<void> stopEta(String shareId) async {
+    await _client.postJson('/eta/$shareId/stop');
+  }
+
   /// Public transit stops/lines near a location (raw payloads).
   Future<List<Map<String, dynamic>>> transitNearby({
     required double lat,
