@@ -558,6 +558,7 @@ class _MapScreenState extends State<MapScreen> {
             item(Icons.crop_square, 'Measure area', _toggleArea,
                 active: _areaMode),
             const Divider(height: 1),
+            item(Icons.refresh, 'Search this area', _loadAll),
             item(Icons.tune, 'Search radius', _radiusSheet),
             item(Icons.filter_alt_outlined, 'Filters', _filtersSheet),
             item(Icons.near_me_outlined, 'Nearest to centre', _nearestSheet),
@@ -1699,36 +1700,6 @@ class _MapScreenState extends State<MapScreen> {
                       : () => setState(_areaPoints.clear)),
             ),
 
-          // Count pill.
-          Positioned(
-            left: 12,
-            bottom: 12,
-            child: GestureDetector(
-              onTap: _nearestSheet,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: scheme.surface.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(_countLabel(markers.length),
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-              ),
-            ),
-          ),
-
-          // Search-this-area button.
-          Positioned(
-            bottom: 12,
-            right: 12,
-            child: FloatingActionButton.extended(
-              heroTag: 'searchArea',
-              onPressed: _loadAll,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Search this area'),
-            ),
-          ),
         ],
       ),
     );
@@ -1757,17 +1728,6 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
-  }
-
-  /// A short breakdown of what's on the map, by active layer.
-  String _countLabel(int total) {
-    final parts = <String>[];
-    if (_showListings && _listings.isNotEmpty) parts.add('${_listings.length} 🛍');
-    if (_showRoadside && _roadside.isNotEmpty) parts.add('${_roadside.length} 🚗');
-    if (_showTransit && _transit.isNotEmpty) parts.add('${_transit.length} 🚆');
-    if (_showSaved && _saved.isNotEmpty) parts.add('${_saved.length} 🔖');
-    final breakdown = parts.isEmpty ? '$total on map' : parts.join(' · ');
-    return '$breakdown · ${_radiusKm.round()} km';
   }
 
   void _showSavedPlace(Place pl) {
