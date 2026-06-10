@@ -7,6 +7,7 @@ import 'common.dart';
 import 'communities_screen.dart';
 import 'friends_screen.dart';
 import 'groups_screen.dart';
+import 'map_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
@@ -155,6 +156,12 @@ class _AppDrawerState extends State<AppDrawer> {
                     color: const Color(0xFFEC4899),
                     label: 'Reels',
                     onTap: () => _push(const ReelsScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.map_rounded,
+                    color: const Color(0xFF10B981),
+                    label: 'Map',
+                    onTap: () => _push(const MapScreen()),
                   ),
                   _Shortcut(
                     icon: Icons.tag_rounded,

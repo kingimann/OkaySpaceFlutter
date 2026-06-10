@@ -18,6 +18,9 @@ dependencies:
   image_picker: ^1.1.2
   # Inline video playback for post media and reels.
   video_player: ^2.9.2
+  # Interactive map (OpenStreetMap tiles, no API key needed).
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_test:

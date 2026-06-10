@@ -4,6 +4,7 @@ import '../../okayspace_api.dart';
 import 'app_drawer.dart';
 import 'common.dart';
 import 'compose_screen.dart';
+import 'map_screen.dart';
 import 'messages_screen.dart';
 import 'notifications_screen.dart';
 import 'post_tile.dart';
@@ -24,11 +25,28 @@ class _FeedScreenState extends State<FeedScreen> {
   late Future<List<StoryTrayItem>> _stories;
   int _unread = 0;
   int _tab = 0; // 0 = Explore, 1 = Following
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _load();
+    feedScrollSignal.addListener(_onScrollToTop);
+  }
+
+  @override
+  void dispose() {
+    feedScrollSignal.removeListener(_onScrollToTop);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
+    _reload();
   }
 
   void _load() {
@@ -112,6 +130,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     }
                     final posts = snapshot.data ?? const [];
                     return ListView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.only(bottom: 16),
                       itemCount: posts.length + 1,
                       itemBuilder: (context, i) {
@@ -186,6 +205,13 @@ class _FeedScreenState extends State<FeedScreen> {
                       .titleLarge
                       ?.copyWith(fontWeight: FontWeight.bold, fontSize: 22)),
               const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.map_outlined),
+                tooltip: 'Map',
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const MapScreen(),
+                )),
+              ),
               IconButton(
                 icon: const Icon(Icons.search),
                 tooltip: 'Search',

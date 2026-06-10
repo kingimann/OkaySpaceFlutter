@@ -6,6 +6,10 @@ import '../../okayspace_api.dart';
 /// A single API instance shared across the demo app.
 final OkaySpaceApi api = OkaySpaceApi();
 
+/// Bumped when the user taps the Feed tab while already on it — the feed
+/// listens and scrolls to top + refreshes.
+final ValueNotifier<int> feedScrollSignal = ValueNotifier<int>(0);
+
 /// The signed-in user's id, cached after sign-in so widgets can tell which
 /// content is the current user's (e.g. own-post actions). Null until loaded.
 String? currentUserId;

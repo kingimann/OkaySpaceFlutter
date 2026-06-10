@@ -49,7 +49,11 @@ class _HomeShellState extends State<HomeShell> {
       bottomNavigationBar: _FloatingNav(
         index: _index,
         items: _items,
-        onTap: (i) => setState(() => _index = i),
+        onTap: (i) {
+          // Re-tapping the Feed tab scrolls it to top + refreshes.
+          if (i == 0 && _index == 0) feedScrollSignal.value++;
+          setState(() => _index = i);
+        },
       ),
     );
   }
