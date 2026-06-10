@@ -21,15 +21,45 @@ class MessagesScreen extends StatefulWidget {
   State<MessagesScreen> createState() => _MessagesScreenState();
 }
 
+enum _ConvFilter { all, unread, groups, people }
+
+enum _ConvSort { recent, unread, name }
+
 class _MessagesScreenState extends State<MessagesScreen> {
   late Future<List<ConversationView>> _conversations;
   final _search = TextEditingController();
   String _query = '';
+  final _storage = const FlutterSecureStorage();
+
+  // Local conversation organisation (persisted, no server support needed).
+  Set<String> _pinned = {};
+  Set<String> _archived = {};
+  Set<String> _markedUnread = {};
+  _ConvFilter _filter = _ConvFilter.all;
+  _ConvSort _sort = _ConvSort.recent;
+  bool _showArchived = false;
+  int _unreadTotal = 0;
+
+  static const _pinnedKey = 'okayspace.convos.pinned';
+  static const _archivedKey = 'okayspace.convos.archived';
+  static const _unreadKey = 'okayspace.convos.unread';
+  static const _sortKey = 'okayspace.convos.sort';
 
   @override
   void initState() {
     super.initState();
-    _conversations = api.messaging.conversations();
+    _conversations = _load();
+    _loadConvPrefs();
+  }
+
+  Future<List<ConversationView>> _load() async {
+    final items = await api.messaging.conversations();
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _unreadTotal = _totalUnread(items));
+      });
+    }
+    return items;
   }
 
   @override
@@ -38,8 +68,58 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.dispose();
   }
 
+  Future<void> _loadConvPrefs() async {
+    Set<String> parse(String? s) =>
+        (s ?? '').split('\n').where((e) => e.isNotEmpty).toSet();
+    try {
+      final p = await _storage.read(key: _pinnedKey);
+      final a = await _storage.read(key: _archivedKey);
+      final u = await _storage.read(key: _unreadKey);
+      final s = await _storage.read(key: _sortKey);
+      if (!mounted) return;
+      setState(() {
+        _pinned = parse(p);
+        _archived = parse(a);
+        _markedUnread = parse(u);
+        _sort = _ConvSort.values.firstWhere((e) => e.name == s,
+            orElse: () => _ConvSort.recent);
+      });
+    } catch (_) {/* ignore */}
+  }
+
+  void _persist(String key, Set<String> set) =>
+      _storage.write(key: key, value: set.join('\n')).ignore();
+
+  void _togglePin(ConversationView c) {
+    setState(() {
+      if (!_pinned.remove(c.id)) _pinned.add(c.id);
+    });
+    _persist(_pinnedKey, _pinned);
+  }
+
+  void _toggleArchive(ConversationView c) {
+    setState(() {
+      if (!_archived.remove(c.id)) _archived.add(c.id);
+    });
+    _persist(_archivedKey, _archived);
+  }
+
+  void _markUnread(ConversationView c) {
+    setState(() => _markedUnread.add(c.id));
+    _persist(_unreadKey, _markedUnread);
+  }
+
+  void _clearUnreadMark(String id) {
+    if (_markedUnread.remove(id)) _persist(_unreadKey, _markedUnread);
+  }
+
+  void _setSort(_ConvSort s) {
+    setState(() => _sort = s);
+    _storage.write(key: _sortKey, value: s.name).ignore();
+  }
+
   Future<void> _reload() async {
-    setState(() => _conversations = api.messaging.conversations());
+    setState(() => _conversations = _load());
     await _conversations;
   }
 
@@ -62,6 +142,68 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return 'Conversation';
   }
 
+  bool _isUnread(ConversationView c) =>
+      c.unreadCount > 0 || _markedUnread.contains(c.id);
+
+  int _totalUnread(List<ConversationView> items) => items
+      .where((c) => !_archived.contains(c.id) && _isUnread(c))
+      .length;
+
+  /// Applies search, archive visibility, filter chip and sort order.
+  List<ConversationView> _organise(List<ConversationView> items) {
+    var list = items.where((c) {
+      if (_showArchived != _archived.contains(c.id)) return false;
+      if (_query.isNotEmpty) {
+        final t = _title(c).toLowerCase();
+        final p = (c.lastMessage?.text ?? '').toLowerCase();
+        if (!t.contains(_query) && !p.contains(_query)) return false;
+      }
+      switch (_filter) {
+        case _ConvFilter.unread:
+          return _isUnread(c);
+        case _ConvFilter.groups:
+          return c.isGroup;
+        case _ConvFilter.people:
+          return !c.isGroup;
+        case _ConvFilter.all:
+          return true;
+      }
+    }).toList();
+    int byRecent(ConversationView a, ConversationView b) {
+      final ta = a.lastMessageAt;
+      final tb = b.lastMessageAt;
+      if (ta == null && tb == null) return 0;
+      if (ta == null) return 1;
+      if (tb == null) return -1;
+      return tb.compareTo(ta);
+    }
+
+    int byCriteria(ConversationView a, ConversationView b) {
+      switch (_sort) {
+        case _ConvSort.unread:
+          final ua = _isUnread(a) ? 0 : 1;
+          final ub = _isUnread(b) ? 0 : 1;
+          if (ua != ub) return ua - ub;
+          return byRecent(a, b);
+        case _ConvSort.name:
+          return _title(a).toLowerCase().compareTo(_title(b).toLowerCase());
+        case _ConvSort.recent:
+          return byRecent(a, b);
+      }
+    }
+
+    list.sort((a, b) {
+      // Pinned conversations always float to the top (except in archived view).
+      if (!_showArchived) {
+        final pa = _pinned.contains(a.id) ? 0 : 1;
+        final pb = _pinned.contains(b.id) ? 0 : 1;
+        if (pa != pb) return pa - pb;
+      }
+      return byCriteria(a, b);
+    });
+    return list;
+  }
+
   /// Long-press a conversation: mark read or delete it.
   void _convActions(ConversationView c) {
     final scheme = Theme.of(context).colorScheme;
@@ -73,14 +215,43 @@ class _MessagesScreenState extends State<MessagesScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: Icon(
+                  _pinned.contains(c.id) ? Icons.push_pin : Icons.push_pin_outlined),
+              title: Text(_pinned.contains(c.id) ? 'Unpin' : 'Pin to top'),
+              onTap: () {
+                Navigator.pop(context);
+                _togglePin(c);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.mark_chat_read_outlined),
               title: const Text('Mark as read'),
               onTap: () async {
                 Navigator.pop(context);
+                _clearUnreadMark(c.id);
                 try {
                   await api.messaging.markRead(c.id);
                 } catch (_) {}
                 if (mounted) _reload();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.mark_chat_unread_outlined),
+              title: const Text('Mark as unread'),
+              onTap: () {
+                Navigator.pop(context);
+                _markUnread(c);
+              },
+            ),
+            ListTile(
+              leading: Icon(_archived.contains(c.id)
+                  ? Icons.unarchive_outlined
+                  : Icons.archive_outlined),
+              title: Text(
+                  _archived.contains(c.id) ? 'Unarchive' : 'Archive'),
+              onTap: () {
+                Navigator.pop(context);
+                _toggleArchive(c);
               },
             ),
             ListTile(
@@ -110,8 +281,26 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: OkayAppBar(
-        title: const Text('Messages'),
+        title: Text(_showArchived
+            ? 'Archived'
+            : (_unreadTotal > 0 ? 'Messages ($_unreadTotal)' : 'Messages')),
         actions: [
+          IconButton(
+            icon: Icon(_showArchived ? Icons.unarchive_outlined : Icons.archive_outlined),
+            tooltip: _showArchived ? 'Back to inbox' : 'Archived',
+            onPressed: () => setState(() => _showArchived = !_showArchived),
+          ),
+          PopupMenuButton<_ConvSort>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort',
+            initialValue: _sort,
+            onSelected: _setSort,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: _ConvSort.recent, child: Text('Most recent')),
+              PopupMenuItem(value: _ConvSort.unread, child: Text('Unread first')),
+              PopupMenuItem(value: _ConvSort.name, child: Text('Name (A–Z)')),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.group_add_outlined),
             tooltip: 'New group',
@@ -149,6 +338,29 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 ),
               ),
             ),
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: [
+                  for (final f in _ConvFilter.values)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: Text(switch (f) {
+                          _ConvFilter.all => 'All',
+                          _ConvFilter.unread => 'Unread',
+                          _ConvFilter.groups => 'Groups',
+                          _ConvFilter.people => 'People',
+                        }),
+                        selected: _filter == f,
+                        onSelected: (_) => setState(() => _filter = f),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _reload,
@@ -158,17 +370,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   emptyMessage: 'No conversations yet.',
                   emptyIcon: Icons.forum_outlined,
                   builder: (context, items) {
-                    final filtered = _query.isEmpty
-                        ? items
-                        : items.where((c) {
-                            final t = _title(c).toLowerCase();
-                            final p = (c.lastMessage?.text ?? '').toLowerCase();
-                            return t.contains(_query) || p.contains(_query);
-                          }).toList();
+                    final filtered = _organise(items);
                     if (filtered.isEmpty) {
-                      return const CenteredMessage(
-                          message: 'No matching conversations.',
-                          icon: Icons.search_off);
+                      return CenteredMessage(
+                          message: _showArchived
+                              ? 'No archived conversations.'
+                              : 'No matching conversations.',
+                          icon: _showArchived
+                              ? Icons.archive_outlined
+                              : Icons.search_off);
                     }
                     return ListView.separated(
                       padding: const EdgeInsets.only(bottom: 88),
@@ -177,17 +387,68 @@ class _MessagesScreenState extends State<MessagesScreen> {
                       itemBuilder: (context, i) {
                         final c = filtered[i];
                         final title = _title(c);
-                        return _ConversationTile(
-                          conversation: c,
-                          title: title,
-                          onLongPress: () => _convActions(c),
-                          onTap: () async {
-                            await Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) =>
-                                  ChatScreen(conversation: c, title: title),
-                            ));
-                            if (mounted) _reload();
+                        return Dismissible(
+                          key: ValueKey('conv-${c.id}'),
+                          background: Container(
+                            color: Theme.of(context).colorScheme.secondaryContainer,
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Icon(_archived.contains(c.id)
+                                ? Icons.unarchive
+                                : Icons.archive),
+                          ),
+                          secondaryBackground: Container(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Icon(Icons.delete,
+                                color: Theme.of(context).colorScheme.error),
+                          ),
+                          confirmDismiss: (dir) async {
+                            if (dir == DismissDirection.startToEnd) {
+                              _toggleArchive(c);
+                              return false;
+                            }
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (d) => AlertDialog(
+                                title: const Text('Delete conversation?'),
+                                content: Text('Delete "$title"?'),
+                                actions: [
+                                  TextButton(
+                                      onPressed: () => Navigator.pop(d, false),
+                                      child: const Text('Cancel')),
+                                  TextButton(
+                                      onPressed: () => Navigator.pop(d, true),
+                                      child: const Text('Delete')),
+                                ],
+                              ),
+                            );
+                            if (ok == true) {
+                              try {
+                                await api.messaging.delete(c.id);
+                                if (mounted) _reload();
+                              } catch (e) {
+                                if (context.mounted) showError(context, e);
+                              }
+                            }
+                            return false;
                           },
+                          child: _ConversationTile(
+                            conversation: c,
+                            title: title,
+                            pinned: _pinned.contains(c.id),
+                            forceUnread: _markedUnread.contains(c.id),
+                            onLongPress: () => _convActions(c),
+                            onTap: () async {
+                              _clearUnreadMark(c.id);
+                              await Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) =>
+                                    ChatScreen(conversation: c, title: title),
+                              ));
+                              if (mounted) _reload();
+                            },
+                          ),
                         );
                       },
                     );
@@ -210,12 +471,20 @@ class _ConversationTile extends StatelessWidget {
     required this.title,
     required this.onTap,
     this.onLongPress,
+    this.pinned = false,
+    this.forceUnread = false,
   });
 
   final ConversationView conversation;
   final String title;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+
+  /// Locally pinned to the top of the list.
+  final bool pinned;
+
+  /// Locally marked unread even when the server unread count is zero.
+  final bool forceUnread;
 
   /// A short preview of the last message, with an icon label for non-text types.
   String _preview() {
@@ -237,7 +506,7 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final unread = conversation.unreadCount > 0;
+    final unread = conversation.unreadCount > 0 || forceUnread;
     final online = conversation.otherUser?.online ?? false;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -265,10 +534,21 @@ class _ConversationTile extends StatelessWidget {
             ),
         ],
       ),
-      title: Text(title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600)),
+      title: Row(
+        children: [
+          if (pinned)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Icon(Icons.push_pin, size: 14, color: scheme.outline),
+            ),
+          Expanded(
+            child: Text(title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
       subtitle: Text(
         _preview(),
         maxLines: 1,
@@ -289,7 +569,7 @@ class _ConversationTile extends StatelessWidget {
                     color: unread ? scheme.primary : scheme.outline,
                     fontWeight: unread ? FontWeight.bold : FontWeight.normal)),
           const SizedBox(height: 4),
-          if (unread)
+          if (conversation.unreadCount > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
@@ -301,6 +581,13 @@ class _ConversationTile extends StatelessWidget {
                       color: Colors.white,
                       fontSize: 11,
                       fontWeight: FontWeight.bold)),
+            )
+          else if (unread)
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                  color: scheme.primary, shape: BoxShape.circle),
             )
           else
             const SizedBox(height: 18),
@@ -360,6 +647,14 @@ class _ChatScreenState extends State<ChatScreen> {
   double _textScale = 1.0;
   // Saved quick-reply phrases (shared across conversations, local).
   List<String> _quickReplies = const [];
+  // Show a timestamp under every message (per conversation, local).
+  bool _showTimestamps = false;
+  // Accent colour for your own bubbles (per conversation, local).
+  Color? _bubbleColor;
+  // Send on Enter vs. newline (shared, local).
+  bool _sendOnEnter = true;
+  // Live character count for the composer.
+  int _charCount = 0;
 
   String get _convId => widget.conversation.id;
   String get _draftKey => 'okayspace.chat_draft.$_convId';
@@ -367,7 +662,10 @@ class _ChatScreenState extends State<ChatScreen> {
   String get _bgKey => 'okayspace.chat_bg.$_convId';
   String get _muteKey => 'okayspace.chat_mute.$_convId';
   String get _scaleKey => 'okayspace.chat_scale.$_convId';
+  String get _tsKey => 'okayspace.chat_ts.$_convId';
+  String get _bubbleKey => 'okayspace.chat_bubble.$_convId';
   static const _quickKey = 'okayspace.chat_quickreplies';
+  static const _enterKey = 'okayspace.chat_sendonenter';
 
   @override
   void initState() {
@@ -451,6 +749,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final muted = await _storage.read(key: _muteKey);
       final scale = await _storage.read(key: _scaleKey);
       final quick = await _storage.read(key: _quickKey);
+      final ts = await _storage.read(key: _tsKey);
+      final bubble = await _storage.read(key: _bubbleKey);
+      final enter = await _storage.read(key: _enterKey);
       if (!mounted) return;
       setState(() {
         final argb = int.tryParse(bg ?? '');
@@ -460,6 +761,10 @@ class _ChatScreenState extends State<ChatScreen> {
         if (quick != null && quick.isNotEmpty) {
           _quickReplies = quick.split('\n').where((s) => s.isNotEmpty).toList();
         }
+        _showTimestamps = ts == '1';
+        final bargb = int.tryParse(bubble ?? '');
+        _bubbleColor = (bargb != null && bargb != 0) ? Color(bargb) : null;
+        _sendOnEnter = enter != '0';
       });
     } catch (_) {/* ignore */}
   }
@@ -488,6 +793,183 @@ class _ChatScreenState extends State<ChatScreen> {
   void _saveQuickReplies(List<String> list) {
     setState(() => _quickReplies = list);
     _storage.write(key: _quickKey, value: list.join('\n')).ignore();
+  }
+
+  void _toggleTimestamps() {
+    setState(() => _showTimestamps = !_showTimestamps);
+    _storage.write(key: _tsKey, value: _showTimestamps ? '1' : '0').ignore();
+  }
+
+  void _toggleSendOnEnter() {
+    setState(() => _sendOnEnter = !_sendOnEnter);
+    _storage.write(key: _enterKey, value: _sendOnEnter ? '1' : '0').ignore();
+    showInfo(context,
+        _sendOnEnter ? 'Enter now sends' : 'Enter now adds a new line');
+  }
+
+  void _setBubbleColor(Color? c) {
+    setState(() => _bubbleColor = c);
+    if (c == null) {
+      _storage.delete(key: _bubbleKey).ignore();
+    } else {
+      _storage.write(key: _bubbleKey, value: '${c.toARGB32()}').ignore();
+    }
+  }
+
+  /// Own-bubble accent colour picker.
+  void _chooseBubbleColor() {
+    const swatches = <Color?>[
+      null,
+      Color(0xFF2563EB),
+      Color(0xFF059669),
+      Color(0xFFDC2626),
+      Color(0xFF7C3AED),
+      Color(0xFFDB2777),
+      Color(0xFFEA580C),
+      Color(0xFF0891B2),
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Bubble colour',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final c in swatches)
+                    GestureDetector(
+                      onTap: () {
+                        _setBubbleColor(c);
+                        Navigator.pop(context);
+                      },
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: c ?? Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: (_bubbleColor == c)
+                                ? Theme.of(context).colorScheme.onSurface
+                                : Theme.of(context).dividerColor,
+                            width: (_bubbleColor == c) ? 3 : 1,
+                          ),
+                        ),
+                        child: c == null
+                            ? const Icon(Icons.refresh,
+                                size: 20, color: Colors.white)
+                            : null,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Shows a grid of every photo shared in this conversation.
+  void _sharedMedia() {
+    ImageProvider? providerFor(Message m) {
+      final media = m.media.first;
+      if (media.url != null && media.url!.isNotEmpty) {
+        return NetworkImage(media.url!);
+      }
+      if (media.base64 != null && media.base64!.isNotEmpty) {
+        return MemoryImage(base64Decode(media.base64!));
+      }
+      return null;
+    }
+
+    final photos = _items
+        .where((m) => !m.deleted && m.media.isNotEmpty && providerFor(m) != null)
+        .toList();
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => Scaffold(
+        appBar: const OkayAppBar(title: Text('Shared media')),
+        body: photos.isEmpty
+            ? const CenteredMessage(
+                message: 'No photos shared yet.',
+                icon: Icons.photo_library_outlined)
+            : GridView.builder(
+                padding: const EdgeInsets.all(2),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
+                itemCount: photos.length,
+                itemBuilder: (c, i) {
+                  final provider = providerFor(photos[i])!;
+                  return GestureDetector(
+                    onTap: () => Navigator.of(c).push(MaterialPageRoute(
+                        fullscreenDialog: true,
+                        builder: (_) => _ImageViewer(provider: provider))),
+                    child: Image(
+                        image: provider,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            const ColoredBox(color: Colors.black12)),
+                  );
+                },
+              ),
+      ),
+    ));
+  }
+
+  /// A small statistics sheet for the conversation.
+  void _chatInfo() {
+    final visible = _items.where((m) => !m.deleted).toList();
+    final mine = visible.where(_isMine).length;
+    final media =
+        visible.where((m) => m.type == 'media' || m.media.isNotEmpty).length;
+    DateTime? first;
+    for (final m in visible) {
+      if (first == null || m.createdAt.isBefore(first)) first = m.createdAt;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Chat info',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: const Text('Messages loaded'),
+              trailing: Text('${visible.length}'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.send_outlined),
+              title: const Text('Sent by you'),
+              trailing: Text('$mine'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_outlined),
+              title: const Text('Photos'),
+              trailing: Text('$media'),
+            ),
+            if (first != null)
+              ListTile(
+                leading: const Icon(Icons.schedule),
+                title: const Text('Earliest loaded'),
+                trailing: Text(first.toLocal().toString().split(' ').first),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Wallpaper tint picker.
@@ -901,15 +1383,65 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Broadcasts typing presence to the other participant(s), debounced; sends
   /// 'idle' after a short pause.
-  void _onTyping(String _) {
+  void _onTyping(String v) {
     if (!_typingSent) {
       _typingSent = true;
       api.messaging.setPresence(_convId, 'typing').ignore();
     }
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 3), _stopTyping);
+    if ((v.isEmpty) != (_charCount == 0) || v.length != _charCount) {
+      setState(() => _charCount = v.length);
+    }
     _saveDraft();
     _updateMentions();
+  }
+
+  /// Inserts [emoji] at the composer's caret.
+  void _insertEmoji(String emoji) {
+    final sel = _input.selection;
+    final text = _input.text;
+    final start = sel.start < 0 ? text.length : sel.start;
+    final end = sel.end < 0 ? text.length : sel.end;
+    final next = text.replaceRange(start, end, emoji);
+    setState(() {
+      _input.text = next;
+      _input.selection =
+          TextSelection.collapsed(offset: start + emoji.length);
+      _charCount = next.length;
+    });
+  }
+
+  void _emojiPicker() {
+    const emojis = [
+      '😀', '😂', '🙂', '😍', '😘', '😎', '🤔', '😢', '😭', '😡',
+      '👍', '👎', '👏', '🙏', '💪', '🔥', '🎉', '❤️', '💔', '⭐',
+      '✅', '❌', '💯', '👀', '🙌', '🤝', '😅', '😴', '🥳', '😇',
+      '🤗', '😉', '😋', '🤩', '😜', '🤯', '😱', '🥺', '😤', '🫶',
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: GridView.count(
+          shrinkWrap: true,
+          crossAxisCount: 8,
+          padding: const EdgeInsets.all(12),
+          children: [
+            for (final e in emojis)
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  Navigator.pop(context);
+                  _insertEmoji(e);
+                },
+                child: Center(
+                    child: Text(e, style: const TextStyle(fontSize: 26))),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _stopTyping() {
@@ -1062,6 +1594,8 @@ class _ChatScreenState extends State<ChatScreen> {
             mine: mine,
             highlight: _highlightId == msg.id,
             selected: selected,
+            bubbleColor: _bubbleColor,
+            showTimestamp: _showTimestamps,
             starred: _starred.contains(msg.id),
             expanded: _expanded.contains(msg.id),
             onToggleExpand: () => setState(() {
@@ -1773,6 +2307,34 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.vertical_align_top),
+              title: const Text('Jump to oldest'),
+              onTap: () {
+                Navigator.pop(context);
+                if (_scroll.hasClients) {
+                  _scroll.animateTo(_scroll.position.maxScrollExtent,
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOut);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Shared media'),
+              onTap: () {
+                Navigator.pop(context);
+                _sharedMedia();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Chat info'),
+              onTap: () {
+                Navigator.pop(context);
+                _chatInfo();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.wallpaper_outlined),
               title: const Text('Chat wallpaper'),
               onTap: () {
@@ -1781,11 +2343,37 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.bubble_chart_outlined),
+              title: const Text('Bubble colour'),
+              onTap: () {
+                Navigator.pop(context);
+                _chooseBubbleColor();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.format_size),
               title: const Text('Text size'),
               onTap: () {
                 Navigator.pop(context);
                 _chooseTextSize();
+              },
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.schedule_outlined),
+              title: const Text('Show timestamps'),
+              value: _showTimestamps,
+              onChanged: (_) {
+                Navigator.pop(context);
+                _toggleTimestamps();
+              },
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.keyboard_return),
+              title: const Text('Send on Enter'),
+              value: _sendOnEnter,
+              onChanged: (_) {
+                Navigator.pop(context);
+                _toggleSendOnEnter();
               },
             ),
             ListTile(
@@ -2092,18 +2680,55 @@ class _ChatScreenState extends State<ChatScreen> {
                     tooltip: 'Attach',
                     onPressed: _sending ? null : _attachMenu,
                   ),
+                  IconButton(
+                    icon: const Icon(Icons.emoji_emotions_outlined),
+                    tooltip: 'Emoji',
+                    onPressed: _sending ? null : _emojiPicker,
+                  ),
                   Expanded(
                     child: TextField(
                       controller: _input,
                       minLines: 1,
                       maxLines: 4,
-                      textInputAction: TextInputAction.send,
+                      keyboardType: _sendOnEnter
+                          ? TextInputType.text
+                          : TextInputType.multiline,
+                      textInputAction: _sendOnEnter
+                          ? TextInputAction.send
+                          : TextInputAction.newline,
                       onChanged: _onTyping,
-                      onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(
+                      onSubmitted: _sendOnEnter ? (_) => _send() : null,
+                      decoration: InputDecoration(
                         hintText: 'Message',
-                        border: OutlineInputBorder(),
+                        border: const OutlineInputBorder(),
                         isDense: true,
+                        counterText: '',
+                        suffixIcon: _charCount == 0
+                            ? null
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_charCount > 200)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(right: 4),
+                                      child: Text('$_charCount',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .outline)),
+                                    ),
+                                  IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    tooltip: 'Clear',
+                                    onPressed: () => setState(() {
+                                      _input.clear();
+                                      _charCount = 0;
+                                    }),
+                                  ),
+                                ],
+                              ),
                       ),
                     ),
                   ),
@@ -2128,6 +2753,8 @@ class _MessageBubble extends StatelessWidget {
       this.mine = false,
       this.highlight = false,
       this.selected = false,
+      this.bubbleColor,
+      this.showTimestamp = false,
       this.starred = false,
       this.expanded = false,
       this.onToggleExpand,
@@ -2148,6 +2775,12 @@ class _MessageBubble extends StatelessWidget {
 
   /// True when selected in multi-select mode.
   final bool selected;
+
+  /// Accent colour for own bubbles (null = theme default).
+  final Color? bubbleColor;
+
+  /// When true, shows the exact time under every message.
+  final bool showTimestamp;
 
   /// True when locally starred.
   final bool starred;
@@ -2173,6 +2806,15 @@ class _MessageBubble extends StatelessWidget {
 
   /// 'Sent' / 'Delivered' / 'Seen' for my last message (null to hide).
   final String? receipt;
+
+  /// Formats a message time as "h:mm AM/PM" for the always-on timestamp mode.
+  String _exactTime(DateTime dt) {
+    final l = dt.toLocal();
+    final h = l.hour % 12 == 0 ? 12 : l.hour % 12;
+    final m = l.minute.toString().padLeft(2, '0');
+    final ap = l.hour < 12 ? 'AM' : 'PM';
+    return '$h:$m $ap';
+  }
 
   /// Aggregates raw reaction payloads into "emoji×count" chips.
   List<String> _reactionChips() {
@@ -2297,7 +2939,8 @@ class _MessageBubble extends StatelessWidget {
     final bg = emojiOnly
         ? Colors.transparent
         : mine
-            ? HSLColor.fromColor(scheme.primary).withLightness(0.22).toColor()
+            ? (bubbleColor ??
+                HSLColor.fromColor(scheme.primary).withLightness(0.22).toColor())
             : scheme.surfaceContainerHighest;
     final fg = mine ? OkayColors.textPrimary : scheme.onSurface;
     const radius = Radius.circular(18);
@@ -2460,7 +3103,10 @@ class _MessageBubble extends StatelessWidget {
                                   fontSize: 10,
                                   color: fg.withValues(alpha: 0.7))),
                         ),
-                      Text(shortAgo(message.createdAt),
+                      Text(
+                          showTimestamp
+                              ? _exactTime(message.createdAt)
+                              : shortAgo(message.createdAt),
                           style: Theme.of(context)
                               .textTheme
                               .labelSmall
