@@ -113,27 +113,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _quote() async {
     final controller = TextEditingController();
-    final text = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Quote post'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 3,
-          decoration: const InputDecoration(
-              hintText: 'Add a comment', border: OutlineInputBorder()),
+    final String? text;
+    try {
+      text = await showDialog<String>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Quote post'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 3,
+            decoration: const InputDecoration(
+                hintText: 'Add a comment', border: OutlineInputBorder()),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, controller.text),
+                child: const Text('Post')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              child: const Text('Post')),
-        ],
-      ),
-    );
+      );
+    } finally {
+      controller.dispose();
+    }
     if (text == null || text.trim().isEmpty) return;
     try {
       await api.feed.createPost(PostCreate(text: text.trim(), quoteOf: _post.id));

@@ -222,11 +222,12 @@ class _CommunityCardState extends State<_CommunityCard> {
       was ? await api.communities.leave(c.name) : await api.communities.join(c.name);
       widget.onChanged();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _member = was;
         _members += was ? 1 : -1;
       });
-      if (mounted) showError(context, e);
+      showError(context, e);
     }
   }
 
@@ -238,8 +239,9 @@ class _CommunityCardState extends State<_CommunityCard> {
           ? await api.communities.unfavorite(c.name)
           : await api.communities.favorite(c.name);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _favorite = was);
-      if (mounted) showError(context, e);
+      showError(context, e);
     }
   }
 

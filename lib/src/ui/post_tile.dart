@@ -150,29 +150,35 @@ Future<void> _reactToPost(BuildContext context, Post post) async {
 
 Future<void> _reportPost(BuildContext context, Post post) async {
   final controller = TextEditingController();
-  final reason = await showDialog<String>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('Report post'),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: const InputDecoration(
-            hintText: 'Reason', border: OutlineInputBorder()),
+  final String? reason;
+  try {
+    reason = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Report post'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+              hintText: 'Reason', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(
+                  context,
+                  controller.text.trim().isEmpty
+                      ? 'inappropriate'
+                      : controller.text.trim()),
+              child: const Text('Report')),
+        ],
       ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
-        FilledButton(
-            onPressed: () => Navigator.pop(
-                context, controller.text.trim().isEmpty
-                    ? 'inappropriate'
-                    : controller.text.trim()),
-            child: const Text('Report')),
-      ],
-    ),
-  );
+    );
+  } finally {
+    controller.dispose();
+  }
   if (reason == null || !context.mounted) return;
   try {
     await api.feed.report(post.id, reason);
@@ -256,8 +262,9 @@ class _PostTileState extends State<PostTile> {
     try {
       await apiCall();
     } catch (e) {
+      if (!mounted) return;
       setState(_sync); // revert to the server-known state
-      if (mounted) showError(context, e);
+      showError(context, e);
     }
   }
 

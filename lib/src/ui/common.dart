@@ -486,27 +486,33 @@ Future<String?> promptText(BuildContext context,
     String action = 'Post',
     String? initial}) async {
   final controller = TextEditingController(text: initial);
-  final result = await showDialog<String>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLines: 4,
-        decoration: InputDecoration(hintText: hint, border: const OutlineInputBorder()),
+  try {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          decoration:
+              InputDecoration(hintText: hint, border: const OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text),
+              child: Text(action)),
+        ],
       ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: Text(action)),
-      ],
-    ),
-  );
-  final text = result?.trim();
-  return (text == null || text.isEmpty) ? null : text;
+    );
+    final text = result?.trim();
+    return (text == null || text.isEmpty) ? null : text;
+  } finally {
+    controller.dispose();
+  }
 }
 
 /// Compact count formatter: 1200 → "1.2k", 3_400_000 → "3.4M".

@@ -344,47 +344,47 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     final name = TextEditingController(text: g.name);
     final desc = TextEditingController(text: g.description ?? '');
     bool private = g.isPrivate;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Edit group'),
-        content: StatefulBuilder(
-          builder: (context, setLocal) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: name,
-                decoration: const InputDecoration(
-                    labelText: 'Name', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: desc,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                    labelText: 'Description', border: OutlineInputBorder()),
-              ),
-              SwitchListTile(
-                value: private,
-                onChanged: (v) => setLocal(() => private = v),
-                title: const Text('Private group'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Save')),
-        ],
-      ),
-    );
-    if (ok != true) return;
     try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Edit group'),
+          content: StatefulBuilder(
+            builder: (context, setLocal) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(
+                      labelText: 'Name', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: desc,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                      labelText: 'Description', border: OutlineInputBorder()),
+                ),
+                SwitchListTile(
+                  value: private,
+                  onChanged: (v) => setLocal(() => private = v),
+                  title: const Text('Private group'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Save')),
+          ],
+        ),
+      );
+      if (ok != true) return;
       await api.groups.update(g.id, {
         'name': name.text.trim(),
         'description': desc.text.trim(),
@@ -394,6 +394,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       _reload();
     } catch (e) {
       if (mounted) showError(context, e);
+    } finally {
+      name.dispose();
+      desc.dispose();
     }
   }
 
