@@ -5,8 +5,33 @@ import 'home_shell.dart';
 import 'register_screen.dart';
 
 /// Root widget for the OkaySpace demo app.
-class OkaySpaceApp extends StatelessWidget {
+class OkaySpaceApp extends StatefulWidget {
   const OkaySpaceApp({super.key});
+
+  @override
+  State<OkaySpaceApp> createState() => _OkaySpaceAppState();
+}
+
+class _OkaySpaceAppState extends State<OkaySpaceApp> {
+  final _navKey = GlobalKey<NavigatorState>();
+  bool _resetting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // When the server rejects our credential, drop back to the gate (login).
+    api.client.onUnauthorized = () {
+      if (_resetting) return;
+      _resetting = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _resetting = false;
+        _navKey.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const RootGate()),
+          (route) => false,
+        );
+      });
+    };
+  }
 
   /// The okayspace.ca dark color scheme, mapped role-for-role.
   static const ColorScheme _darkScheme = ColorScheme(
@@ -182,6 +207,7 @@ class OkaySpaceApp extends StatelessWidget {
         builder: (context, accent, _) => MaterialApp(
           title: 'OkaySpace',
           debugShowCheckedModeBanner: false,
+          navigatorKey: _navKey,
           theme: _theme(Brightness.light, accent),
           darkTheme: _theme(Brightness.dark, accent),
           themeMode: mode,

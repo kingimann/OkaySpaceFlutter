@@ -22,28 +22,40 @@ class SecureTokenStore implements TokenStore {
   final FlutterSecureStorage _storage;
   final String key;
 
-  // Secure storage backends can throw on some platforms (notably web, where
-  // it depends on WebCrypto / a secure context). A storage failure must never
-  // crash app startup, so reads degrade to "no token" and writes are best
-  // effort.
+  // In-memory copy of the token for the current session. Secure storage
+  // backends can throw or be flaky on some platforms (notably web, where it
+  // depends on WebCrypto / a secure context). Caching here means the session
+  // stays authenticated even if the persistent read later fails — which also
+  // avoids a flaky read triggering a spurious 401 -> logout loop.
+  String? _cached;
+  bool _loaded = false;
+
   @override
   Future<String?> read() async {
+    if (_cached != null) return _cached;
+    if (_loaded) return _cached;
     try {
-      return await _storage.read(key: key);
+      _cached = await _storage.read(key: key);
     } catch (_) {
-      return null;
+      _cached = null;
     }
+    _loaded = true;
+    return _cached;
   }
 
   @override
   Future<void> write(String token) async {
+    _cached = token; // available immediately, regardless of persistence
+    _loaded = true;
     try {
       await _storage.write(key: key, value: token);
-    } catch (_) {/* best effort */}
+    } catch (_) {/* best effort persistence */}
   }
 
   @override
   Future<void> clear() async {
+    _cached = null;
+    _loaded = true;
     try {
       await _storage.delete(key: key);
     } catch (_) {/* best effort */}

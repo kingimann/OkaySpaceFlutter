@@ -36,6 +36,12 @@ class ApiClient {
           handler.next(options);
         },
         onError: (e, handler) {
+          // An expired/invalid credential: drop it and notify the app so it
+          // can return to the login screen instead of failing every request.
+          if (e.response?.statusCode == 401) {
+            this.tokenStore.clear();
+            onUnauthorized?.call();
+          }
           // Surface a normalized error to every caller.
           handler.reject(
             DioException(
@@ -53,6 +59,10 @@ class ApiClient {
   final ApiConfig _config;
   final TokenStore tokenStore;
   final Dio _dio;
+
+  /// Called once when a request is rejected with HTTP 401 (the stored
+  /// credential has just been cleared). The app uses this to reset to login.
+  void Function()? onUnauthorized;
 
   /// Whether a credential is currently stored.
   Future<bool> get isAuthenticated async {
