@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'hashtag_screen.dart';
 import 'post_tile.dart';
 import 'profile_screen.dart';
 
@@ -60,8 +61,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
         body: _query.isEmpty
-            ? const CenteredMessage(
-                message: 'Search for people or hashtags.')
+            ? _TrendingHashtags()
             : TabBarView(
                 children: [
                   AsyncList<PublicUser>(
@@ -102,6 +102,58 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+/// Shown before searching: the currently trending hashtags.
+class _TrendingHashtags extends StatefulWidget {
+  @override
+  State<_TrendingHashtags> createState() => _TrendingHashtagsState();
+}
+
+class _TrendingHashtagsState extends State<_TrendingHashtags> {
+  late Future<List<Map<String, dynamic>>> _trending;
+
+  @override
+  void initState() {
+    super.initState();
+    _trending = api.feed.trendingHashtags();
+  }
+
+  String _tagOf(Map<String, dynamic> m) =>
+      '${m['tag'] ?? m['name'] ?? m['hashtag'] ?? ''}'.replaceFirst('#', '');
+
+  int _countOf(Map<String, dynamic> m) {
+    final v = m['count'] ?? m['posts'] ?? m['post_count'];
+    return v is num ? v.toInt() : 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AsyncList<Map<String, dynamic>>(
+      future: _trending,
+      emptyMessage: 'Search for people or hashtags.',
+      emptyIcon: Icons.search,
+      builder: (context, items) => ListView(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('Trending',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+          for (final m in items)
+            if (_tagOf(m).isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.tag),
+                title: Text('#${_tagOf(m)}'),
+                subtitle: _countOf(m) > 0
+                    ? Text('${formatCount(_countOf(m))} posts')
+                    : null,
+                onTap: () => HashtagScreen.open(context, _tagOf(m)),
+              ),
+        ],
       ),
     );
   }
