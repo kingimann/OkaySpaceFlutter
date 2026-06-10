@@ -78,7 +78,7 @@ class _HomeShellState extends State<HomeShell> {
       case 'messages':
         return const MessagesScreen();
       case 'market':
-        return const MarketplaceScreen();
+        return const MarketplaceScreen(embedded: true);
       case 'profile':
         return MyProfileScreen(onSignedOut: widget.onSignedOut);
       case 'map':

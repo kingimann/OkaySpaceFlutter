@@ -9,24 +9,15 @@ String _price(Listing l) => '${l.currency} ${l.price.toStringAsFixed(2)}';
 
 /// Marketplace browse grid with a search field.
 class MarketplaceScreen extends StatefulWidget {
-  const MarketplaceScreen({super.key});
+  const MarketplaceScreen({super.key, this.embedded = false});
+
+  /// True when shown as a home tab (the shell already provides the bottom nav);
+  /// false when pushed as a standalone route (it shows its own nav).
+  final bool embedded;
 
   @override
   State<MarketplaceScreen> createState() => _MarketplaceScreenState();
 }
-
-/// Browsable marketplace categories (label shown to user, value sent to API).
-const _kCategories = <(String, String?, IconData)>[
-  ('All', null, Icons.grid_view_rounded),
-  ('Electronics', 'electronics', Icons.devices_other),
-  ('Vehicles', 'vehicles', Icons.directions_car),
-  ('Furniture', 'furniture', Icons.chair_alt),
-  ('Fashion', 'fashion', Icons.checkroom),
-  ('Home', 'home', Icons.home_outlined),
-  ('Toys', 'toys', Icons.toys),
-  ('Services', 'services', Icons.handyman),
-  ('Other', 'other', Icons.category_outlined),
-];
 
 const _kSorts = <(String, String?)>[
   ('Newest', null),
@@ -38,7 +29,6 @@ const _kSorts = <(String, String?)>[
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   late Future<List<Listing>> _listings;
   final _search = TextEditingController();
-  String? _category;
   String? _sort;
 
   @override
@@ -57,16 +47,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     final q = _search.text.trim();
     _listings = api.marketplace.listings(
       query: q.isEmpty ? null : q,
-      category: _category,
       sort: _sort,
     );
-  }
-
-  void _setCategory(String? c) {
-    setState(() {
-      _category = c;
-      _query();
-    });
   }
 
   void _pickSort() async {
@@ -126,13 +108,16 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: _create,
-        child: const Icon(Icons.add),
-      ),
+      extendBody: !widget.embedded,
+      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
       appBar: OkayAppBar(
         title: const Text('Marketplace'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Sell something',
+            onPressed: _create,
+          ),
           IconButton(
             icon: const Icon(Icons.sort),
             tooltip: 'Sort',
@@ -158,52 +143,24 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(108),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: TextField(
-                  controller: _search,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => _reload(),
-                  decoration: InputDecoration(
-                    hintText: 'Search listings',
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.search),
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.arrow_forward),
-                      onPressed: _reload,
-                    ),
-                  ),
+          preferredSize: const Size.fromHeight(60),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: TextField(
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _reload(),
+              decoration: InputDecoration(
+                hintText: 'Search listings',
+                isDense: true,
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.arrow_forward),
+                  onPressed: _reload,
                 ),
               ),
-              SizedBox(
-                height: 40,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: _kCategories.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) {
-                    final (label, value, icon) = _kCategories[i];
-                    final selected = value == _category;
-                    return ChoiceChip(
-                      avatar: Icon(icon,
-                          size: 16,
-                          color: selected
-                              ? Theme.of(context).colorScheme.onPrimary
-                              : Theme.of(context).colorScheme.primary),
-                      label: Text(label),
-                      selected: selected,
-                      onSelected: (_) => _setCategory(value),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
         ),
       ),
@@ -217,7 +174,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           emptyMessage: 'No listings found.',
           emptyIcon: Icons.storefront_outlined,
           builder: (context, items) => GridView.builder(
-            padding: const EdgeInsets.all(12),
+            // Bottom inset clears the floating nav pill.
+            padding: EdgeInsets.fromLTRB(
+                12, 12, 12, 84 + MediaQuery.of(context).padding.bottom),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 220,
               childAspectRatio: 0.72,
