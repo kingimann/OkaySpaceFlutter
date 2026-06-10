@@ -4,6 +4,7 @@ import '../../okayspace_api.dart';
 import 'common.dart';
 import 'bookmarks_screen.dart';
 import 'communities_screen.dart';
+import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
 import 'groups_screen.dart';
@@ -150,6 +151,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 6),
                       Text(u.headline!),
                     ],
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => ConnectionsScreen(
+                                      userId: widget.userId, initialIndex: 0))),
+                          child: const Text('Followers'),
+                        ),
+                        Text('·', style: TextStyle(color: scheme.outline)),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => ConnectionsScreen(
+                                      userId: widget.userId, initialIndex: 1))),
+                          child: const Text('Following'),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
