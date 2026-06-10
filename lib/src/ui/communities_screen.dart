@@ -95,6 +95,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
         onRefresh: _reload,
         child: AsyncList<Community>(
           future: _communities,
+          loading: const ListSkeleton(),
           emptyMessage: 'No communities found.',
           emptyIcon: Icons.groups_outlined,
           builder: (context, items) => ListView.separated(

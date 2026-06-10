@@ -101,13 +101,42 @@ class OkaySpaceApp extends StatelessWidget {
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: accent,
         foregroundColor: Colors.white,
+        shape: const StadiumBorder(),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
         color: scheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+      chipTheme: ChipThemeData(
+        backgroundColor: scheme.surfaceContainerHighest,
+        side: BorderSide.none,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        labelStyle: TextStyle(color: scheme.onSurface, fontSize: 13),
+      ),
+      listTileTheme: const ListTileThemeData(
+        titleTextStyle: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w500),
+      ),
+      tabBarTheme: TabBarThemeData(
+        indicatorColor: accent,
+        labelColor: scheme.onSurface,
+        unselectedLabelColor: scheme.outline,
+        dividerColor: Colors.transparent,
+        indicatorSize: TabBarIndicatorSize.label,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(builders: {
+        TargetPlatform.android: ZoomPageTransitionsBuilder(),
+        TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+        TargetPlatform.macOS: ZoomPageTransitionsBuilder(),
+        TargetPlatform.windows: ZoomPageTransitionsBuilder(),
+        TargetPlatform.linux: ZoomPageTransitionsBuilder(),
+      }),
     );
   }
 
