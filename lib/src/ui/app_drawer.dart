@@ -63,7 +63,12 @@ class _AppDrawerState extends State<AppDrawer> {
       onTap: () {
         switch (id) {
           case 'feed':
+            // Close the drawer, return to the shell, and select the feed tab
+            // (re-tapping while already on it scrolls to top).
             Navigator.pop(context);
+            Navigator.of(context).popUntil((r) => r.isFirst);
+            if (homeTabSignal.value == 'feed') feedScrollSignal.value++;
+            homeTabSignal.select('feed');
           case 'reels':
             _push(const ReelsScreen());
           case 'map':
