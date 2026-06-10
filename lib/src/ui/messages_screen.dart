@@ -225,8 +225,40 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final other = widget.conversation.otherUser;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            Avatar(
+                url: widget.conversation.avatar ?? other?.picture,
+                name: widget.title,
+                radius: 17),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600)),
+                  if (other != null)
+                    Text(other.online ? 'Online' : 'Offline',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: other.online
+                                ? const Color(0xFF22C55E)
+                                : Theme.of(context).colorScheme.outline)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
       body: Column(
         children: [
           Expanded(
