@@ -21,6 +21,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _searchable = widget.user.raw['searchable'] != false;
   late bool _hideOnline = widget.user.raw['hide_online'] == true;
   late bool _sms = widget.user.raw['sms_notifications'] == true;
+  late bool _hideLikes = widget.user.raw['hide_likes'] == true;
+  late bool _showPoints = widget.user.raw['show_points'] != false;
+  late String _messagePolicy =
+      '${widget.user.raw['message_policy'] ?? 'everyone'}';
+  late String _tagPolicy = '${widget.user.raw['tag_policy'] ?? 'everyone'}';
+  late String _commentPolicy =
+      '${widget.user.raw['default_comment_policy'] ?? 'everyone'}';
+  late String _connectionsVisibility =
+      '${widget.user.raw['connections_visibility'] ?? 'everyone'}';
+  late final List<String> _muted = [
+    for (final k in (widget.user.raw['muted_keywords'] as List? ?? const []))
+      '$k'
+  ];
+
+  static const _policyLabels = {
+    'everyone': 'Everyone',
+    'followers': 'Followers',
+    'none': 'No one',
+  };
+
+  /// Bottom-sheet picker for an everyone/followers/none policy field.
+  Future<void> _pickPolicy(
+      String title, String field, String current, void Function(String) apply) async {
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+                title: Text(title,
+                    style: const TextStyle(fontWeight: FontWeight.bold))),
+            for (final e in _policyLabels.entries)
+              ListTile(
+                title: Text(e.value),
+                trailing: e.key == current ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(context, e.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || chosen == current) return;
+    apply(chosen);
+    setState(() {});
+    try {
+      await api.auth.updateProfile({field: chosen});
+    } catch (e) {
+      apply(current);
+      if (mounted) {
+        setState(() {});
+        showError(context, e);
+      }
+    }
+  }
+
+  Future<void> _editMuted() async {
+    final tag = await promptText(context,
+        title: 'Mute a keyword',
+        hint: 'Posts containing it are hidden',
+        action: 'Mute');
+    if (tag == null) return;
+    final clean = tag.trim().toLowerCase();
+    if (clean.isEmpty || _muted.contains(clean)) return;
+    setState(() => _muted.add(clean));
+    try {
+      await api.auth.updateProfile({'muted_keywords': _muted});
+    } catch (e) {
+      setState(() => _muted.remove(clean));
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _unmute(String tag) async {
+    setState(() => _muted.remove(tag));
+    try {
+      await api.auth.updateProfile({'muted_keywords': _muted});
+    } catch (e) {
+      setState(() => _muted.add(tag));
+      if (mounted) showError(context, e);
+    }
+  }
 
   /// Optimistically flips [current], persists [field]=value, reverts on error.
   Future<void> _toggle(
@@ -347,6 +429,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: const Text('Hide online status'),
               value: _hideOnline,
               onChanged: (v) => _toggle('hide_online', v, (x) => _hideOnline = x),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.favorite_border),
+              title: const Text('Hide like counts'),
+              subtitle: const Text('On posts you see across the app'),
+              value: _hideLikes,
+              onChanged: (v) => _toggle('hide_likes', v, (x) => _hideLikes = x),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.local_fire_department_outlined),
+              title: const Text('Show activity points'),
+              subtitle: const Text('Display your points on your profile'),
+              value: _showPoints,
+              onChanged: (v) => _toggle('show_points', v, (x) => _showPoints = x),
+            ),
+          ]),
+          _section('Interactions'),
+          _card([
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline),
+              title: const Text('Who can message you'),
+              trailing: Text(_policyLabels[_messagePolicy] ?? _messagePolicy),
+              onTap: () => _pickPolicy('Who can message you',
+                  'message_policy', _messagePolicy, (v) => _messagePolicy = v),
+            ),
+            const Divider(height: 1, indent: 56),
+            ListTile(
+              leading: const Icon(Icons.sell_outlined),
+              title: const Text('Who can tag you'),
+              trailing: Text(_policyLabels[_tagPolicy] ?? _tagPolicy),
+              onTap: () => _pickPolicy('Who can tag you', 'tag_policy',
+                  _tagPolicy, (v) => _tagPolicy = v),
+            ),
+            const Divider(height: 1, indent: 56),
+            ListTile(
+              leading: const Icon(Icons.comment_outlined),
+              title: const Text('Default reply policy'),
+              subtitle: const Text('Applied to new posts'),
+              trailing: Text(_policyLabels[_commentPolicy] ?? _commentPolicy),
+              onTap: () => _pickPolicy(
+                  'Default reply policy',
+                  'default_comment_policy',
+                  _commentPolicy,
+                  (v) => _commentPolicy = v),
+            ),
+            const Divider(height: 1, indent: 56),
+            ListTile(
+              leading: const Icon(Icons.people_outline),
+              title: const Text('Who sees your connections'),
+              trailing: Text(_policyLabels[_connectionsVisibility] ??
+                  _connectionsVisibility),
+              onTap: () => _pickPolicy(
+                  'Who sees your connections',
+                  'connections_visibility',
+                  _connectionsVisibility,
+                  (v) => _connectionsVisibility = v),
+            ),
+          ]),
+          _section('Muted keywords'),
+          _card([
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final k in _muted)
+                    InputChip(label: Text(k), onDeleted: () => _unmute(k)),
+                  ActionChip(
+                    avatar: const Icon(Icons.add, size: 18),
+                    label: const Text('Mute a keyword'),
+                    onPressed: _editMuted,
+                  ),
+                ],
+              ),
             ),
           ]),
           _section('Notifications'),
