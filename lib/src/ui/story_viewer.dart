@@ -87,20 +87,62 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
   }
 
-  Future<void> _sendReply() async {
-    final text = _reply.text.trim();
+  bool get _isMine => widget.userId == currentUserId;
+
+  Future<void> _sendReply([String? quick]) async {
+    final text = quick ?? _reply.text.trim();
     if (text.isEmpty) return;
     final story = _items[_index];
-    _reply.clear();
+    if (quick == null) _reply.clear();
     FocusScope.of(context).unfocus();
     try {
       await api.stories.reply(story.id, text);
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Reply sent')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(quick != null ? 'Sent $quick' : 'Reply sent')));
       }
     } catch (e) {
       if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _deleteStory() async {
+    _timer?.cancel();
+    final story = _items[_index];
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete story?'),
+        content: const Text('This story will be removed.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true) {
+      if (mounted) _start();
+      return;
+    }
+    try {
+      await api.stories.delete(story.id);
+      if (!mounted) return;
+      setState(() => _items = List.of(_items)..removeAt(_index));
+      if (_items.isEmpty) {
+        Navigator.of(context).maybePop();
+      } else {
+        _index = _index.clamp(0, _items.length - 1);
+        _start();
+      }
+    } catch (e) {
+      if (mounted) {
+        showError(context, e);
+        _start();
+      }
     }
   }
 
@@ -177,12 +219,22 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
           return SafeArea(
             child: Stack(
               children: [
-                // Media (tap zones for prev/next).
+                // Media (tap zones for prev/next; long-press pauses).
                 Positioned.fill(
                   child: Row(
                     children: [
-                      Expanded(child: GestureDetector(onTap: _prev)),
-                      Expanded(child: GestureDetector(onTap: _next)),
+                      Expanded(
+                          child: GestureDetector(
+                        onTap: _prev,
+                        onLongPressStart: (_) => _timer?.cancel(),
+                        onLongPressEnd: (_) => _start(),
+                      )),
+                      Expanded(
+                          child: GestureDetector(
+                        onTap: _next,
+                        onLongPressStart: (_) => _timer?.cancel(),
+                        onLongPressEnd: (_) => _start(),
+                      )),
                     ],
                   ),
                 ),
@@ -237,6 +289,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                             label: Text('${story.viewCount}',
                                 style: const TextStyle(color: Colors.white)),
                           ),
+                          if (_isMine)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline,
+                                  color: Colors.white),
+                              tooltip: 'Delete',
+                              onPressed: _deleteStory,
+                            ),
                           IconButton(
                             icon: const Icon(Icons.close, color: Colors.white),
                             onPressed: () => Navigator.of(context).maybePop(),
@@ -256,35 +315,56 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                         style: const TextStyle(
                             color: Colors.white, fontSize: 16)),
                   ),
-                // Reply box.
-                Positioned(
-                  bottom: 8,
-                  left: 12,
-                  right: 12,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _reply,
-                          style: const TextStyle(color: Colors.white),
-                          onSubmitted: (_) => _sendReply(),
-                          decoration: const InputDecoration(
-                            hintText: 'Reply…',
-                            hintStyle: TextStyle(color: Colors.white54),
-                            isDense: true,
-                            enabledBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: Colors.white54)),
-                            border: OutlineInputBorder(),
-                          ),
+                // Reply box (hidden on your own stories) + quick reactions.
+                if (!_isMine)
+                  Positioned(
+                    bottom: 8,
+                    left: 12,
+                    right: 12,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            for (final e in const [
+                              '❤️', '😂', '😮', '😢', '👏', '🔥'
+                            ])
+                              GestureDetector(
+                                onTap: () => _sendReply(e),
+                                child: Text(e,
+                                    style: const TextStyle(fontSize: 28)),
+                              ),
+                          ],
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.send, color: Colors.white),
-                        onPressed: _sendReply,
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _reply,
+                                style: const TextStyle(color: Colors.white),
+                                onSubmitted: (_) => _sendReply(),
+                                decoration: const InputDecoration(
+                                  hintText: 'Reply…',
+                                  hintStyle: TextStyle(color: Colors.white54),
+                                  isDense: true,
+                                  enabledBorder: OutlineInputBorder(
+                                      borderSide:
+                                          BorderSide(color: Colors.white54)),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.send, color: Colors.white),
+                              onPressed: () => _sendReply(),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           );
