@@ -86,32 +86,6 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
     });
   }
 
-  Future<void> _toggleJoin(Community c) async {
-    try {
-      if (c.isMember) {
-        await api.communities.leave(c.name);
-      } else {
-        await api.communities.join(c.name);
-      }
-      _reload();
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
-  }
-
-  Future<void> _toggleFavorite(Community c) async {
-    try {
-      if (c.isFavorite) {
-        await api.communities.unfavorite(c.name);
-      } else {
-        await api.communities.favorite(c.name);
-      }
-      _reload();
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
-  }
-
   Future<void> _create() async {
     final name = await showDialog<String>(
       context: context,
@@ -189,55 +163,10 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
         emptyMessage: 'No communities found.',
         emptyIcon: Icons.groups_outlined,
         builder: (context, items) => ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           itemCount: items.length,
-          itemBuilder: (context, i) {
-            final c = items[i];
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                leading: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: _communityColor(c, context),
-                  child: Text(
-                    c.title.isNotEmpty ? c.title[0].toUpperCase() : '#',
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                title: Text(c.title,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text(
-                    '${formatCount(c.memberCount)} members · ${formatCount(c.postCount)} posts'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: c.isFavorite ? 'Unfavorite' : 'Favorite',
-                      icon: Icon(
-                          c.isFavorite ? Icons.star : Icons.star_border,
-                          color: c.isFavorite
-                              ? const Color(0xFFF59E0B)
-                              : Theme.of(context).colorScheme.outline),
-                      onPressed: () => _toggleFavorite(c),
-                    ),
-                    c.isMember
-                        ? OutlinedButton(
-                            onPressed: () => _toggleJoin(c),
-                            child: const Text('Joined'))
-                        : FilledButton.tonal(
-                            onPressed: () => _toggleJoin(c),
-                            child: const Text('Join')),
-                  ],
-                ),
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => CommunityDetailScreen(name: c.name),
-                )),
-              ),
-            );
-          },
+          itemBuilder: (context, i) =>
+              _CommunityCard(community: items[i], onChanged: _reload),
         ),
       ),
     );
@@ -255,6 +184,152 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
           padding: const EdgeInsets.symmetric(vertical: 4),
           itemCount: items.length,
           itemBuilder: (context, i) => PostTile(post: items[i], card: true),
+        ),
+      ),
+    );
+  }
+}
+
+/// A discover-list community card: avatar, stats, description preview and
+/// inline favorite + join actions (optimistic).
+class _CommunityCard extends StatefulWidget {
+  const _CommunityCard({required this.community, required this.onChanged});
+
+  final Community community;
+  final VoidCallback onChanged;
+
+  @override
+  State<_CommunityCard> createState() => _CommunityCardState();
+}
+
+class _CommunityCardState extends State<_CommunityCard> {
+  late bool _member = widget.community.isMember;
+  late bool _favorite = widget.community.isFavorite;
+  late int _members = widget.community.memberCount;
+
+  Community get c => widget.community;
+
+  Future<void> _join() async {
+    final was = _member;
+    setState(() {
+      _member = !_member;
+      _members += _member ? 1 : -1;
+    });
+    try {
+      was ? await api.communities.leave(c.name) : await api.communities.join(c.name);
+      widget.onChanged();
+    } catch (e) {
+      setState(() {
+        _member = was;
+        _members += was ? 1 : -1;
+      });
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _favoriteToggle() async {
+    final was = _favorite;
+    setState(() => _favorite = !_favorite);
+    try {
+      was
+          ? await api.communities.unfavorite(c.name)
+          : await api.communities.favorite(c.name);
+    } catch (e) {
+      setState(() => _favorite = was);
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = _communityColor(c, context);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => CommunityDetailScreen(name: c.name),
+        )),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: color,
+                    child: Text(
+                      c.title.isNotEmpty ? c.title[0].toUpperCase() : '#',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                c.title.isNotEmpty ? c.title : 'c/${c.name}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                            '${formatCount(_members)} members · ${formatCount(c.postCount)} posts',
+                            style: TextStyle(
+                                color: scheme.outline, fontSize: 12.5)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: _favorite ? 'Unfavorite' : 'Favorite',
+                    icon: Icon(_favorite ? Icons.star : Icons.star_border,
+                        color: _favorite
+                            ? const Color(0xFFF59E0B)
+                            : scheme.outline),
+                    onPressed: _favoriteToggle,
+                  ),
+                ],
+              ),
+              if (c.description.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(c.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: scheme.onSurfaceVariant)),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: _member
+                    ? OutlinedButton.icon(
+                        onPressed: _join,
+                        icon: const Icon(Icons.check, size: 18),
+                        label: const Text('Joined'),
+                      )
+                    : FilledButton.tonalIcon(
+                        onPressed: _join,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Join community'),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -351,6 +426,28 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     } catch (e) {
       if (mounted) showError(context, e);
     }
+  }
+
+  /// A small rounded stat chip (members / posts) for the header.
+  Widget _statChip(BuildContext context, IconData icon, String label) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: scheme.outline),
+          const SizedBox(width: 5),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 12.5, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
   }
 
   /// Bottom sheet with the community's karma leaderboard.
@@ -497,48 +594,100 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                   );
                 }
                 final c = snapshot.data!;
-                return Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                final color = _communityColor(c, context);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Colored banner with the community avatar overlapping it.
+                    SizedBox(
+                      height: 116,
+                      child: Stack(
+                        clipBehavior: Clip.none,
                         children: [
-                          CircleAvatar(
-                            radius: 28,
-                            backgroundColor: _communityColor(c, context),
-                            child: Text(
-                              c.title.isNotEmpty
-                                  ? c.title[0].toUpperCase()
-                                  : '#',
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 22),
+                          Container(
+                            height: 84,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [color, darken(color, 0.25)],
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(c.title,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge),
-                                Text(
-                                    '${formatCount(c.memberCount)} members',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall),
-                              ],
+                          Positioned(
+                            left: 16,
+                            bottom: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Theme.of(context).scaffoldBackgroundColor,
+                              ),
+                              child: CircleAvatar(
+                                radius: 32,
+                                backgroundColor: color,
+                                child: Text(
+                                  c.title.isNotEmpty
+                                      ? c.title[0].toUpperCase()
+                                      : '#',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 26),
+                                ),
+                              ),
                             ),
-                          ),
-                          FilledButton.tonal(
-                            onPressed:
-                                _working ? null : () => _toggleMembership(c),
-                            child: Text(c.isMember ? 'Leave' : 'Join'),
                           ),
                         ],
                       ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                        c.title.isNotEmpty
+                                            ? c.title
+                                            : 'c/${c.name}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.bold)),
+                                    Text('c/${c.name}',
+                                        style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .outline,
+                                            fontSize: 13)),
+                                  ],
+                                ),
+                              ),
+                              FilledButton.tonal(
+                                onPressed: _working
+                                    ? null
+                                    : () => _toggleMembership(c),
+                                child: Text(c.isMember ? 'Leave' : 'Join'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          // Stat chips.
+                          Row(
+                            children: [
+                              _statChip(context, Icons.people_outline,
+                                  '${formatCount(c.memberCount)} members'),
+                              const SizedBox(width: 8),
+                              _statChip(context, Icons.article_outlined,
+                                  '${formatCount(c.postCount)} posts'),
+                            ],
+                          ),
                       if (c.description.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         Text(c.description),
@@ -559,8 +708,10 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                                     Theme.of(context).textTheme.bodyMedium),
                           ),
                       ],
-                    ],
-                  ),
+                        ],
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
