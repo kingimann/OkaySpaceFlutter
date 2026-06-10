@@ -81,6 +81,21 @@ class CommunitiesService {
         Post.fromJson,
       );
 
+  /// Per-community karma leaderboard (raw payloads, highest first).
+  Future<List<Map<String, dynamic>>> topMembers(String name) async {
+    final data = await _client.getJson('/communities/$name/top');
+    final list = data is Map
+        ? (data['top'] ?? data['members'] ?? data['leaderboard'] ?? data['items'])
+        : data;
+    if (list is List) {
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
   /// Members of a community (raw payload).
   Future<dynamic> members(String name) =>
       _client.getJson('/communities/$name/members');

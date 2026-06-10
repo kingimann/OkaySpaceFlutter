@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import 'common.dart';
 import 'post_tile.dart';
+import 'profile_screen.dart';
 
 Color _communityColor(Community c, BuildContext context) {
   final hex = c.color.replaceFirst('#', '');
@@ -352,6 +353,86 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     }
   }
 
+  /// Bottom sheet with the community's karma leaderboard.
+  void _showLeaderboard() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => FutureBuilder<List<Map<String, dynamic>>>(
+        future: api.communities.topMembers(widget.name),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const SizedBox(
+                height: 220, child: Center(child: CircularProgressIndicator()));
+          }
+          final items = snap.data ?? const [];
+          if (items.isEmpty) {
+            return const SizedBox(
+                height: 220,
+                child: Center(child: Text('No karma earned here yet.')));
+          }
+          final scheme = Theme.of(context).colorScheme;
+          const medals = [Color(0xFFF59E0B), Color(0xFF9CA3AF), Color(0xFFB45309)];
+          return ListView.builder(
+            shrinkWrap: true,
+            itemCount: items.length + 1,
+            itemBuilder: (context, i) {
+              if (i == 0) {
+                return const ListTile(
+                    title: Text('Top karma',
+                        style: TextStyle(fontWeight: FontWeight.bold)));
+              }
+              final m = items[i - 1];
+              final rank = i;
+              final name = '${m['name'] ?? m['username'] ?? 'Member'}';
+              final karmaV = m['karma'] ?? m['points'] ?? m['score'];
+              final karma = karmaV is num ? karmaV.toInt() : 0;
+              final userId = '${m['user_id'] ?? m['id'] ?? ''}';
+              return ListTile(
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 26,
+                      child: rank <= 3
+                          ? Icon(Icons.emoji_events,
+                              size: 20, color: medals[rank - 1])
+                          : Text('$rank',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: scheme.outline,
+                                  fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(width: 4),
+                    Avatar(url: '${m['picture'] ?? ''}', name: name, radius: 17),
+                  ],
+                ),
+                title: Text(name,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('👍 '),
+                    Text(formatCount(karma),
+                        style: TextStyle(
+                            color: scheme.primary,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                onTap: userId.isEmpty
+                    ? null
+                    : () {
+                        Navigator.pop(context);
+                        ProfileScreen.open(context, userId);
+                      },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -375,6 +456,11 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                               : null),
                       onPressed: () => _toggleFavorite(c),
                     ),
+                  IconButton(
+                    tooltip: 'Karma leaderboard',
+                    icon: const Icon(Icons.emoji_events_outlined),
+                    onPressed: _showLeaderboard,
+                  ),
                   IconButton(
                     tooltip: 'Members',
                     icon: const Icon(Icons.people_outline),
