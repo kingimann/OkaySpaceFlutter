@@ -60,9 +60,94 @@ class _ComposeScreenState extends State<ComposeScreen> {
     if (mounted) setState(() {});
   }
 
+  // Location tag.
+  String? _placeName;
+  double? _placeLat;
+  double? _placeLng;
+
+  // Audience / interaction options.
+  String _commentPolicy = 'everyone'; // everyone | followers | none
+  bool _likesDisabled = false;
+  bool _subscribersOnly = false;
+
   bool get _canPost =>
       !_posting &&
       (_text.text.trim().isNotEmpty || _photos.isNotEmpty || _poll);
+
+  Future<void> _addLocation() async {
+    final query = await promptText(context,
+        title: 'Tag a location',
+        hint: 'Search a place or address',
+        action: 'Search');
+    if (query == null) return;
+    try {
+      final results = await api.roadside.geocode(query);
+      if (!mounted) return;
+      if (results.isEmpty) {
+        showInfo(context, 'No places found.');
+        return;
+      }
+      final r = results.first;
+      final lat = r['lat'] ?? r['latitude'];
+      final lng = r['lng'] ?? r['lon'] ?? r['longitude'];
+      setState(() {
+        _placeName = '${r['name'] ?? r['display_name'] ?? query}';
+        _placeLat = lat is num ? lat.toDouble() : double.tryParse('$lat');
+        _placeLng = lng is num ? lng.toDouble() : double.tryParse('$lng');
+      });
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  void _options2() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSheet) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                  title: Text('Post options',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              ListTile(
+                leading: const Icon(Icons.comment_outlined),
+                title: const Text('Who can reply'),
+                trailing: DropdownButton<String>(
+                  value: _commentPolicy,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: 'everyone', child: Text('Everyone')),
+                    DropdownMenuItem(
+                        value: 'followers', child: Text('Followers')),
+                    DropdownMenuItem(value: 'none', child: Text('No one')),
+                  ],
+                  onChanged: (v) {
+                    setSheet(() => setState(() => _commentPolicy = v ?? 'everyone'));
+                  },
+                ),
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.favorite_border),
+                title: const Text('Hide like counts'),
+                value: _likesDisabled,
+                onChanged: (v) =>
+                    setSheet(() => setState(() => _likesDisabled = v)),
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.workspace_premium_outlined),
+                title: const Text('Subscribers only'),
+                value: _subscribersOnly,
+                onChanged: (v) =>
+                    setSheet(() => setState(() => _subscribersOnly = v)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _post() async {
     setState(() => _posting = true);
@@ -88,8 +173,17 @@ class _ComposeScreenState extends State<ComposeScreen> {
         );
       }
 
-      await api.feed.createPost(
-          PostCreate(text: _text.text.trim(), media: media, poll: poll));
+      await api.feed.createPost(PostCreate(
+        text: _text.text.trim(),
+        media: media,
+        poll: poll,
+        placeName: _placeName,
+        placeLatitude: _placeLat,
+        placeLongitude: _placeLng,
+        commentPolicy: _commentPolicy == 'everyone' ? null : _commentPolicy,
+        likesDisabled: _likesDisabled ? true : null,
+        minSubTier: _subscribersOnly ? 1 : null,
+      ));
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) showError(context, e);
@@ -164,6 +258,22 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 ),
               ),
             ),
+          if (_placeName != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InputChip(
+                  avatar: const Icon(Icons.place, size: 18),
+                  label: Text(_placeName!),
+                  onDeleted: () => setState(() {
+                    _placeName = null;
+                    _placeLat = null;
+                    _placeLng = null;
+                  }),
+                ),
+              ),
+            ),
           if (_poll) _buildPollEditor(context),
         ],
       ),
@@ -183,6 +293,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 icon: const Icon(Icons.poll_outlined),
                 tooltip: 'Poll',
                 color: _poll ? Theme.of(context).colorScheme.primary : null,
+              ),
+              IconButton(
+                onPressed: _addLocation,
+                icon: const Icon(Icons.place_outlined),
+                tooltip: 'Tag location',
+                color: _placeName != null
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: _options2,
+                icon: const Icon(Icons.tune),
+                tooltip: 'Post options',
               ),
             ],
           ),
