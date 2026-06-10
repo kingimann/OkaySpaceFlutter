@@ -53,6 +53,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
   void _start() {
     _timer?.cancel();
+    if (_items.isEmpty) return;
     _timer = Timer(_perStory, _next);
     final story = _items[_index];
     api.stories.markViewed(story.id).catchError((_) {});
@@ -91,7 +92,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
   Future<void> _sendReply([String? quick]) async {
     final text = quick ?? _reply.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _items.isEmpty) return;
     final story = _items[_index];
     if (quick == null) _reply.clear();
     FocusScope.of(context).unfocus();
@@ -108,6 +109,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
   Future<void> _deleteStory() async {
     _timer?.cancel();
+    if (_items.isEmpty) return;
     final story = _items[_index];
     final ok = await showDialog<bool>(
       context: context,
