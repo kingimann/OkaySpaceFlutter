@@ -73,4 +73,8 @@ class UsersService {
   /// Posts authored by a user (delegates to the posts endpoint).
   Future<List<Post>> posts(String userId) async => asModelList(
       await _client.getJson('/posts/user/$userId'), Post.fromJson);
+
+  /// Posts a user has liked.
+  Future<List<Post>> likes(String userId) async => asModelList(
+      await _client.getJson('/posts/user/$userId/likes'), Post.fromJson);
 }

@@ -34,13 +34,23 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<PublicUser> _profile;
   late Future<List<Post>> _posts;
+  Future<List<Post>>? _likes;
   bool _following = false;
+  int _tab = 0; // 0 = Posts, 1 = Media, 2 = Likes
 
   @override
   void initState() {
     super.initState();
     _profile = _load();
     _posts = api.users.posts(widget.userId);
+  }
+
+  void _setTab(int t) {
+    if (t == _tab) return;
+    setState(() {
+      _tab = t;
+      if (t == 2) _likes ??= api.users.likes(widget.userId);
+    });
   }
 
   Future<PublicUser> _load() async {
@@ -202,8 +212,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const Divider(height: 1, thickness: 6),
+              _ProfileTabs(tab: _tab, onChanged: _setTab),
+              const Divider(height: 1),
               FutureBuilder<List<Post>>(
-                future: _posts,
+                future: _tab == 2 ? _likes : _posts,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Padding(
@@ -211,11 +223,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  final posts = snap.data ?? const [];
+                  var posts = snap.data ?? const <Post>[];
+                  // Media tab: only posts that have attachments.
+                  if (_tab == 1) {
+                    posts = posts.where((p) => p.media.isNotEmpty).toList();
+                  }
                   if (posts.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(child: Text('No posts yet.')),
+                    final what = switch (_tab) {
+                      1 => 'No media yet.',
+                      2 => 'No liked posts yet.',
+                      _ => 'No posts yet.',
+                    };
+                    return Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Center(child: Text(what)),
                     );
                   }
                   return Column(
@@ -229,6 +250,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Posts / Media / Likes selector for a profile.
+class _ProfileTabs extends StatelessWidget {
+  const _ProfileTabs({required this.tab, required this.onChanged});
+
+  final int tab;
+  final ValueChanged<int> onChanged;
+
+  static const _labels = ['Posts', 'Media', 'Likes'];
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        for (var i = 0; i < _labels.length; i++)
+          Expanded(
+            child: InkWell(
+              onTap: () => onChanged(i),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Column(
+                  children: [
+                    Text(_labels[i],
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontWeight:
+                              tab == i ? FontWeight.bold : FontWeight.normal,
+                          color: tab == i ? scheme.onSurface : scheme.outline,
+                        )),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 2,
+                      width: 28,
+                      color: tab == i ? scheme.primary : Colors.transparent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
