@@ -274,6 +274,14 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
   late Future<Community> _community;
   late Future<List<Post>> _posts;
   bool _working = false;
+  String _sort = 'hot';
+
+  static const _sorts = <(String, IconData)>[
+    ('hot', Icons.local_fire_department),
+    ('new', Icons.fiber_new),
+    ('top', Icons.emoji_events),
+    ('rising', Icons.trending_up),
+  ];
 
   @override
   void initState() {
@@ -283,7 +291,15 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
 
   void _load() {
     _community = api.communities.get(widget.name);
-    _posts = api.communities.posts(widget.name);
+    _posts = api.communities.posts(widget.name, sort: _sort);
+  }
+
+  void _setSort(String s) {
+    if (s == _sort) return;
+    setState(() {
+      _sort = s;
+      _posts = api.communities.posts(widget.name, sort: _sort);
+    });
   }
 
   Future<void> _reload() async {
@@ -463,6 +479,31 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
               },
             ),
             const Divider(height: 1),
+            // Hot / New / Top / Rising sort chips.
+            SizedBox(
+              height: 52,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                children: [
+                  for (final (s, icon) in _sorts)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        avatar: Icon(icon,
+                            size: 16,
+                            color: _sort == s
+                                ? Theme.of(context).colorScheme.onPrimary
+                                : Theme.of(context).colorScheme.primary),
+                        label: Text(s[0].toUpperCase() + s.substring(1)),
+                        selected: _sort == s,
+                        onSelected: (_) => _setSort(s),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             FutureBuilder<List<Post>>(
               future: _posts,
               builder: (context, snapshot) {
