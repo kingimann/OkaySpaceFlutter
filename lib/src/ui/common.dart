@@ -659,21 +659,17 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final canPop = automaticallyImplyLeading && Navigator.canPop(context);
+    // The leading is the sidebar (menu) on every screen, like the feed —
+    // replacing the back button. Screens that pass an explicit [leading]
+    // (e.g. the Settings sub-pages' back-to-hub) keep it.
     final Widget? lead = leading ??
-        (canPop
+        (automaticallyImplyLeading
             ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.maybePop(context),
+                icon: const Icon(Icons.menu),
+                tooltip: 'Menu',
+                onPressed: () => openSidebar(context),
               )
-            // Root screens show the sidebar (drawer) menu, like the feed.
-            : automaticallyImplyLeading
-                ? IconButton(
-                    icon: const Icon(Icons.menu),
-                    tooltip: 'Menu',
-                    onPressed: () => openSidebar(context),
-                  )
-                : null);
+            : null);
 
     final bar = SafeArea(
       bottom: false,
@@ -703,15 +699,7 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
                     ),
                   ),
                   if (actions != null) ...actions!,
-                  // On pushed screens (which show a back button) add a menu
-                  // button so the sidebar is reachable everywhere, like the feed.
-                  if (canPop && automaticallyImplyLeading)
-                    IconButton(
-                      icon: const Icon(Icons.menu),
-                      tooltip: 'Menu',
-                      onPressed: () => openSidebar(context),
-                    )
-                  else if (actions == null || actions!.isEmpty)
+                  if (actions == null || actions!.isEmpty)
                     const SizedBox(width: 8),
                 ],
               ),
