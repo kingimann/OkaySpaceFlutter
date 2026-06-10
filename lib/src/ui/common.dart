@@ -166,8 +166,11 @@ class MaxWidth extends StatelessWidget {
 /// Prompts for a single block of text in a dialog. Returns null if cancelled
 /// or empty.
 Future<String?> promptText(BuildContext context,
-    {required String title, String hint = '', String action = 'Post'}) async {
-  final controller = TextEditingController();
+    {required String title,
+    String hint = '',
+    String action = 'Post',
+    String? initial}) async {
+  final controller = TextEditingController(text: initial);
   final result = await showDialog<String>(
     context: context,
     builder: (_) => AlertDialog(

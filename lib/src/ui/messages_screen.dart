@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -245,6 +246,173 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _run(Future<void> Function() op, [String? ok]) async {
+    try {
+      await op();
+      if (ok != null && mounted) showInfo(context, ok);
+      await _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Long-press a message: react, copy, pin and (for own messages) edit/delete.
+  void _messageActions(Message msg, bool mine) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (final e in const ['👍', '❤️', '😂', '😮', '😢', '🙏'])
+                    InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _run(() =>
+                            api.messaging.reactToMessage(_convId, msg.id, e));
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(e, style: const TextStyle(fontSize: 26)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            if (msg.text != null && msg.text!.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.copy),
+                title: const Text('Copy'),
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: msg.text!));
+                  Navigator.pop(context);
+                  showInfo(context, 'Copied');
+                },
+              ),
+            ListTile(
+              leading: Icon(msg.pinned
+                  ? Icons.push_pin
+                  : Icons.push_pin_outlined),
+              title: Text(msg.pinned ? 'Unpin' : 'Pin'),
+              onTap: () {
+                Navigator.pop(context);
+                _run(() => api.messaging.pinMessage(_convId, msg.id));
+              },
+            ),
+            if (mine && msg.text != null) ...[
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final edited = await promptText(context,
+                      title: 'Edit message', initial: msg.text);
+                  if (edited != null && edited.trim().isNotEmpty) {
+                    _run(() =>
+                        api.messaging.editMessage(_convId, msg.id, edited.trim()));
+                  }
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline,
+                    color: Theme.of(context).colorScheme.error),
+                title: Text('Delete',
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _run(() => api.messaging.deleteMessage(_convId, msg.id),
+                      'Deleted');
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Conversation overflow menu: disappearing messages, leave, delete.
+  void _conversationMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.timer_outlined),
+              title: const Text('Disappearing messages'),
+              onTap: () {
+                Navigator.pop(context);
+                _disappearing();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Leave conversation'),
+              onTap: () {
+                Navigator.pop(context);
+                _run(() => api.messaging.leave(_convId), 'Left conversation')
+                    .then((_) {
+                  if (mounted) Navigator.pop(context);
+                });
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error),
+              title: Text('Delete conversation',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: () {
+                Navigator.pop(context);
+                _run(() => api.messaging.delete(_convId), 'Deleted')
+                    .then((_) {
+                  if (mounted) Navigator.pop(context);
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _disappearing() async {
+    final seconds = await showModalBottomSheet<int>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Disappearing messages',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            for (final o in const [
+              ('Off', 0),
+              ('24 hours', 86400),
+              ('7 days', 604800),
+              ('90 days', 7776000),
+            ])
+              ListTile(
+                title: Text(o.$1),
+                onTap: () => Navigator.pop(context, o.$2),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (seconds == null) return;
+    _run(() => api.messaging.setDisappearing(_convId, seconds), 'Updated');
+  }
+
   @override
   Widget build(BuildContext context) {
     final other = widget.conversation.otherUser;
@@ -286,6 +454,11 @@ class _ChatScreenState extends State<ChatScreen> {
             tooltip: 'Call',
             onPressed: _call,
           ),
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'Options',
+            onPressed: _conversationMenu,
+          ),
         ],
       ),
       body: MaxWidth(
@@ -307,7 +480,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   // ours. Group chats fall back to left-aligned.
                   final otherId = widget.conversation.otherUser?.userId;
                   final mine = otherId != null && msg.senderId != otherId;
-                  return _MessageBubble(message: msg, mine: mine);
+                  return _MessageBubble(
+                    message: msg,
+                    mine: mine,
+                    onLongPress:
+                        msg.deleted ? null : () => _messageActions(msg, mine),
+                  );
                 },
               ),
             ),
@@ -348,10 +526,32 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, this.mine = false});
+  const _MessageBubble(
+      {required this.message, this.mine = false, this.onLongPress});
 
   final Message message;
   final bool mine;
+  final VoidCallback? onLongPress;
+
+  /// Aggregates raw reaction payloads into "emoji×count" chips.
+  List<String> _reactionChips() {
+    final raw = message.raw['reactions'];
+    final counts = <String, int>{};
+    if (raw is List) {
+      for (final r in raw) {
+        if (r is Map) {
+          final e = '${r['emoji'] ?? r['reaction'] ?? ''}';
+          if (e.isNotEmpty) counts[e] = (counts[e] ?? 0) + 1;
+        }
+      }
+    } else if (raw is Map) {
+      raw.forEach((k, v) {
+        final n = v is List ? v.length : (v is num ? v.toInt() : 1);
+        if ('$k'.isNotEmpty) counts['$k'] = n;
+      });
+    }
+    return [for (final e in counts.entries) '${e.key}${e.value > 1 ? ' ${e.value}' : ''}'];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -366,37 +566,79 @@ class _MessageBubble extends StatelessWidget {
         : scheme.surfaceContainerHighest;
     final fg = mine ? OkayColors.textPrimary : scheme.onSurface;
     const radius = Radius.circular(18);
+    final reactions = _reactionChips();
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.only(
-            topLeft: radius,
-            topRight: radius,
-            bottomLeft: mine ? radius : const Radius.circular(4),
-            bottomRight: mine ? const Radius.circular(4) : radius,
-          ),
-        ),
+      child: GestureDetector(
+        onLongPress: onLongPress,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            Text(text,
-                style: TextStyle(
-                    color: fg,
-                    fontStyle: message.deleted
-                        ? FontStyle.italic
-                        : FontStyle.normal)),
-            const SizedBox(height: 3),
-            Text(shortAgo(message.createdAt),
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(color: fg.withValues(alpha: 0.7))),
+            Container(
+              margin: const EdgeInsets.only(top: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.75),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.only(
+                  topLeft: radius,
+                  topRight: radius,
+                  bottomLeft: mine ? radius : const Radius.circular(4),
+                  bottomRight: mine ? const Radius.circular(4) : radius,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(text,
+                      style: TextStyle(
+                          color: fg,
+                          fontStyle: message.deleted
+                              ? FontStyle.italic
+                              : FontStyle.normal)),
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (message.pinned)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.push_pin,
+                              size: 11, color: fg.withValues(alpha: 0.7)),
+                        ),
+                      if (message.editedAt != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Text('edited',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: fg.withValues(alpha: 0.7))),
+                        ),
+                      Text(shortAgo(message.createdAt),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: fg.withValues(alpha: 0.7))),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (reactions.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: Text(reactions.join('  '),
+                    style: const TextStyle(fontSize: 12)),
+              ),
           ],
         ),
       ),
