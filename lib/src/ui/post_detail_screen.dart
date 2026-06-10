@@ -82,6 +82,67 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  /// Repost button → choose between a plain repost and a quote.
+  Future<void> _repostMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: Text(_post.repostedByMe ? 'Undo repost' : 'Repost'),
+              onTap: () => Navigator.pop(context, 'repost'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.format_quote),
+              title: const Text('Quote'),
+              onTap: () => Navigator.pop(context, 'quote'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == 'repost') {
+      await _toggleRepost();
+    } else if (choice == 'quote') {
+      await _quote();
+    }
+  }
+
+  Future<void> _quote() async {
+    final controller = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Quote post'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(
+              hintText: 'Add a comment', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text),
+              child: const Text('Post')),
+        ],
+      ),
+    );
+    if (text == null || text.trim().isEmpty) return;
+    try {
+      await api.feed.createPost(PostCreate(text: text.trim(), quoteOf: _post.id));
+      if (mounted) showInfo(context, 'Quoted');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _sendReply() async {
     final text = _input.text.trim();
     if (text.isEmpty || _sending) return;
@@ -116,7 +177,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   _PostHeader(
                     post: _post,
                     onLike: _toggleLike,
-                    onRepost: _toggleRepost,
+                    onRepost: _repostMenu,
                     onBookmark: _toggleBookmark,
                   ),
                   const Divider(height: 1, thickness: 6),
