@@ -21,11 +21,32 @@ class _ComposeScreenState extends State<ComposeScreen> {
   final List<Uint8List> _photos = [];
   bool _posting = false;
 
+  // Poll composer.
+  bool _poll = false;
+  final List<TextEditingController> _options = [
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  Duration _duration = const Duration(days: 1);
+
+  static const _durations = <(String, Duration)>[
+    ('1 hour', Duration(hours: 1)),
+    ('6 hours', Duration(hours: 6)),
+    ('1 day', Duration(days: 1)),
+    ('3 days', Duration(days: 3)),
+    ('7 days', Duration(days: 7)),
+  ];
+
   @override
   void dispose() {
     _text.dispose();
+    for (final c in _options) {
+      c.dispose();
+    }
     super.dispose();
   }
+
+  void _togglePoll() => setState(() => _poll = !_poll);
 
   Future<void> _addPhotos() async {
     final files = await ImagePicker().pickMultiImage(
@@ -40,7 +61,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
   }
 
   bool get _canPost =>
-      !_posting && (_text.text.trim().isNotEmpty || _photos.isNotEmpty);
+      !_posting &&
+      (_text.text.trim().isNotEmpty || _photos.isNotEmpty || _poll);
 
   Future<void> _post() async {
     setState(() => _posting = true);
@@ -48,7 +70,26 @@ class _ComposeScreenState extends State<ComposeScreen> {
       final media = _photos
           .map((b) => PostMedia(type: 'image', base64: base64Encode(b)))
           .toList();
-      await api.feed.createPost(PostCreate(text: _text.text.trim(), media: media));
+
+      PollCreate? poll;
+      if (_poll) {
+        final opts = _options
+            .map((c) => c.text.trim())
+            .where((t) => t.isNotEmpty)
+            .toList();
+        if (opts.length < 2) {
+          showInfo(context, 'Add at least 2 poll options');
+          setState(() => _posting = false);
+          return;
+        }
+        poll = PollCreate(
+          options: opts.map(PollOptionCreate.new).toList(),
+          endsAt: DateTime.now().add(_duration),
+        );
+      }
+
+      await api.feed.createPost(
+          PostCreate(text: _text.text.trim(), media: media, poll: poll));
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) showError(context, e);
@@ -122,6 +163,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 ),
               ),
             ),
+          if (_poll) _buildPollEditor(context),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -134,9 +176,91 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 icon: const Icon(Icons.image_outlined),
                 tooltip: 'Add photos',
               ),
+              IconButton(
+                onPressed: _togglePoll,
+                icon: const Icon(Icons.poll_outlined),
+                tooltip: 'Poll',
+                color: _poll ? Theme.of(context).colorScheme.primary : null,
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPollEditor(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('Poll', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'Remove poll',
+                onPressed: () => setState(() => _poll = false),
+              ),
+            ],
+          ),
+          for (var i = 0; i < _options.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _options[i],
+                      decoration: InputDecoration(
+                        hintText: 'Option ${i + 1}',
+                        isDense: true,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  if (_options.length > 2)
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline),
+                      onPressed: () =>
+                          setState(() => _options.removeAt(i).dispose()),
+                    ),
+                ],
+              ),
+            ),
+          if (_options.length < 4)
+            TextButton.icon(
+              onPressed: () =>
+                  setState(() => _options.add(TextEditingController())),
+              icon: const Icon(Icons.add),
+              label: const Text('Add option'),
+            ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(Icons.schedule, size: 18, color: scheme.outline),
+              const SizedBox(width: 8),
+              const Text('Ends in'),
+              const SizedBox(width: 12),
+              DropdownButton<Duration>(
+                value: _duration,
+                onChanged: (d) => setState(() => _duration = d ?? _duration),
+                items: [
+                  for (final (label, dur) in _durations)
+                    DropdownMenuItem(value: dur, child: Text(label)),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
