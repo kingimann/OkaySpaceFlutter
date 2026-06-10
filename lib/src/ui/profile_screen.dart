@@ -1,15 +1,98 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../okayspace_api.dart';
+import 'activity_screen.dart';
 import 'app_drawer.dart';
+import 'bookmarks_screen.dart';
+import 'business_screen.dart';
+import 'circles_screen.dart';
 import 'common.dart';
 import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
+import 'hashtag_screen.dart';
+import 'leaderboard_screen.dart';
 import 'messages_screen.dart';
 import 'post_tile.dart';
+import 'profile_decor.dart';
 import 'settings_screen.dart';
+
+/// Shows a scannable QR code of a user's profile link in a bottom sheet.
+void showProfileQr(BuildContext context,
+    {required String name, required String handle}) {
+  final url = 'https://okayspace.ca/$handle';
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(name,
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            Text('@$handle',
+                style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: QrImageView(
+                  data: url, size: 220, backgroundColor: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            Text('Scan to view this profile',
+                style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.copy, size: 18),
+              label: const Text('Copy link'),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: url));
+                Navigator.pop(context);
+                showInfo(context, 'Profile link copied');
+              },
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Opens a full-screen, zoomable view of a profile photo.
+void showAvatarViewer(BuildContext context, String? url, String name) {
+  if (url == null || url.isEmpty) return;
+  Navigator.of(context).push(MaterialPageRoute(
+    fullscreenDialog: true,
+    builder: (_) => Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Text(name),
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.8,
+          maxScale: 4,
+          child: Image.network(url,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.person,
+                  size: 120, color: Colors.white24)),
+        ),
+      ),
+    ),
+  ));
+}
 
 /// Public profile of another user, with a follow toggle.
 class ProfileScreen extends StatefulWidget {
@@ -31,8 +114,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late Future<PublicUser> _profile;
   late Future<List<Post>> _posts;
   Future<List<Post>>? _likes;
+  Future<List<Post>>? _replies;
+  Future<List<Post>>? _reposts;
   bool _following = false;
-  // 0 Posts · 1 Media · 2 Likes
+  // 0 Posts · 1 Media · 2 Likes · 3 Replies · 4 Reposts
   int _tab = 0;
 
   @override
@@ -46,12 +131,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (t == _tab) return;
     setState(() {
       _tab = t;
+      if (t == 3) _replies ??= api.users.replies(widget.userId);
+      if (t == 4) _reposts ??= api.users.reposts(widget.userId);
       if (t == 2) _likes ??= api.users.likes(widget.userId);
     });
   }
 
-  Future<List<Post>> get _currentFuture =>
-      _tab == 2 ? _likes! : _posts; // Posts and Media share the posts future
+  Future<List<Post>> get _currentFuture {
+    switch (_tab) {
+      case 2:
+        return _likes!;
+      case 3:
+        return _replies!;
+      case 4:
+        return _reposts!;
+      default:
+        return _posts; // Posts and Media share the posts future
+    }
+  }
 
   int _stat(PublicUser u, List<String> keys) {
     final s = u.raw['stats'];
@@ -112,6 +209,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onTap: () => Navigator.pop(context, 'tip'),
             ),
             ListTile(
+              leading: const Icon(Icons.payments_outlined),
+              title: const Text('Send money'),
+              onTap: () => Navigator.pop(context, 'pay'),
+            ),
+            ListTile(
               leading: const Icon(Icons.workspace_premium_outlined),
               title: Text(u.raw['is_subscribed'] == true
                   ? 'Unsubscribe'
@@ -127,6 +229,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               leading: const Icon(Icons.person_add_alt_1_outlined),
               title: const Text('Add friend'),
               onTap: () => Navigator.pop(context, 'friend'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.qr_code),
+              title: const Text('Show QR code'),
+              onTap: () => Navigator.pop(context, 'qr'),
             ),
             ListTile(
               leading: const Icon(Icons.link),
@@ -147,6 +254,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       switch (action) {
         case 'tip':
           await _tip();
+        case 'pay':
+          if (mounted) await _payUser(u);
+        case 'qr':
+          if (mounted) _showQrFor(u);
         case 'copy':
           await Clipboard.setData(ClipboardData(
               text:
@@ -223,6 +334,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) showInfo(context, 'Shared');
   }
 
+  void _showQrFor(PublicUser u) =>
+      showProfileQr(context, name: u.name, handle: u.username ?? widget.userId);
+
+  /// Sends money from the wallet to this user (amount, note, security answer).
+  Future<void> _payUser(PublicUser u) async {
+    final amountCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    final answerCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('Send money to ${u.name}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Amount', prefixText: '\$ '),
+            ),
+            TextField(
+              controller: noteCtrl,
+              decoration: const InputDecoration(labelText: 'Note (optional)'),
+            ),
+            TextField(
+              controller: answerCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Security answer',
+                  helperText: "The recipient's transfer answer"),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('Send')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final amount = num.tryParse(amountCtrl.text.trim());
+    if (amount == null || amount <= 0) {
+      showInfo(context, 'Enter a valid amount');
+      return;
+    }
+    try {
+      await api.wallet.sendMoney(
+        toUserId: widget.userId,
+        amount: amount,
+        answer: answerCtrl.text.trim(),
+        note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+      );
+      if (mounted) showInfo(context, 'Sent \$$amount to ${u.name}');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _tip() async {
     final amountText = await promptText(context,
         title: 'Send a tip', hint: 'Amount', action: 'Send');
@@ -270,6 +444,82 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// Online presence, "follows you" and subscriber chips for a public profile.
+  Widget _publicMeta(PublicUser u) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget chip(IconData icon, String label, Color color) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: color),
+              const SizedBox(width: 4),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        );
+    final chips = <Widget>[
+      chip(Icons.circle, u.online ? 'Online' : 'Offline',
+          u.online ? const Color(0xFF22C55E) : scheme.outline),
+      if (u.isFollowedBy) chip(Icons.how_to_reg, 'Follows you', scheme.primary),
+      if (u.subscriberCount > 0)
+        chip(Icons.workspace_premium_outlined,
+            '${u.subscriberCount} subs', const Color(0xFFEAB308)),
+    ];
+    return Wrap(
+        alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: chips);
+  }
+
+  /// The user's earned badges (UserBadges component, capped at 4).
+  Widget _publicBadges(PublicUser u) {
+    final badges = u.badges.where((b) => (b.label ?? '').isNotEmpty).take(4);
+    if (badges.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final b in badges)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                      (b.icon != null &&
+                              b.icon!.isNotEmpty &&
+                              !b.icon!.startsWith('http'))
+                          ? b.icon!
+                          : '🏅',
+                      style: const TextStyle(fontSize: 13)),
+                  const SizedBox(width: 4),
+                  Text(b.label!,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.primary)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// Profile card mirroring My Profile: banner, avatar, name, level pill,
   /// info, stat cards and Follow/Message actions.
   Widget _profileCard(PublicUser u) {
@@ -300,14 +550,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               Positioned(
                 top: 56,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: scheme.surfaceContainerLow,
-                    border: Border.all(color: scheme.primary, width: 2),
+                child: GestureDetector(
+                  onTap: () => showAvatarViewer(context, u.picture, u.name),
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: scheme.surfaceContainerLow,
+                      border: Border.all(color: scheme.primary, width: 2),
+                    ),
+                    child: Avatar(url: u.picture, name: u.name, radius: 42),
                   ),
-                  child: Avatar(url: u.picture, name: u.name, radius: 42),
                 ),
               ),
             ],
@@ -332,11 +585,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           if (u.username != null)
             Text(u.handle, style: TextStyle(color: scheme.primary)),
+          const SizedBox(height: 6),
+          _publicMeta(u),
+          _publicBadges(u),
           const SizedBox(height: 12),
           if (u.points > 0 || u.level > 0)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const LeaderboardScreen())),
+                child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHigh,
@@ -369,6 +629,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ],
                 ),
+              ),
               ),
             ),
           if (u.headline != null && u.headline!.isNotEmpty) ...[
@@ -485,27 +746,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
             color: scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Row(
-            children: [
-              for (final (i, label, icon) in const [
-                (0, 'Posts', Icons.grid_view_rounded),
-                (1, 'Media', Icons.photo_library_outlined),
-                (2, 'Likes', Icons.favorite_border),
-              ])
-                Expanded(
-                  child: GestureDetector(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final (i, label, icon) in const [
+                  (0, 'Posts', Icons.grid_view_rounded),
+                  (1, 'Media', Icons.photo_library_outlined),
+                  (2, 'Likes', Icons.favorite_border),
+                  (3, 'Replies', Icons.reply_outlined),
+                  (4, 'Reposts', Icons.repeat),
+                ])
+                  GestureDetector(
                     onTap: () => _setTab(i),
                     behavior: HitTestBehavior.opaque,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
                       margin: const EdgeInsets.symmetric(horizontal: 2),
-                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 9, horizontal: 14),
                       decoration: BoxDecoration(
                         color: _tab == i ? scheme.primary : Colors.transparent,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(icon,
                               size: 16,
@@ -523,8 +788,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -579,10 +844,30 @@ class MyProfileScreen extends StatefulWidget {
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
   late Future<User> _me = api.auth.me();
+  late Future<List<Map<String, dynamic>>> _leaderboard =
+      api.users.leaderboard().catchError((_) => <Map<String, dynamic>>[]);
 
   Future<void> _reload() async {
-    setState(() => _me = api.auth.me());
+    setState(() {
+      _me = api.auth.me();
+      _leaderboard =
+          api.users.leaderboard().catchError((_) => <Map<String, dynamic>>[]);
+    });
     await _me;
+  }
+
+  /// Finds the user's 1-based rank on the points leaderboard, or null.
+  Future<int?> _rankFor(String userId) async {
+    final lb = await _leaderboard;
+    for (var i = 0; i < lb.length; i++) {
+      final e = lb[i];
+      final id = '${e['user_id'] ?? e['id'] ?? e['userId'] ?? ''}';
+      if (id == userId) {
+        final r = e['rank'];
+        return r is num ? r.toInt() : i + 1;
+      }
+    }
+    return null;
   }
 
   Future<void> _editProfile(User user) async {
@@ -596,6 +881,19 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => SettingsScreen(user: u)));
     if (mounted) _reload();
+  }
+
+  /// Shares the user's own profile as a contact card into a chosen chat.
+  Future<void> _shareSelfToChat(User u) async {
+    final conv = await pickConversation(context);
+    if (conv == null || !mounted) return;
+    try {
+      await api.messaging.send(
+          conv.id, MessageCreate(type: 'contact', contactUserId: u.userId));
+      if (mounted) showInfo(context, 'Shared');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   int _stat(User u, List<String> keys) {
@@ -640,7 +938,16 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
                       children: [
-                        MaxWidth(child: _profileCard(u)),
+                        AnimatedBuilder(
+                          animation: profileDecor,
+                          builder: (_, __) => MaxWidth(child: _profileCard(u)),
+                        ),
+                        const SizedBox(height: 12),
+                        MaxWidth(child: _quickLinks()),
+                        if (_completeness(u).$1 < 1.0) ...[
+                          const SizedBox(height: 12),
+                          MaxWidth(child: _completenessCard(u)),
+                        ],
                         const SizedBox(height: 12),
                         MaxWidth(child: _MyPostsSection(userId: u.userId)),
                       ],
@@ -654,6 +961,312 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       ),
     );
   }
+
+  /// Earned badges shown on the profile, parsed from the raw `badges` payload
+  /// (list of strings or {name/label, icon/emoji} maps).
+  Widget _achievementBadges(User u) {
+    final raw = u.raw['badges'];
+    if (raw is! List || raw.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    String labelOf(dynamic b) {
+      if (b is Map) return '${b['label'] ?? b['name'] ?? b['title'] ?? ''}';
+      return '$b';
+    }
+
+    String? emojiOf(dynamic b) {
+      if (b is Map) {
+        final e = b['emoji'] ?? b['icon'];
+        if (e is String && e.isNotEmpty && !e.startsWith('http')) return e;
+      }
+      return null;
+    }
+
+    final badges = [
+      for (final b in raw)
+        if (labelOf(b).isNotEmpty) b
+    ];
+    if (badges.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final b in badges)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: scheme.primary.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(emojiOf(b) ?? '🏅', style: const TextStyle(fontSize: 13)),
+                  const SizedBox(width: 4),
+                  Text(labelOf(b),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.primary)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Quick-access tiles to the user's saved posts, the leaderboard and
+  /// close-friends circles.
+  Widget _quickLinks() {
+    final scheme = Theme.of(context).colorScheme;
+    Widget tile(IconData icon, String label, Widget screen) => Expanded(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => screen)),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Icon(icon, color: scheme.primary),
+                  const SizedBox(height: 6),
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+        );
+    return Row(
+      children: [
+        tile(Icons.bookmark_outline, 'Saved', const BookmarksScreen()),
+        tile(Icons.bolt_outlined, 'Activity', const ActivityScreen()),
+        tile(Icons.leaderboard_outlined, 'Leaderboard',
+            const LeaderboardScreen()),
+        tile(Icons.group_outlined, 'Circles', const CirclesScreen()),
+      ],
+    );
+  }
+
+  /// The profile accent: a locally-chosen theme wins, then the server-side
+  /// hex accent, then the app theme primary.
+  Color _accent(User u) {
+    if (profileDecor.themeId != 'default') return profileDecor.theme.accent;
+    final c = u.accentColor;
+    if (c != null && c.isNotEmpty) {
+      final hex = c.replaceAll('#', '').trim();
+      final v = int.tryParse(hex.length == 6 ? 'FF$hex' : hex, radix: 16);
+      if (v != null) return Color(v);
+    }
+    return Theme.of(context).colorScheme.primary;
+  }
+
+  /// The user's free-text status (e.g. "🟢 Available"), shown under the handle.
+  Widget _statusLine(User u) {
+    final status = '${u.raw['status'] ?? ''}'.trim();
+    if (status.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(status, style: const TextStyle(fontSize: 12.5)),
+      ),
+    );
+  }
+
+  /// Tappable social-link icons parsed from the raw `socials`/`links` payload
+  /// (map of platform→handle-or-url), mirroring the web app's socials lib.
+  Widget _socialLinks(User u) {
+    final raw = u.raw['socials'] ?? u.raw['links'] ?? u.raw['social_links'];
+    if (raw is! Map || raw.isEmpty) return const SizedBox.shrink();
+    const platforms = <String, (IconData, String)>{
+      'website': (Icons.language, ''),
+      'twitter': (Icons.alternate_email, 'https://x.com/'),
+      'x': (Icons.alternate_email, 'https://x.com/'),
+      'instagram': (Icons.camera_alt_outlined, 'https://instagram.com/'),
+      'tiktok': (Icons.music_note, 'https://tiktok.com/@'),
+      'youtube': (Icons.play_circle_outline, 'https://youtube.com/@'),
+      'github': (Icons.code, 'https://github.com/'),
+      'linkedin': (Icons.business_center_outlined, 'https://linkedin.com/in/'),
+      'facebook': (Icons.facebook, 'https://facebook.com/'),
+      'twitch': (Icons.videogame_asset_outlined, 'https://twitch.tv/'),
+    };
+    String urlFor(String key, String value) {
+      if (value.startsWith('http')) return value;
+      final p = platforms[key.toLowerCase()];
+      final base = p?.$2 ?? '';
+      return base.isEmpty ? value : '$base${value.replaceFirst('@', '')}';
+    }
+
+    final entries = <(IconData, String)>[];
+    raw.forEach((k, v) {
+      final key = '$k'.toLowerCase();
+      final value = '$v'.trim();
+      if (value.isEmpty) return;
+      final p = platforms[key];
+      entries.add(((p?.$1 ?? Icons.link), urlFor(key, value)));
+    });
+    if (entries.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        children: [
+          for (final (icon, url) in entries)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: Icon(icon, size: 20, color: scheme.primary),
+              tooltip: url,
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: url));
+                showInfo(context, 'Link copied: $url');
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// A small row of verification chips + "member since" for the profile card.
+  Widget _verificationBadges(User u) {
+    final scheme = Theme.of(context).colorScheme;
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final d = u.createdAt.toLocal();
+    Widget chip(IconData icon, String label, Color color) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: color),
+              const SizedBox(width: 4),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        );
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        if (u.isPrivate)
+          chip(Icons.lock_outline, 'Private', scheme.outline),
+        if (u.emailVerified)
+          chip(Icons.mark_email_read_outlined, 'Email', scheme.primary),
+        if (u.phoneVerified)
+          chip(Icons.phone_android, 'Phone', const Color(0xFF22C55E)),
+        if (u.idVerified)
+          chip(Icons.badge_outlined, 'ID', const Color(0xFF6366F1)),
+        chip(Icons.cake_outlined, 'Since ${months[d.month - 1]} ${d.year}',
+            scheme.outline),
+        FutureBuilder<int?>(
+          future: _rankFor(u.userId),
+          builder: (context, snap) => (snap.data == null)
+              ? const SizedBox.shrink()
+              : chip(Icons.leaderboard_outlined, 'Rank #${snap.data}',
+                  const Color(0xFFEAB308)),
+        ),
+      ],
+    );
+  }
+
+  /// Returns (fraction complete, list of missing field labels).
+  (double, List<String>) _completeness(User u) {
+    final checks = <String, bool>{
+      'Profile photo': u.picture != null && u.picture!.isNotEmpty,
+      'Cover photo': u.coverPhoto != null && u.coverPhoto!.isNotEmpty,
+      'Bio': u.bio != null && u.bio!.isNotEmpty,
+      'Headline': u.headline != null && u.headline!.isNotEmpty,
+      'Location': u.location != null && u.location!.isNotEmpty,
+      'Interests': u.interests.isNotEmpty,
+    };
+    final done = checks.values.where((v) => v).length;
+    final missing = [
+      for (final e in checks.entries)
+        if (!e.value) e.key
+    ];
+    return (done / checks.length, missing);
+  }
+
+  Widget _completenessCard(User u) {
+    final scheme = Theme.of(context).colorScheme;
+    final (frac, missing) = _completeness(u);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.account_circle_outlined, color: scheme.primary),
+              const SizedBox(width: 8),
+              const Text('Complete your profile',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const Spacer(),
+              Text('${(frac * 100).round()}%',
+                  style: TextStyle(
+                      color: scheme.primary, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: frac,
+              minHeight: 6,
+              backgroundColor: scheme.surfaceContainerHighest,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final m in missing)
+                ActionChip(
+                  avatar: const Icon(Icons.add, size: 16),
+                  label: Text(m),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _editProfile(u),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showQr(User u) =>
+      showProfileQr(context, name: u.name, handle: u.username ?? u.userId);
 
   Widget _header() {
     final scheme = Theme.of(context).colorScheme;
@@ -680,18 +1293,71 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           const Spacer(),
           FutureBuilder<User>(
             future: _me,
-            builder: (c, s) => IconButton(
-              icon: const Icon(Icons.ios_share),
-              tooltip: 'Share',
-              onPressed: s.data == null
-                  ? null
-                  : () {
-                      final u = s.data!;
-                      final handle = (u.username ?? u.userId);
+            builder: (c, s) => PopupMenuButton<String>(
+              icon: const Icon(Icons.more_horiz),
+              tooltip: 'Profile options',
+              onSelected: (v) {
+                final u = s.data;
+                switch (v) {
+                  case 'customize':
+                    showProfileDecorSheet(context);
+                  case 'qr':
+                    if (u != null) _showQr(u);
+                  case 'share':
+                    if (u != null) {
+                      final handle = u.username ?? u.userId;
                       final url = 'https://okayspace.ca/$handle';
                       Clipboard.setData(ClipboardData(text: url));
                       showInfo(context, 'Profile link copied: $url');
-                    },
+                    }
+                  case 'sharechat':
+                    if (u != null) _shareSelfToChat(u);
+                  case 'people':
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const FriendsScreen()));
+                  case 'business':
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const BusinessScreen()));
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                    value: 'customize',
+                    child: ListTile(
+                        leading: Icon(Icons.palette_outlined),
+                        title: Text('Customize'),
+                        contentPadding: EdgeInsets.zero)),
+                PopupMenuItem(
+                    value: 'qr',
+                    child: ListTile(
+                        leading: Icon(Icons.qr_code),
+                        title: Text('My QR code'),
+                        contentPadding: EdgeInsets.zero)),
+                PopupMenuItem(
+                    value: 'share',
+                    child: ListTile(
+                        leading: Icon(Icons.ios_share),
+                        title: Text('Share profile'),
+                        contentPadding: EdgeInsets.zero)),
+                PopupMenuItem(
+                    value: 'sharechat',
+                    child: ListTile(
+                        leading: Icon(Icons.forward_to_inbox_outlined),
+                        title: Text('Share to a chat'),
+                        contentPadding: EdgeInsets.zero)),
+                PopupMenuItem(
+                    value: 'people',
+                    child: ListTile(
+                        leading: Icon(Icons.people_outline),
+                        title: Text('Find friends'),
+                        contentPadding: EdgeInsets.zero)),
+                PopupMenuItem(
+                    value: 'business',
+                    child: ListTile(
+                        leading: Icon(Icons.storefront_outlined),
+                        title: Text('My business'),
+                        contentPadding: EdgeInsets.zero)),
+              ],
             ),
           ),
           FutureBuilder<User>(
@@ -724,23 +1390,32 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               Container(
                 height: 100,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [scheme.primary, darken(scheme.primary, 0.25)],
-                  ),
+                  image: (!profileDecor.useBackground &&
+                          u.coverPhoto != null &&
+                          u.coverPhoto!.isNotEmpty)
+                      ? DecorationImage(
+                          image: NetworkImage(u.coverPhoto!), fit: BoxFit.cover)
+                      : null,
+                  gradient: profileDecor.useBackground
+                      ? profileDecor.background.gradient
+                      : (u.coverPhoto != null && u.coverPhoto!.isNotEmpty)
+                          ? null
+                          : LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [_accent(u), darken(_accent(u), 0.25)],
+                            ),
                 ),
               ),
               Positioned(
                 top: 56,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: scheme.surfaceContainerLow,
-                    border: Border.all(color: scheme.primary, width: 2),
+                child: GestureDetector(
+                  onTap: () => showAvatarViewer(context, u.picture, u.name),
+                  child: framedAvatar(
+                    frame: profileDecor.frame,
+                    surface: scheme.surfaceContainerLow,
+                    child: Avatar(url: u.picture, name: u.name, radius: 42),
                   ),
-                  child: Avatar(url: u.picture, name: u.name, radius: 42),
                 ),
               ),
               Positioned(
@@ -758,17 +1433,34 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             ],
           ),
           const SizedBox(height: 52),
-          Text(u.name,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.bold)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(u.name,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ),
+              if (u.verified) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.verified, color: scheme.primary, size: 20),
+              ],
+            ],
+          ),
           Text(u.handle, style: TextStyle(color: scheme.primary)),
+          _statusLine(u),
+          const SizedBox(height: 6),
+          _verificationBadges(u),
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _levelPill(u),
           ),
+          _achievementBadges(u),
+          _socialLinks(u),
           const SizedBox(height: 12),
           if (u.interests.isNotEmpty)
             Padding(
@@ -779,11 +1471,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 runSpacing: 6,
                 children: [
                   for (final t in u.interests)
-                    Chip(
-                        label: Text(t),
+                    ActionChip(
+                        label: Text('#$t'),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize:
-                            MaterialTapTargetSize.shrinkWrap),
+                            MaterialTapTargetSize.shrinkWrap,
+                        onPressed: () => HashtagScreen.open(context, t)),
                 ],
               ),
             ),
@@ -808,16 +1501,28 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             child: _statsRow(u),
           ),
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _editProfile(u),
-                icon: const Icon(Icons.edit_outlined),
-                label: const Text('Edit profile'),
-              ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _editProfile(u),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Edit profile'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => ProfileScreen.open(context, u.userId),
+                    icon: const Icon(Icons.visibility_outlined),
+                    label: const Text('View as visitor'),
+                  ),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -830,7 +1535,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     final progress = (toNext != null && (u.points + toNext) > 0)
         ? u.points / (u.points + toNext)
         : (u.points % 100) / 100;
-    return Container(
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => const LeaderboardScreen())),
+      child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh,
@@ -884,18 +1593,26 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           ],
         ],
       ),
+      ),
     );
   }
 
   Widget _infoRow(User u) {
     final scheme = Theme.of(context).colorScheme;
     final birthday = '${u.raw['birthday'] ?? ''}';
+    final pronouns = '${u.raw['pronouns'] ?? ''}'.trim();
     final items = <Widget>[
       if (u.location != null && u.location!.isNotEmpty)
         Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.place_outlined, size: 16, color: scheme.outline),
           const SizedBox(width: 4),
           Text(u.location!),
+        ]),
+      if (pronouns.isNotEmpty)
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.badge_outlined, size: 16, color: scheme.outline),
+          const SizedBox(width: 4),
+          Text(pronouns),
         ]),
       if (birthday.isNotEmpty)
         Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1010,6 +1727,8 @@ class _MyPostsSectionState extends State<_MyPostsSection> {
   late Future<List<Post>> _posts = api.users.posts(widget.userId);
   Future<List<Post>>? _media;
   Future<List<Post>>? _likes;
+  Future<List<Post>>? _replies;
+  Future<List<Post>>? _reposts;
 
   Future<List<Post>> _future() {
     switch (_tab) {
@@ -1017,6 +1736,10 @@ class _MyPostsSectionState extends State<_MyPostsSection> {
         return _media ??= api.users.posts(widget.userId);
       case 2:
         return _likes ??= api.users.likes(widget.userId);
+      case 3:
+        return _replies ??= api.users.replies(widget.userId);
+      case 4:
+        return _reposts ??= api.users.reposts(widget.userId);
       default:
         return _posts;
     }
@@ -1029,6 +1752,10 @@ class _MyPostsSectionState extends State<_MyPostsSection> {
           _media = api.users.posts(widget.userId);
         case 2:
           _likes = api.users.likes(widget.userId);
+        case 3:
+          _replies = api.users.replies(widget.userId);
+        case 4:
+          _reposts = api.users.reposts(widget.userId);
         default:
           _posts = api.users.posts(widget.userId);
       }
@@ -1041,34 +1768,38 @@ class _MyPostsSectionState extends State<_MyPostsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Segmented tab selector.
+        // Segmented tab selector (scrolls horizontally to fit all tabs).
         Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Row(
-            children: [
-              for (final (i, label, icon) in const [
-                (0, 'Posts', Icons.grid_view_rounded),
-                (1, 'Media', Icons.photo_library_outlined),
-                (2, 'Likes', Icons.favorite_border),
-              ])
-                Expanded(
-                  child: GestureDetector(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final (i, label, icon) in const [
+                  (0, 'Posts', Icons.grid_view_rounded),
+                  (1, 'Media', Icons.photo_library_outlined),
+                  (2, 'Likes', Icons.favorite_border),
+                  (3, 'Replies', Icons.reply_outlined),
+                  (4, 'Reposts', Icons.repeat),
+                ])
+                  GestureDetector(
                     onTap: () => setState(() => _tab = i),
                     behavior: HitTestBehavior.opaque,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
                       margin: const EdgeInsets.symmetric(horizontal: 2),
-                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 9, horizontal: 14),
                       decoration: BoxDecoration(
                         color: _tab == i ? scheme.primary : Colors.transparent,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(icon,
                               size: 16,
@@ -1084,8 +1815,8 @@ class _MyPostsSectionState extends State<_MyPostsSection> {
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),

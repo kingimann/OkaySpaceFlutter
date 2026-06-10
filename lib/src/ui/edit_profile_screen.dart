@@ -36,6 +36,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late DateTime? _birthday =
       DateTime.tryParse('${widget.user.raw['birthday'] ?? ''}');
 
+  // Social links (the profile renders these as tappable icons).
+  static const _socialPlatforms = <String, (String, IconData)>{
+    'website': ('Website', Icons.language),
+    'twitter': ('X / Twitter', Icons.alternate_email),
+    'instagram': ('Instagram', Icons.camera_alt_outlined),
+    'tiktok': ('TikTok', Icons.music_note),
+    'youtube': ('YouTube', Icons.play_circle_outline),
+    'github': ('GitHub', Icons.code),
+    'linkedin': ('LinkedIn', Icons.business_center_outlined),
+    'facebook': ('Facebook', Icons.facebook),
+  };
+  late final Map<String, TextEditingController> _socials = {
+    for (final k in _socialPlatforms.keys)
+      k: TextEditingController(text: _initialSocial(k)),
+  };
+
+  String _initialSocial(String key) {
+    final raw = widget.user.raw['socials'] ??
+        widget.user.raw['links'] ??
+        widget.user.raw['social_links'];
+    if (raw is Map && raw[key] != null) return '${raw[key]}';
+    return '';
+  }
+
   /// Locally-picked avatar / cover bytes, shown as previews until saved.
   Uint8List? _newPicture;
   Uint8List? _newCover;
@@ -92,6 +116,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _location.dispose();
     _pronouns.dispose();
     _status.dispose();
+    for (final c in _socials.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -107,6 +134,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'status': _status.text.trim(),
         'interests': _interests,
         'is_private': _private,
+        'socials': {
+          for (final e in _socials.entries)
+            if (e.value.text.trim().isNotEmpty) e.key: e.value.text.trim(),
+        },
       };
       if (_birthday != null) {
         patch['birthday'] =
@@ -321,6 +352,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Social links',
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13)),
+          ),
+          const SizedBox(height: 8),
+          for (final e in _socialPlatforms.entries) ...[
+            TextField(
+              controller: _socials[e.key],
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: e.value.$1,
+                hintText: e.key == 'website' ? 'https://…' : '@handle or URL',
+                prefixIcon: Icon(e.value.$2),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           const SizedBox(height: 8),
           SwitchListTile(
             value: _private,
