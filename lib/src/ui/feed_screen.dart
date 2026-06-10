@@ -99,15 +99,6 @@ class _FeedScreenState extends State<FeedScreen> {
     if (posted == true) await _reload();
   }
 
-  Future<void> _toggleLike(Post post) async {
-    try {
-      await api.feed.toggleLike(post.id);
-      await _reload();
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -172,10 +163,7 @@ class _FeedScreenState extends State<FeedScreen> {
                         }
                         final post = posts[i - 1];
                         return PostTile(
-                            post: post,
-                            card: true,
-                            onLike: () => _toggleLike(post),
-                            onChanged: _reload);
+                            post: post, card: true, onChanged: _reload);
                       },
                     );
                   },

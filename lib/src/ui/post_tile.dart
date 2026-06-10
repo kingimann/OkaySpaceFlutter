@@ -186,17 +186,15 @@ Future<void> _reportPost(BuildContext context, Post post) async {
 ///
 /// Tapping the row opens the post's detail/thread. Set [tappable] to false to
 /// disable that (e.g. when the row is already inside a detail view).
-class PostTile extends StatelessWidget {
+class PostTile extends StatefulWidget {
   const PostTile(
       {super.key,
       required this.post,
-      this.onLike,
       this.onChanged,
       this.tappable = true,
       this.card = false});
 
   final Post post;
-  final VoidCallback? onLike;
 
   /// Called after the post is edited/pinned/deleted via the ⋯ menu.
   final VoidCallback? onChanged;
@@ -204,6 +202,106 @@ class PostTile extends StatelessWidget {
 
   /// When true, render as a rounded surface card with margin (feed style).
   final bool card;
+
+  @override
+  State<PostTile> createState() => _PostTileState();
+}
+
+class _PostTileState extends State<PostTile> {
+  // Local, optimistic engagement state so taps update in place without a
+  // full list refetch (and survive re-parenting).
+  late bool _liked;
+  late int _likes;
+  late bool _disliked;
+  late int _dislikes;
+  late bool _bookmarked;
+  late int _bookmarks;
+  late bool _reposted;
+  late int _reposts;
+
+  Post get post => widget.post;
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(PostTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Re-sync when the host swaps in a refreshed post.
+    if (oldWidget.post.id != widget.post.id ||
+        oldWidget.post.likesCount != widget.post.likesCount ||
+        oldWidget.post.bookmarksCount != widget.post.bookmarksCount ||
+        oldWidget.post.repostsCount != widget.post.repostsCount) {
+      _sync();
+    }
+  }
+
+  void _sync() {
+    _liked = post.likedByMe;
+    _likes = post.likesCount;
+    _disliked = post.dislikedByMe;
+    _dislikes = post.dislikesCount;
+    _bookmarked = post.bookmarkedByMe;
+    _bookmarks = post.bookmarksCount;
+    _reposted = post.repostedByMe;
+    _reposts = post.repostsCount;
+  }
+
+  Future<void> _toggle(
+      Future<void> Function() apiCall, void Function() optimistic) async {
+    setState(optimistic);
+    try {
+      await apiCall();
+    } catch (e) {
+      setState(_sync); // revert to the server-known state
+      if (mounted) showError(context, e);
+    }
+  }
+
+  void _like() => _toggle(() => api.feed.toggleLike(post.id), () {
+        if (_liked) {
+          _liked = false;
+          _likes--;
+        } else {
+          _liked = true;
+          _likes++;
+          if (_disliked) {
+            _disliked = false;
+            _dislikes--;
+          }
+        }
+      });
+
+  void _dislike() => _toggle(() => api.feed.toggleDislike(post.id), () {
+        if (_disliked) {
+          _disliked = false;
+          _dislikes--;
+        } else {
+          _disliked = true;
+          _dislikes++;
+          if (_liked) {
+            _liked = false;
+            _likes--;
+          }
+        }
+      });
+
+  void _bookmark() => _toggle(() => api.feed.toggleBookmark(post.id), () {
+        _bookmarked = !_bookmarked;
+        _bookmarks += _bookmarked ? 1 : -1;
+      });
+
+  void _repost() => _toggle(() => api.feed.toggleRepost(post.id), () {
+        _reposted = !_reposted;
+        _reposts += _reposted ? 1 : -1;
+      });
+
+  VoidCallback? get onChanged => widget.onChanged;
+  bool get tappable => widget.tappable;
+  bool get card => widget.card;
 
   @override
   Widget build(BuildContext context) {
@@ -321,40 +419,43 @@ class PostTile extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _PostAction(
-                icon: post.likedByMe ? Icons.favorite : Icons.favorite_border,
-                count: post.likesCount,
-                color: post.likedByMe ? Colors.red : null,
-                onTap: onLike,
+                icon: _liked ? Icons.favorite : Icons.favorite_border,
+                count: _likes,
+                color: _liked ? Colors.red : null,
+                onTap: _like,
                 onLongPress: () => _reactToPost(context, post),
               ),
               _PostAction(
-                icon: post.dislikedByMe
+                icon: _disliked
                     ? Icons.thumb_down
                     : Icons.thumb_down_outlined,
-                count: post.dislikesCount,
-                color: post.dislikedByMe
+                count: _dislikes,
+                color: _disliked
                     ? Theme.of(context).colorScheme.primary
                     : null,
-                onTap: () async {
-                  try {
-                    await api.feed.toggleDislike(post.id);
-                    onChanged?.call();
-                  } catch (e) {
-                    if (context.mounted) showError(context, e);
-                  }
-                },
+                onTap: _dislike,
               ),
               _PostAction(
-                  icon: Icons.mode_comment_outlined, count: post.repliesCount),
-              _PostAction(icon: Icons.repeat, count: post.repostsCount),
+                icon: Icons.mode_comment_outlined,
+                count: post.repliesCount,
+                onTap: () => PostDetailScreen.open(context, post),
+              ),
+              _PostAction(
+                icon: Icons.repeat,
+                count: _reposts,
+                color: _reposted ? const Color(0xFF22C55E) : null,
+                onTap: _repost,
+              ),
               if (post.viewsCount > 0)
                 _PostAction(
                     icon: Icons.visibility_outlined, count: post.viewsCount),
               _PostAction(
-                icon: post.bookmarkedByMe
-                    ? Icons.bookmark
-                    : Icons.bookmark_border,
-                count: post.bookmarksCount,
+                icon: _bookmarked ? Icons.bookmark : Icons.bookmark_border,
+                count: _bookmarks,
+                color: _bookmarked
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+                onTap: _bookmark,
               ),
             ],
           ),

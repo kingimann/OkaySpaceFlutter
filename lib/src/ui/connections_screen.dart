@@ -5,7 +5,7 @@ import 'common.dart';
 import 'profile_screen.dart';
 
 /// Followers / Following lists for a user.
-class ConnectionsScreen extends StatelessWidget {
+class ConnectionsScreen extends StatefulWidget {
   const ConnectionsScreen({
     super.key,
     required this.userId,
@@ -16,10 +16,21 @@ class ConnectionsScreen extends StatelessWidget {
   final int initialIndex;
 
   @override
+  State<ConnectionsScreen> createState() => _ConnectionsScreenState();
+}
+
+class _ConnectionsScreenState extends State<ConnectionsScreen> {
+  // Cached once so rebuilds don't refetch and flicker the lists.
+  late final Future<List<PublicUser>> _followers =
+      api.users.followers(widget.userId);
+  late final Future<List<PublicUser>> _following =
+      api.users.following(widget.userId);
+
+  @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      initialIndex: initialIndex,
+      initialIndex: widget.initialIndex,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Connections'),
@@ -30,12 +41,9 @@ class ConnectionsScreen extends StatelessWidget {
         body: MaxWidth(
           child: TabBarView(
             children: [
+              _UserList(future: _followers, empty: 'No followers yet.'),
               _UserList(
-                  future: api.users.followers(userId),
-                  empty: 'No followers yet.'),
-              _UserList(
-                  future: api.users.following(userId),
-                  empty: 'Not following anyone yet.'),
+                  future: _following, empty: 'Not following anyone yet.'),
             ],
           ),
         ),

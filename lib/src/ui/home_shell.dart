@@ -38,7 +38,9 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final tabs = [
       const FeedScreen(),
-      const ReelsScreen(),
+      // Reels is only mounted while selected so its video doesn't autoplay
+      // (and keep playing audio) in the background behind other tabs.
+      _index == 1 ? const ReelsScreen() : const SizedBox.shrink(),
       const MessagesScreen(),
       const MarketplaceScreen(),
       MyProfileScreen(onSignedOut: widget.onSignedOut),
