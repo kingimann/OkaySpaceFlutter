@@ -428,7 +428,7 @@ class _PostTileState extends State<PostTile> {
               _PostAction(
                 icon: _liked ? Icons.favorite : Icons.favorite_border,
                 count: _likes,
-                color: _liked ? Colors.red : null,
+                color: _liked ? OkayColors.danger : null,
                 onTap: _like,
                 onLongPress: () => _reactToPost(context, post),
               ),
@@ -737,9 +737,31 @@ class _MediaPreview extends StatelessWidget {
             children: [
               media.isVideo
                   ? PostVideo(url: url)
-                  : Image.network(url, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          const ColoredBox(color: Colors.black12)),
+                  : Image.network(url,
+                      fit: BoxFit.cover,
+                      // Fade the photo in once decoded instead of popping it
+                      // over a black flash.
+                      frameBuilder: (_, child, frame, wasSync) {
+                        if (wasSync) return child;
+                        return AnimatedOpacity(
+                          opacity: frame == null ? 0 : 1,
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeOut,
+                          child: child,
+                        );
+                      },
+                      loadingBuilder: (_, child, progress) => progress == null
+                          ? child
+                          : ColoredBox(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest),
+                      errorBuilder: (_, __, ___) => ColoredBox(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          child: Icon(Icons.broken_image_outlined,
+                              color: Theme.of(context).colorScheme.outline))),
               if (extra > 0)
                 Positioned(
                   right: 8,

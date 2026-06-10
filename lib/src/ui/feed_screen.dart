@@ -141,21 +141,44 @@ class _FeedScreenState extends State<FeedScreen> {
                               _TrendingStrip(future: _trending),
                               if (posts.isEmpty)
                                 Padding(
-                                  padding: const EdgeInsets.only(top: 100),
+                                  padding: const EdgeInsets.only(top: 90),
                                   child: Column(
                                     children: [
-                                      Icon(Icons.dynamic_feed_outlined,
-                                          size: 56,
+                                      Container(
+                                        width: 84,
+                                        height: 84,
+                                        decoration: BoxDecoration(
                                           color: Theme.of(context)
                                               .colorScheme
-                                              .outline),
-                                      const SizedBox(height: 12),
-                                      Text('Your feed is empty.\nTap + to post.',
+                                              .primary
+                                              .withValues(alpha: 0.10),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(Icons.dynamic_feed_outlined,
+                                            size: 40,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                          _tab == 1
+                                              ? 'No posts from people you follow yet.'
+                                              : 'Your feed is empty.',
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                               color: Theme.of(context)
                                                   .colorScheme
-                                                  .outline)),
+                                                  .outline,
+                                              fontSize: 14.5,
+                                              height: 1.35)),
+                                      const SizedBox(height: 18),
+                                      FilledButton.tonalIcon(
+                                        onPressed: _compose,
+                                        icon: const Icon(Icons.edit_outlined,
+                                            size: 18),
+                                        label: const Text('Create a post'),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -264,17 +287,22 @@ class _FeedScreenState extends State<FeedScreen> {
     final selected = _tab == idx;
     return GestureDetector(
       onTap: () => _setTab(idx),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? scheme.surfaceContainerHigh : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(label,
-            style: TextStyle(
-              color: selected ? scheme.onSurface : scheme.outline,
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-            )),
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 200),
+          style: TextStyle(
+            color: selected ? scheme.onSurface : scheme.outline,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+          ),
+          child: Text(label),
+        ),
       ),
     );
   }
@@ -427,8 +455,18 @@ class _StoryTrayTile extends StatelessWidget {
               padding: const EdgeInsets.all(2.5),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
+                // Unviewed stories get a vivid gradient ring; viewed ones a
+                // flat muted ring.
+                gradient: item.hasUnviewed
+                    ? SweepGradient(colors: [
+                        Theme.of(context).colorScheme.primary,
+                        const Color(0xFFA855F7),
+                        const Color(0xFFF97316),
+                        Theme.of(context).colorScheme.primary,
+                      ])
+                    : null,
                 color: item.hasUnviewed
-                    ? Theme.of(context).colorScheme.primary
+                    ? null
                     : Theme.of(context).colorScheme.outlineVariant,
               ),
               child: Container(
