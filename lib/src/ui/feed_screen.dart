@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import 'app_drawer.dart';
 import 'common.dart';
+import 'compose_screen.dart';
 import 'messages_screen.dart';
 import 'notifications_screen.dart';
 import 'post_tile.dart';
@@ -67,17 +68,10 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _compose() async {
-    final text = await showDialog<String>(
-      context: context,
-      builder: (_) => const _ComposeDialog(),
-    );
-    if (text == null || text.trim().isEmpty) return;
-    try {
-      await api.feed.post(text.trim());
-      await _reload();
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
+    final posted = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => const ComposeScreen(),
+    ));
+    if (posted == true) await _reload();
   }
 
   Future<void> _toggleLike(Post post) async {
@@ -384,49 +378,6 @@ class _StoryTrayTile extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ComposeDialog extends StatefulWidget {
-  const _ComposeDialog();
-
-  @override
-  State<_ComposeDialog> createState() => _ComposeDialogState();
-}
-
-class _ComposeDialogState extends State<_ComposeDialog> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('New post'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLines: 4,
-        decoration: const InputDecoration(
-          hintText: "What's happening?",
-          border: OutlineInputBorder(),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _controller.text),
-          child: const Text('Post'),
-        ),
-      ],
     );
   }
 }
