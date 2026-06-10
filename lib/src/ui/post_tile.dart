@@ -82,6 +82,10 @@ class PostTile extends StatelessWidget {
             const SizedBox(height: 8),
             _QuotedPost(quoted: post.quotedPost!),
           ],
+          if (post.poll != null) ...[
+            const SizedBox(height: 8),
+            _PostPoll(postId: post.id, poll: post.poll!),
+          ],
           const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -126,6 +130,109 @@ class PostTile extends StatelessWidget {
       );
     }
     return result;
+  }
+}
+
+/// An interactive poll: tap an option to vote, then see the results.
+class _PostPoll extends StatefulWidget {
+  const _PostPoll({required this.postId, required this.poll});
+
+  final String postId;
+  final Poll poll;
+
+  @override
+  State<_PostPoll> createState() => _PostPollState();
+}
+
+class _PostPollState extends State<_PostPoll> {
+  late Poll _poll = widget.poll;
+  bool _voting = false;
+
+  bool get _locked => _poll.votedOptionId != null || _poll.closed;
+
+  Future<void> _vote(String optionId) async {
+    if (_locked || _voting) return;
+    setState(() => _voting = true);
+    try {
+      final updated = await api.feed.votePoll(widget.postId, optionId);
+      if (mounted && updated.poll != null) {
+        setState(() => _poll = updated.poll!);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _voting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final total = _poll.totalVotes;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final o in _poll.options)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: GestureDetector(
+              onTap: _locked ? null : () => _vote(o.id),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Stack(
+                  children: [
+                    Container(
+                      height: 38,
+                      color: scheme.surfaceContainerHighest,
+                    ),
+                    // Result fill bar.
+                    if (_locked)
+                      FractionallySizedBox(
+                        widthFactor: total > 0 ? o.votes / total : 0,
+                        child: Container(
+                          height: 38,
+                          color: o.id == _poll.votedOptionId
+                              ? scheme.primary.withValues(alpha: 0.55)
+                              : scheme.primary.withValues(alpha: 0.22),
+                        ),
+                      ),
+                    Container(
+                      height: 38,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        children: [
+                          if (o.id == _poll.votedOptionId)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 6),
+                              child: Icon(Icons.check_circle, size: 16),
+                            ),
+                          Expanded(
+                            child: Text(o.text,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ),
+                          if (_locked)
+                            Text(
+                                '${total > 0 ? ((o.votes / total) * 100).round() : 0}%',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        Text(
+          [
+            '$total ${total == 1 ? 'vote' : 'votes'}',
+            if (_poll.closed) 'final' else 'tap to vote',
+          ].join(' · '),
+          style: TextStyle(color: scheme.outline, fontSize: 12),
+        ),
+      ],
+    );
   }
 }
 
