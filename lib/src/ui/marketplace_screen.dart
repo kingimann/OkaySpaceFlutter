@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'business_screen.dart';
@@ -26,10 +27,24 @@ const _kSorts = <(String, String?)>[
   ('Most popular', 'popular'),
 ];
 
+const _kConditions = <(String, String?)>[
+  ('Any condition', null),
+  ('New', 'new'),
+  ('Like new', 'like_new'),
+  ('Good', 'good'),
+  ('Fair', 'fair'),
+];
+
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   late Future<List<Listing>> _listings;
   final _search = TextEditingController();
   String? _sort;
+  num? _minPrice;
+  num? _maxPrice;
+  String? _condition;
+
+  bool get _hasFilters =>
+      _minPrice != null || _maxPrice != null || _condition != null;
 
   @override
   void initState() {
@@ -48,7 +63,99 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     _listings = api.marketplace.listings(
       query: q.isEmpty ? null : q,
       sort: _sort,
+      minPrice: _minPrice,
+      maxPrice: _maxPrice,
+      condition: _condition,
     );
+  }
+
+  Future<void> _pickFilters() async {
+    final minCtrl =
+        TextEditingController(text: _minPrice?.toString() ?? '');
+    final maxCtrl =
+        TextEditingController(text: _maxPrice?.toString() ?? '');
+    var condition = _condition;
+    final applied = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+        child: StatefulBuilder(
+          builder: (context, setSheet) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Filters',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: minCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                          labelText: 'Min price', border: OutlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: maxCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                          labelText: 'Max price', border: OutlineInputBorder()),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final c in _kConditions)
+                    ChoiceChip(
+                      label: Text(c.$1),
+                      selected: condition == c.$2,
+                      onSelected: (_) => setSheet(() => condition = c.$2),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Clear'),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Apply'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (applied == null) return;
+    setState(() {
+      if (applied) {
+        _minPrice = num.tryParse(minCtrl.text.trim());
+        _maxPrice = num.tryParse(maxCtrl.text.trim());
+        _condition = condition;
+      } else {
+        _minPrice = null;
+        _maxPrice = null;
+        _condition = null;
+      }
+      _query();
+    });
+    minCtrl.dispose();
+    maxCtrl.dispose();
   }
 
   void _pickSort() async {
@@ -117,6 +224,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             icon: const Icon(Icons.add),
             tooltip: 'Sell something',
             onPressed: _create,
+          ),
+          IconButton(
+            icon: Icon(_hasFilters ? Icons.filter_alt : Icons.filter_alt_outlined),
+            tooltip: 'Filters',
+            color: _hasFilters ? Theme.of(context).colorScheme.primary : null,
+            onPressed: _pickFilters,
           ),
           IconButton(
             icon: const Icon(Icons.sort),
@@ -353,10 +466,87 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     }
   }
 
+  Future<void> _copyLink() async {
+    await Clipboard.setData(ClipboardData(
+        text: 'https://okayspace.ca/listing/${widget.listingId}'));
+    if (mounted) showInfo(context, 'Link copied');
+  }
+
+  String _convName(ConversationView c) {
+    if (c.name != null && c.name!.isNotEmpty) return c.name!;
+    if (c.otherUser != null) return c.otherUser!.name;
+    if (c.members.isNotEmpty) return c.members.map((m) => m.name).join(', ');
+    return 'Conversation';
+  }
+
+  Future<void> _shareToChat() async {
+    Listing? l;
+    try {
+      l = await _listing;
+    } catch (_) {}
+    final convs = await api.messaging
+        .conversations()
+        .catchError((_) => <ConversationView>[]);
+    if (!mounted) return;
+    final target = await showModalBottomSheet<ConversationView>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Share to',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final c in convs)
+                    ListTile(
+                      leading: Avatar(
+                          url: c.avatar ?? c.otherUser?.picture,
+                          name: _convName(c)),
+                      title: Text(_convName(c),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onTap: () => Navigator.pop(context, c),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (target == null || !mounted) return;
+    final text = 'Check out this listing: ${l?.title ?? ''}\n'
+        'https://okayspace.ca/listing/${widget.listingId}';
+    try {
+      await api.messaging.sendText(target.id, text);
+      if (mounted) showInfo(context, 'Shared to chat');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const OkayAppBar(title: Text('Listing')),
+      appBar: OkayAppBar(
+        title: const Text('Listing'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.link),
+            tooltip: 'Copy link',
+            onPressed: _copyLink,
+          ),
+          IconButton(
+            icon: const Icon(Icons.forward_to_inbox_outlined),
+            tooltip: 'Share to a chat',
+            onPressed: _shareToChat,
+          ),
+        ],
+      ),
       body: MaxWidth(
         child: FutureBuilder<Listing>(
         future: _listing,

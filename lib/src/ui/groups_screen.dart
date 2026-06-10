@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -433,6 +434,29 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     }
   }
 
+  Future<void> _copyLink() async {
+    await Clipboard.setData(
+        ClipboardData(text: 'https://okayspace.ca/g/${widget.groupId}'));
+    if (mounted) showInfo(context, 'Link copied');
+  }
+
+  Future<void> _shareToChat() async {
+    Group? g;
+    try {
+      g = await _group;
+    } catch (_) {}
+    if (!mounted) return;
+    final target = await pickConversation(context);
+    if (target == null || !mounted) return;
+    try {
+      await api.messaging.sendText(target.id,
+          'Check out the group ${g?.name ?? ''}\nhttps://okayspace.ca/g/${widget.groupId}');
+      if (mounted) showInfo(context, 'Shared to chat');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _composePost() async {
     final text = await promptText(context,
         title: 'Post to group', hint: "What's happening?");
@@ -521,15 +545,30 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             future: _group,
             builder: (context, snap) {
               final g = snap.data;
-              if (g == null || !g.canManage) return const SizedBox.shrink();
+              final canManage = g?.canManage ?? false;
               return PopupMenuButton<String>(
                 onSelected: (v) {
-                  if (v == 'edit') _editGroup(g);
-                  if (v == 'delete') _deleteGroup(g);
+                  switch (v) {
+                    case 'copy':
+                      _copyLink();
+                    case 'share':
+                      _shareToChat();
+                    case 'edit':
+                      if (g != null) _editGroup(g);
+                    case 'delete':
+                      if (g != null) _deleteGroup(g);
+                  }
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Edit group')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete group')),
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'copy', child: Text('Copy link')),
+                  const PopupMenuItem(
+                      value: 'share', child: Text('Share to a chat')),
+                  if (canManage) ...[
+                    const PopupMenuItem(
+                        value: 'edit', child: Text('Edit group')),
+                    const PopupMenuItem(
+                        value: 'delete', child: Text('Delete group')),
+                  ],
                 ],
               );
             },

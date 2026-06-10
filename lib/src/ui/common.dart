@@ -86,6 +86,53 @@ void openSidebar(BuildContext context) {
   homeScaffoldKey.currentState?.openDrawer();
 }
 
+/// A short display title for a conversation (group name, other user, members).
+String conversationTitle(ConversationView c) {
+  if (c.name != null && c.name!.isNotEmpty) return c.name!;
+  if (c.otherUser != null) return c.otherUser!.name;
+  if (c.members.isNotEmpty) return c.members.map((m) => m.name).join(', ');
+  return 'Conversation';
+}
+
+/// Shows a sheet to pick one of the user's conversations (for sharing).
+/// Returns the chosen conversation, or null if dismissed.
+Future<ConversationView?> pickConversation(BuildContext context) async {
+  final convs = await api.messaging
+      .conversations()
+      .catchError((_) => <ConversationView>[]);
+  if (!context.mounted) return null;
+  return showModalBottomSheet<ConversationView>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const ListTile(
+              title: Text('Share to',
+                  style: TextStyle(fontWeight: FontWeight.bold))),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final c in convs)
+                  ListTile(
+                    leading: Avatar(
+                        url: c.avatar ?? c.otherUser?.picture,
+                        name: conversationTitle(c)),
+                    title: Text(conversationTitle(c),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onTap: () => Navigator.pop(context, c),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 /// The home destination the shell should show, identified by its id (see
 /// [kAllNavDests]). [OkayBottomNav] sets this from any screen; the shell
 /// listens and switches tabs (popping back to it first).

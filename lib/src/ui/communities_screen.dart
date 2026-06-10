@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -426,6 +427,24 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     }
   }
 
+  Future<void> _copyLink() async {
+    await Clipboard.setData(
+        ClipboardData(text: 'https://okayspace.ca/c/${widget.name}'));
+    if (mounted) showInfo(context, 'Link copied');
+  }
+
+  Future<void> _shareToChat() async {
+    final target = await pickConversation(context);
+    if (target == null || !mounted) return;
+    try {
+      await api.messaging.sendText(target.id,
+          'Check out the community c/${widget.name}\nhttps://okayspace.ca/c/${widget.name}');
+      if (mounted) showInfo(context, 'Shared to chat');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _toggleFavorite(Community c) async {
     try {
       if (c.isFavorite) {
@@ -582,6 +601,17 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                             canModerate: c?.canModerate ?? false),
                       ),
                     ),
+                  ),
+                  PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'copy') _copyLink();
+                      if (v == 'share') _shareToChat();
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'copy', child: Text('Copy link')),
+                      PopupMenuItem(
+                          value: 'share', child: Text('Share to a chat')),
+                    ],
                   ),
                 ],
               );

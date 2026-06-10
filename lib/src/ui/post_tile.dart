@@ -24,6 +24,11 @@ Future<void> _showPostMenu(BuildContext context, Post post,
             title: const Text('Copy link'),
             onTap: () => Navigator.pop(context, 'copy'),
           ),
+          ListTile(
+            leading: const Icon(Icons.forward_to_inbox_outlined),
+            title: const Text('Share to a chat'),
+            onTap: () => Navigator.pop(context, 'share'),
+          ),
           if (mine) ...[
             ListTile(
               leading: const Icon(Icons.edit_outlined),
@@ -70,6 +75,8 @@ Future<void> _showPostMenu(BuildContext context, Post post,
         await Clipboard.setData(
             ClipboardData(text: 'https://okayspace.ca/post/${post.id}'));
         if (context.mounted) showInfo(context, 'Link copied');
+      case 'share':
+        await _sharePostToChat(context, post);
       case 'not_interested':
         await api.feed.notInterested(post.id);
         if (context.mounted) showInfo(context, "We'll show less like this");
@@ -92,6 +99,59 @@ Future<void> _showPostMenu(BuildContext context, Post post,
         await api.feed.editPost(post.id, {'text': text});
         onChanged?.call();
     }
+  } catch (e) {
+    if (context.mounted) showError(context, e);
+  }
+}
+
+String _convName(ConversationView c) {
+  if (c.name != null && c.name!.isNotEmpty) return c.name!;
+  if (c.otherUser != null) return c.otherUser!.name;
+  if (c.members.isNotEmpty) return c.members.map((m) => m.name).join(', ');
+  return 'Conversation';
+}
+
+/// Shares a post into a conversation the user picks (sent as a post message).
+Future<void> _sharePostToChat(BuildContext context, Post post) async {
+  final convs = await api.messaging
+      .conversations()
+      .catchError((_) => <ConversationView>[]);
+  if (!context.mounted) return;
+  final target = await showModalBottomSheet<ConversationView>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const ListTile(
+              title: Text('Share to',
+                  style: TextStyle(fontWeight: FontWeight.bold))),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final c in convs)
+                  ListTile(
+                    leading: Avatar(
+                        url: c.avatar ?? c.otherUser?.picture,
+                        name: _convName(c)),
+                    title: Text(_convName(c),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onTap: () => Navigator.pop(context, c),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (target == null || !context.mounted) return;
+  try {
+    await api.messaging
+        .send(target.id, MessageCreate(type: 'post', postId: post.id));
+    if (context.mounted) showInfo(context, 'Shared to chat');
   } catch (e) {
     if (context.mounted) showError(context, e);
   }

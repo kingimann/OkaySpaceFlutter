@@ -128,6 +128,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               title: const Text('Add friend'),
               onTap: () => Navigator.pop(context, 'friend'),
             ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Copy profile link'),
+              onTap: () => Navigator.pop(context, 'copy'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.forward_to_inbox_outlined),
+              title: const Text('Share to a chat'),
+              onTap: () => Navigator.pop(context, 'share'),
+            ),
           ],
         ),
       ),
@@ -137,6 +147,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       switch (action) {
         case 'tip':
           await _tip();
+        case 'copy':
+          await Clipboard.setData(ClipboardData(
+              text:
+                  'https://okayspace.ca/u/${u.username ?? widget.userId}'));
+          if (mounted) showInfo(context, 'Link copied');
+        case 'share':
+          await _shareProfileToChat(u);
         case 'subscribe':
           if (u.raw['is_subscribed'] == true) {
             await api.users.unsubscribe(widget.userId);
@@ -155,6 +172,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (e) {
       if (mounted) showError(context, e);
     }
+  }
+
+  String _convName(ConversationView c) {
+    if (c.name != null && c.name!.isNotEmpty) return c.name!;
+    if (c.otherUser != null) return c.otherUser!.name;
+    if (c.members.isNotEmpty) return c.members.map((m) => m.name).join(', ');
+    return 'Conversation';
+  }
+
+  /// Shares this profile as a contact card into a conversation the user picks.
+  Future<void> _shareProfileToChat(PublicUser u) async {
+    final convs = await api.messaging
+        .conversations()
+        .catchError((_) => <ConversationView>[]);
+    if (!mounted) return;
+    final target = await showModalBottomSheet<ConversationView>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Share to',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final c in convs)
+                    ListTile(
+                      leading: Avatar(
+                          url: c.avatar ?? c.otherUser?.picture,
+                          name: _convName(c)),
+                      title: Text(_convName(c),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onTap: () => Navigator.pop(context, c),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (target == null || !mounted) return;
+    await api.messaging
+        .send(target.id, MessageCreate(type: 'contact', contactUserId: u.userId));
+    if (mounted) showInfo(context, 'Shared');
   }
 
   Future<void> _tip() async {
