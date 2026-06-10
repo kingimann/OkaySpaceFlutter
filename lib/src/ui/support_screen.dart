@@ -156,7 +156,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.subject)),
-      body: Column(
+      body: MaxWidth(
+        child: Column(
         children: [
           Expanded(
             child: FutureBuilder<Map<String, dynamic>>(
@@ -251,6 +252,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

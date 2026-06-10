@@ -288,7 +288,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: MaxWidth(
+        child: Column(
         children: [
           Expanded(
             child: AsyncList<Message>(
@@ -340,6 +341,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
