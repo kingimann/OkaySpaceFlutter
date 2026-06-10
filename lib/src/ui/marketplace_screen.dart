@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'business_screen.dart';
 import 'common.dart';
 import 'create_listing_screen.dart';
 
@@ -145,9 +146,14 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'mine') _openMine();
+              if (v == 'business') {
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const BusinessScreen()));
+              }
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'mine', child: Text('My listings')),
+              PopupMenuItem(value: 'business', child: Text('My storefront')),
             ],
           ),
         ],

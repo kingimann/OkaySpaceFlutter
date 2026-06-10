@@ -110,4 +110,61 @@ class MarketplaceService {
       ListingComment.fromJson(asMapOrNull(await _client
               .postJson('/listings/$listingId/comments/$commentId/like')) ??
           const {});
+
+  // --- Business storefront --------------------------------------------------
+
+  /// The current user's business storefront, or an empty map if none.
+  Future<Map<String, dynamic>> myBusiness() async =>
+      asMapOrNull(await _client.getJson('/marketplace/business/me')) ??
+      const {};
+
+  /// Creates or updates the storefront (see `BusinessProfilePatch`: `name`,
+  /// `tagline`, `bio`, `logo`, `banner`, `accent`, `category`, `policies`,
+  /// `location`, `contact_email`, `contact_phone`, `website`).
+  Future<Map<String, dynamic>> upsertBusiness(
+          Map<String, dynamic> changes) async =>
+      asMapOrNull(
+          await _client.putJson('/marketplace/business', body: changes)) ??
+      const {};
+
+  Future<void> deleteBusiness() async {
+    await _client.deleteJson('/marketplace/business');
+  }
+
+  /// A business storefront by id (includes its listings and rating).
+  Future<Map<String, dynamic>> business(String businessId) async =>
+      asMapOrNull(
+          await _client.getJson('/marketplace/business/$businessId')) ??
+      const {};
+
+  Future<List<Map<String, dynamic>>> businessReviews(
+      String businessId) async {
+    final data =
+        await _client.getJson('/marketplace/business/$businessId/reviews');
+    final list = data is Map ? (data['reviews'] ?? data['items']) : data;
+    if (list is List) {
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
+  Future<void> addBusinessReview(String businessId,
+      {required int rating, String? text}) async {
+    await _client.postJson('/marketplace/business/$businessId/reviews',
+        body: {'rating': rating, if (text != null) 'text': text});
+  }
+
+  /// A seller's marketplace profile (listings + rating).
+  Future<Map<String, dynamic>> sellerProfile(String userId) async =>
+      asMapOrNull(await _client.getJson('/marketplace/users/$userId')) ??
+      const {};
+
+  Future<void> addSellerReview(String userId,
+      {required int rating, String? text}) async {
+    await _client.postJson('/marketplace/users/$userId/reviews',
+        body: {'rating': rating, if (text != null) 'text': text});
+  }
 }
