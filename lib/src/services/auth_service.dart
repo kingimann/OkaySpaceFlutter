@@ -99,6 +99,52 @@ class AuthService {
     await _client.postJson('/auth/forgot-password', body: {'email': email});
   }
 
+  // --- Account management -------------------------------------------------
+
+  /// Enables or disables two-factor authentication (password required).
+  Future<void> setTwoFactor(
+      {required bool enabled, required String password}) async {
+    await _client.postJson('/auth/2fa',
+        body: {'enabled': enabled, 'password': password});
+  }
+
+  /// Changes the account username.
+  Future<void> changeUsername(String username) async {
+    await _client.postJson('/auth/username', body: {'username': username});
+  }
+
+  /// Changes the account email (requires the current password).
+  Future<void> changeEmail(
+      {required String currentPassword, required String newEmail}) async {
+    await _client.patchJson('/auth/me/email',
+        body: {'current_password': currentPassword, 'new_email': newEmail});
+  }
+
+  /// Sends a verification code to the current email.
+  Future<void> sendEmailCode() async {
+    await _client.postJson('/auth/email/send-code');
+  }
+
+  /// Verifies the current email with the emailed [code].
+  Future<void> verifyEmail(String code) async {
+    await _client.postJson('/auth/email/verify', body: {'code': code});
+  }
+
+  /// Sets/updates the account phone number.
+  Future<void> changePhone(String phone) async {
+    await _client.patchJson('/auth/me/phone', body: {'phone': phone});
+  }
+
+  /// Sends an SMS verification code to [phone].
+  Future<void> sendPhoneCode(String phone) async {
+    await _client.postJson('/auth/phone/send-code', body: {'phone': phone});
+  }
+
+  /// Verifies the phone with the SMS [code].
+  Future<void> verifyPhone(String code) async {
+    await _client.postJson('/auth/phone/verify', body: {'code': code});
+  }
+
   /// Records the user's agreement to the current policies.
   Future<User> acceptPolicies() async {
     final data = await _client.postJson('/auth/accept-policies');

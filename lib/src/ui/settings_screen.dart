@@ -38,12 +38,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  late bool _twofa = widget.user.twofaEnabled;
+
   Future<void> _changePassword() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => const _ChangePasswordDialog(),
     );
     if (ok == true && mounted) showInfo(context, 'Password updated');
+  }
+
+  Future<void> _changeUsername() async {
+    final username = await promptText(context,
+        title: 'Change username',
+        hint: 'new_username',
+        action: 'Save',
+        initial: widget.user.username);
+    if (username == null) return;
+    try {
+      await api.auth.changeUsername(username.replaceFirst('@', '').trim());
+      if (mounted) showInfo(context, 'Username updated');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _changeEmail() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _ChangeEmailDialog(),
+    );
+    if (ok == true && mounted) showInfo(context, 'Email updated');
+  }
+
+  Future<void> _verifyEmail() async {
+    try {
+      await api.auth.sendEmailCode();
+      if (!mounted) return;
+      final code = await promptText(context,
+          title: 'Verify email',
+          hint: 'Code sent to ${widget.user.email}',
+          action: 'Verify');
+      if (code == null) return;
+      await api.auth.verifyEmail(code);
+      if (mounted) showInfo(context, 'Email verified');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _managePhone() async {
+    final phone = await promptText(context,
+        title: 'Phone number',
+        hint: '+1 555 123 4567',
+        action: 'Send code',
+        initial: widget.user.phone);
+    if (phone == null) return;
+    try {
+      await api.auth.sendPhoneCode(phone.trim());
+      if (!mounted) return;
+      final code = await promptText(context,
+          title: 'Verify phone', hint: 'SMS code', action: 'Verify');
+      if (code == null) return;
+      await api.auth.verifyPhone(code);
+      if (mounted) showInfo(context, 'Phone verified');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _toggle2fa(bool enable) async {
+    final password = await promptText(context,
+        title: enable ? 'Enable 2FA' : 'Disable 2FA',
+        hint: 'Confirm your password',
+        action: enable ? 'Enable' : 'Disable');
+    if (password == null) return;
+    try {
+      await api.auth.setTwoFactor(enabled: enable, password: password);
+      if (mounted) {
+        setState(() => _twofa = enable);
+        showInfo(context, enable ? '2FA enabled' : '2FA disabled');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Future<void> _signOut() async {
@@ -176,9 +254,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _section('Account'),
           _card([
             ListTile(
+              leading: const Icon(Icons.alternate_email),
+              title: const Text('Username'),
+              subtitle: Text(widget.user.handle),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _changeUsername,
+            ),
+            const Divider(height: 1, indent: 56),
+            ListTile(
               leading: const Icon(Icons.mail_outline),
               title: const Text('Email'),
               subtitle: Text(widget.user.email),
+              trailing: widget.user.emailVerified
+                  ? const Icon(Icons.verified, color: Color(0xFF22C55E), size: 20)
+                  : TextButton(onPressed: _verifyEmail, child: const Text('Verify')),
+              onTap: _changeEmail,
+            ),
+            const Divider(height: 1, indent: 56),
+            ListTile(
+              leading: const Icon(Icons.phone_outlined),
+              title: const Text('Phone'),
+              subtitle: Text(widget.user.phone?.isNotEmpty == true
+                  ? widget.user.phone!
+                  : 'Not set'),
+              trailing: widget.user.phoneVerified
+                  ? const Icon(Icons.verified, color: Color(0xFF22C55E), size: 20)
+                  : const Icon(Icons.chevron_right),
+              onTap: _managePhone,
             ),
             const Divider(height: 1, indent: 56),
             ListTile(
@@ -186,6 +288,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: const Text('Change password'),
               trailing: const Icon(Icons.chevron_right),
               onTap: _changePassword,
+            ),
+          ]),
+          _section('Security'),
+          _card([
+            SwitchListTile(
+              secondary: const Icon(Icons.shield_outlined),
+              title: const Text('Two-factor authentication'),
+              subtitle: const Text('Require a code at login'),
+              value: _twofa,
+              onChanged: _toggle2fa,
             ),
           ]),
           _section('Display'),
@@ -291,6 +403,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 fontWeight: FontWeight.bold,
                 fontSize: 13)),
       );
+}
+
+class _ChangeEmailDialog extends StatefulWidget {
+  const _ChangeEmailDialog();
+
+  @override
+  State<_ChangeEmailDialog> createState() => _ChangeEmailDialogState();
+}
+
+class _ChangeEmailDialogState extends State<_ChangeEmailDialog> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_email.text.contains('@') || _password.text.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await api.auth.changeEmail(
+        currentPassword: _password.text,
+        newEmail: _email.text.trim(),
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        showError(context, e);
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Change email'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+                labelText: 'New email', border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _password,
+            obscureText: true,
+            decoration: const InputDecoration(
+                labelText: 'Current password', border: OutlineInputBorder()),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: _busy
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Update'),
+        ),
+      ],
+    );
+  }
 }
 
 class _ChangePasswordDialog extends StatefulWidget {
