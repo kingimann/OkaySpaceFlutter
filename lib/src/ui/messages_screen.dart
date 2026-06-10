@@ -36,10 +36,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<ConversationView>(
           future: _conversations,
+          loading: const ListSkeleton(),
           emptyMessage: 'No conversations yet.',
           emptyIcon: Icons.forum_outlined,
           builder: (context, items) => ListView.separated(
@@ -61,6 +63,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
             },
           ),
         ),
+      ),
       ),
     );
   }

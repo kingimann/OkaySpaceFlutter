@@ -167,7 +167,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Post')),
-      body: Column(
+      body: MaxWidth(
+        child: Column(
         children: [
           Expanded(
             child: RefreshIndicator(
@@ -248,6 +249,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

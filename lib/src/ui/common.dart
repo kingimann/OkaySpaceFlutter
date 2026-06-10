@@ -362,6 +362,40 @@ class FeedSkeleton extends StatelessWidget {
   }
 }
 
+/// A list of skeleton rows (avatar + two lines) for loading list screens.
+class ListSkeleton extends StatelessWidget {
+  const ListSkeleton({super.key, this.rows = 8});
+
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: rows,
+      itemBuilder: (_, __) => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Skeleton(height: 44, shape: BoxShape.circle),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Skeleton(width: 140, height: 12),
+                  SizedBox(height: 8),
+                  Skeleton(width: 220, height: 10),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Standard async-list scaffold: a [loading] placeholder while loading, an
 /// error+retry state on failure, an [emptyMessage] when empty, else [builder].
 class AsyncList<T> extends StatelessWidget {

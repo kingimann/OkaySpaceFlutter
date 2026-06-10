@@ -62,6 +62,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
         onRefresh: _reload,
         child: AsyncList<Group>(
           future: _groups,
+          loading: const ListSkeleton(),
           emptyMessage: 'No groups yet.',
           emptyIcon: Icons.group_work_outlined,
           builder: (context, items) => ListView.separated(

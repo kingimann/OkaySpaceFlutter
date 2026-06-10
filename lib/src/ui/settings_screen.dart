@@ -143,7 +143,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      body: MaxWidth(
+        child: ListView(
         children: [
           _section('Account'),
           ListTile(
@@ -235,6 +236,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: _signOut,
           ),
         ],
+      ),
       ),
     );
   }
