@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
@@ -108,6 +109,9 @@ class _ReelPage extends StatelessWidget {
                   poster: media?.thumbnail,
                   autoPlay: true,
                   looping: true,
+                  // Browsers only allow muted autoplay; start muted on web so
+                  // reels actually play (tap toggles play/pause).
+                  muted: kIsWeb,
                   resolveOnError: () => api.feed.resolveVideoUrl(url),
                 )
               : Image.network(url,
