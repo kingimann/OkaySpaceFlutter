@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'api_keys_screen.dart';
 import 'common.dart';
 
 /// Account, privacy and notification settings, backed by the auth service.
@@ -103,6 +104,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _sms,
             onChanged: (v) =>
                 _toggle('sms_notifications', v, (x) => _sms = x),
+          ),
+          const Divider(height: 1),
+          _section('Developer'),
+          ListTile(
+            leading: const Icon(Icons.vpn_key_outlined),
+            title: const Text('API keys'),
+            subtitle: const Text('Generate keys for the OkaySpace API'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const ApiKeysScreen(),
+            )),
           ),
           const Divider(height: 1),
           const SizedBox(height: 8),
