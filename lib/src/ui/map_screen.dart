@@ -110,8 +110,11 @@ class _MapScreenState extends State<MapScreen> {
   String _savedCategory = 'all';
   String _nearestSort = 'distance'; // 'distance' | 'price' | 'name'
 
-  // Live centre coordinate readout.
+  // Live centre coordinate readout (kept in state so build never touches the
+  // map controller before its first frame, which would throw).
   LatLng _liveCenter = _fallback;
+  double _liveZoom = 11;
+  bool _mapReady = false;
 
   // Multi-stop route (waypoints) + straight-line directions target.
   bool _routing = false;
@@ -216,10 +219,10 @@ class _MapScreenState extends State<MapScreen> {
         }
       });
       if (_showSaved) _loadSaved();
-      if (_restoreZoom != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _controller.move(_center, _restoreZoom!);
-        });
+      // Zoom restore happens in onMapReady once the controller is live.
+      if (_mapReady && _restoreZoom != null) {
+        _controller.move(_center, _restoreZoom!);
+        _restoreZoom = null;
       }
     } catch (_) {/* ignore */}
   }
@@ -1200,7 +1203,7 @@ class _MapScreenState extends State<MapScreen> {
   /// Groups [markers] into coarse grid cells when clustering is on.
   List<Marker> _clusterMarkers(List<Marker> markers) {
     if (!_cluster || markers.length < 12) return markers;
-    final zoom = _controller.camera.zoom;
+    final zoom = _liveZoom;
     final cell = 0.6 / (zoom <= 0 ? 1 : zoom); // degrees per cluster cell
     final buckets = <String, List<Marker>>{};
     for (final m in markers) {
@@ -1395,15 +1398,28 @@ class _MapScreenState extends State<MapScreen> {
                     ? InteractiveFlag.all & ~InteractiveFlag.rotate
                     : InteractiveFlag.all,
               ),
+              onMapReady: () {
+                _mapReady = true;
+                if (_restoreZoom != null) {
+                  _controller.move(_center, _restoreZoom!);
+                  _restoreZoom = null;
+                }
+                setState(() {
+                  _liveCenter = _controller.camera.center;
+                  _liveZoom = _controller.camera.zoom;
+                });
+              },
               onTap: (_, point) => _onTap(point),
               onLongPress: (_, point) => _onLongPress(point),
               onPositionChanged: (camera, hasGesture) {
                 _center = camera.center;
                 if (camera.rotation != _rotation ||
-                    camera.center != _liveCenter) {
+                    camera.center != _liveCenter ||
+                    camera.zoom != _liveZoom) {
                   setState(() {
                     _rotation = camera.rotation;
                     _liveCenter = camera.center;
+                    _liveZoom = camera.zoom;
                   });
                 }
                 if (hasGesture && _searchAsIMove) _loadAll();
@@ -1754,7 +1770,7 @@ class _MapScreenState extends State<MapScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                    'z${_controller.camera.zoom.toStringAsFixed(1)} · ${_liveCenter.latitude.toStringAsFixed(3)}, ${_liveCenter.longitude.toStringAsFixed(3)}',
+                    'z${_liveZoom.toStringAsFixed(1)} · ${_liveCenter.latitude.toStringAsFixed(3)}, ${_liveCenter.longitude.toStringAsFixed(3)}',
                     style: const TextStyle(fontSize: 11)),
               ),
             ),
@@ -1956,6 +1972,7 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Builds a lat/long graticule across the current visible bounds.
   List<Polyline> _graticule() {
+    if (!_mapReady) return const [];
     final cam = _controller.camera;
     final b = cam.visibleBounds;
     // Choose a spacing that yields a handful of lines for the current span.
