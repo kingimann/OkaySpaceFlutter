@@ -71,7 +71,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ],
       ),
-      body: ListView(
+      body: MaxWidth(
+        child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           Center(
@@ -118,6 +119,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             contentPadding: EdgeInsets.zero,
           ),
         ],
+      ),
       ),
     );
   }

@@ -118,7 +118,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
           ),
         ],
       ),
-      body: ListView(
+      body: MaxWidth(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           TextField(
@@ -165,6 +166,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
             ),
           if (_poll) _buildPollEditor(context),
         ],
+      ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(

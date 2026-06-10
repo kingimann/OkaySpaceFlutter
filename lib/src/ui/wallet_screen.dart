@@ -277,7 +277,8 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Send money')),
-      body: ListView(
+      body: MaxWidth(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           if (_recipient == null) ...[
@@ -378,6 +379,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
           ],
         ],
       ),
+      ),
     );
   }
 }
@@ -440,7 +442,8 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Request money')),
-      body: ListView(
+      body: MaxWidth(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           if (_from == null) ...[
@@ -524,6 +527,7 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
             ),
           ],
         ],
+      ),
       ),
     );
   }

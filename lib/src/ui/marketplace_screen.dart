@@ -276,7 +276,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Listing')),
-      body: FutureBuilder<Listing>(
+      body: MaxWidth(
+        child: FutureBuilder<Listing>(
         future: _listing,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -408,6 +409,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
             ],
           );
         },
+      ),
       ),
     );
   }

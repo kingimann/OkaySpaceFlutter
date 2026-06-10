@@ -202,7 +202,8 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
         onPressed: _composePost,
         child: const Icon(Icons.edit),
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: ListView(
           children: [
@@ -293,6 +294,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

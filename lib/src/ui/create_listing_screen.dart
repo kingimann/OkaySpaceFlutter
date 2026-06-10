@@ -98,7 +98,8 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
           ),
         ],
       ),
-      body: ListView(
+      body: MaxWidth(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           SizedBox(
@@ -192,6 +193,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
             contentPadding: EdgeInsets.zero,
           ),
         ],
+      ),
       ),
     );
   }

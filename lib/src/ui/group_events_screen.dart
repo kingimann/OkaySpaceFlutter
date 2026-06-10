@@ -66,10 +66,12 @@ class _GroupEventsScreenState extends State<GroupEventsScreen> {
         icon: const Icon(Icons.event),
         label: const Text('New event'),
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<GroupEvent>(
           future: _events,
+          loading: const ListSkeleton(),
           emptyMessage: 'No upcoming events.',
           emptyIcon: Icons.event_outlined,
           builder: (context, items) => ListView.separated(
@@ -96,6 +98,7 @@ class _GroupEventsScreenState extends State<GroupEventsScreen> {
             },
           ),
         ),
+      ),
       ),
     );
   }

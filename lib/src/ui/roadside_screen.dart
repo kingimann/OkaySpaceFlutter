@@ -165,7 +165,8 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Request help')),
-      body: ListView(
+      body: MaxWidth(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text('What do you need?',
@@ -248,6 +249,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
             label: const Text('Submit request'),
           ),
         ],
+      ),
       ),
     );
   }

@@ -113,6 +113,22 @@ class _ReelPage extends StatelessWidget {
             ),
           ),
         ),
+        // Top scrim for status-bar legibility.
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 90,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.black54, Colors.transparent],
+              ),
+            ),
+          ),
+        ),
         // Caption + author (bottom-left).
         Positioned(
           left: 16,

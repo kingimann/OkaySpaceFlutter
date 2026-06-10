@@ -124,10 +124,12 @@ class _ApiKeysScreenState extends State<ApiKeysScreen> {
         icon: const Icon(Icons.add),
         label: const Text('New key'),
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<Map<String, dynamic>>(
           future: _keys,
+          loading: const ListSkeleton(),
           emptyMessage: 'No API keys.\nCreate one to use the OkaySpace API.',
           emptyIcon: Icons.vpn_key_outlined,
           builder: (context, items) => ListView.separated(
@@ -156,6 +158,7 @@ class _ApiKeysScreenState extends State<ApiKeysScreen> {
             },
           ),
         ),
+      ),
       ),
     );
   }
