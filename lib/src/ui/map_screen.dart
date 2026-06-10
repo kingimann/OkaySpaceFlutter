@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -110,11 +111,14 @@ class _MapScreenState extends State<MapScreen> {
   String _savedCategory = 'all';
   String _nearestSort = 'distance'; // 'distance' | 'price' | 'name'
 
-  // Live centre coordinate readout (kept in state so build never touches the
-  // map controller before its first frame, which would throw).
-  LatLng _liveCenter = _fallback;
+  // Cached zoom so build/cluster code never touches the controller before its
+  // first frame (which would throw).
   double _liveZoom = 11;
   bool _mapReady = false;
+
+  // Top/bottom chrome auto-hides while the user pans or zooms the map.
+  bool _chromeVisible = true;
+  Timer? _chromeTimer;
 
   // Multi-stop route (waypoints) + straight-line directions target.
   bool _routing = false;
@@ -139,9 +143,6 @@ class _MapScreenState extends State<MapScreen> {
   // Distance-measure tool.
   bool _measuring = false;
   final List<LatLng> _measurePoints = [];
-
-  // Rotation, mirrored from the camera for the compass button.
-  double _rotation = 0;
 
   List<Listing> _listings = const [];
   List<RoadsideRequest> _roadside = const [];
@@ -169,9 +170,20 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
+    _chromeTimer?.cancel();
     _controller.dispose();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Hides the top/bottom chrome while panning; restores it shortly after the
+  /// gesture settles.
+  void _onMapGesture() {
+    if (_chromeVisible) setState(() => _chromeVisible = false);
+    _chromeTimer?.cancel();
+    _chromeTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _chromeVisible = true);
+    });
   }
 
   Future<void> _loadPrefs() async {
@@ -202,7 +214,6 @@ class _MapScreenState extends State<MapScreen> {
           final lng = (d['lastLng'] as num?)?.toDouble();
           if (lat != null && lng != null) {
             _center = LatLng(lat, lng);
-            _liveCenter = _center;
             _restoreZoom = (d['lastZoom'] as num?)?.toDouble();
           }
         }
@@ -480,30 +491,6 @@ class _MapScreenState extends State<MapScreen> {
         : '${metres.round()} m';
   }
 
-  // --- Zoom / rotation / recenter -----------------------------------------
-
-  void _zoomBy(double delta) {
-    final c = _controller.camera;
-    _controller.move(c.center, (c.zoom + delta).clamp(2, 18));
-  }
-
-  void _resetNorth() {
-    _controller.rotate(0);
-    setState(() => _rotation = 0);
-  }
-
-  void _recenter() => _controller.move(_center, _controller.camera.zoom);
-
-  void _zoomPreset(double zoom) => _controller.move(_controller.camera.center, zoom);
-
-  void _goToMyLocation() {
-    if (_myLocation == null) {
-      showInfo(context, 'No location pin set — long-press the map to set one');
-      return;
-    }
-    _controller.move(_myLocation!, 14);
-  }
-
   /// Fits the camera to all currently shown markers.
   void _fitAll() {
     final pts = <LatLng>[
@@ -638,27 +625,6 @@ class _MapScreenState extends State<MapScreen> {
     return m2 >= 10000
         ? '${(m2 / 1e6).toStringAsFixed(2)} km²'
         : '${m2.round()} m²';
-  }
-
-  // --- Nearby category quick-search ---------------------------------------
-
-  Future<void> _searchNearby(String category) async {
-    setState(() => _searching = true);
-    try {
-      final c = _controller.camera.center;
-      final results = await api.roadside
-          .geocode('$category near ${c.latitude},${c.longitude}');
-      if (!mounted) return;
-      if (results.isEmpty) {
-        showInfo(context, 'No "$category" found nearby');
-        return;
-      }
-      setState(() => _suggestions = results.cast<Map<String, dynamic>>());
-    } catch (e) {
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => _searching = false);
-    }
   }
 
   // --- Bookmarks -----------------------------------------------------------
@@ -1042,7 +1008,7 @@ class _MapScreenState extends State<MapScreen> {
                   value: _rotationLocked,
                   onChanged: (v) => apply(() {
                     _rotationLocked = v;
-                    if (v) _resetNorth();
+                    if (v && _mapReady) _controller.rotate(0);
                   }),
                 ),
                 SwitchListTile(
@@ -1290,10 +1256,12 @@ class _MapScreenState extends State<MapScreen> {
     final shownMarkers = _clusterMarkers(markers);
     final radiusMetres = _radiusKm * 1000;
 
+    final chrome = _chromeVisible && !_fullscreen;
     return Scaffold(
       extendBody: !widget.embedded,
-      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
-      appBar: _fullscreen
+      bottomNavigationBar:
+          (widget.embedded || !chrome) ? null : const OkayBottomNav(),
+      appBar: !chrome
           ? null
           : OkayAppBar(
         title: const Text('Map'),
@@ -1404,25 +1372,17 @@ class _MapScreenState extends State<MapScreen> {
                   _controller.move(_center, _restoreZoom!);
                   _restoreZoom = null;
                 }
-                setState(() {
-                  _liveCenter = _controller.camera.center;
-                  _liveZoom = _controller.camera.zoom;
-                });
+                setState(() => _liveZoom = _controller.camera.zoom);
               },
               onTap: (_, point) => _onTap(point),
               onLongPress: (_, point) => _onLongPress(point),
               onPositionChanged: (camera, hasGesture) {
                 _center = camera.center;
-                if (camera.rotation != _rotation ||
-                    camera.center != _liveCenter ||
-                    camera.zoom != _liveZoom) {
-                  setState(() {
-                    _rotation = camera.rotation;
-                    _liveCenter = camera.center;
-                    _liveZoom = camera.zoom;
-                  });
+                _liveZoom = camera.zoom;
+                if (hasGesture) {
+                  _onMapGesture();
+                  if (_searchAsIMove) _loadAll();
                 }
-                if (hasGesture && _searchAsIMove) _loadAll();
               },
             ),
             children: [
@@ -1509,7 +1469,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: Icon(Icons.add, size: 30, color: Colors.black54))),
 
           // Search bar + layer chips.
-          if (!_fullscreen)
+          if (chrome)
           Positioned(
             top: 8,
             left: 8,
@@ -1616,29 +1576,6 @@ class _MapScreenState extends State<MapScreen> {
                       const SizedBox(width: 8),
                       _layerChip('Saved', Icons.bookmark, _showSaved,
                           () => _toggle(() => _showSaved = !_showSaved)),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final cat in const [
-                        ('Cafés', 'cafe'),
-                        ('Gas', 'gas station'),
-                        ('Parking', 'parking'),
-                        ('Food', 'restaurant'),
-                        ('Hospitals', 'hospital'),
-                        ('Parks', 'park'),
-                      ])
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ActionChip(
-                            label: Text(cat.$1),
-                            onPressed: () => _searchNearby(cat.$2),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -1757,50 +1694,18 @@ class _MapScreenState extends State<MapScreen> {
                       : () => setState(_areaPoints.clear)),
             ),
 
-          // Live centre coordinate readout.
-          if (!_fullscreen)
+          // Exit-fullscreen control (only affordance left after removing the
+          // on-map button column).
+          if (_fullscreen)
             Positioned(
-              top: _measuring || _routing || _areaMode ? 160 : 110,
               right: 12,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: scheme.surface.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                    'z${_liveZoom.toStringAsFixed(1)} · ${_liveCenter.latitude.toStringAsFixed(3)}, ${_liveCenter.longitude.toStringAsFixed(3)}',
-                    style: const TextStyle(fontSize: 11)),
+              bottom: 76,
+              child: FloatingActionButton.small(
+                heroTag: 'map_exitFs',
+                onPressed: () => setState(() => _fullscreen = false),
+                child: const Icon(Icons.fullscreen_exit),
               ),
             ),
-
-          // Zoom / compass / recenter controls.
-          Positioned(
-            right: 12,
-            bottom: 76,
-            child: Column(
-              children: [
-                if (_fullscreen)
-                  _mapBtn('exitFs', Icons.fullscreen_exit,
-                      () => setState(() => _fullscreen = false)),
-                if (_fullscreen) const SizedBox(height: 8),
-                if (_rotation != 0)
-                  _mapBtn('compass', Icons.explore, _resetNorth),
-                if (_myLocation != null)
-                  _mapBtn('myloc', Icons.my_location, _goToMyLocation),
-                if (_myLocation != null) const SizedBox(height: 8),
-                _mapBtn('fit', Icons.fit_screen, _fitAll),
-                const SizedBox(height: 8),
-                _mapBtn('zoomIn', Icons.add, () => _zoomBy(1),
-                    onLongPress: _zoomPresetSheet),
-                const SizedBox(height: 8),
-                _mapBtn('zoomOut', Icons.remove, () => _zoomBy(-1)),
-                const SizedBox(height: 8),
-                _mapBtn('recenter', Icons.center_focus_strong, _recenter),
-              ],
-            ),
-          ),
 
           // Count pill.
           Positioned(
@@ -1833,47 +1738,6 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _mapBtn(String tag, IconData icon, VoidCallback onTap,
-          {VoidCallback? onLongPress}) =>
-      GestureDetector(
-        onLongPress: onLongPress,
-        child: FloatingActionButton.small(
-          heroTag: 'map_$tag',
-          onPressed: onTap,
-          child: Icon(icon),
-        ),
-      );
-
-  void _zoomPresetSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-                title: Text('Zoom to',
-                    style: TextStyle(fontWeight: FontWeight.bold))),
-            for (final z in const [
-              ('Street', 16.0),
-              ('Neighbourhood', 14.0),
-              ('City', 11.0),
-              ('Region', 8.0),
-              ('Country', 5.0),
-            ])
-              ListTile(
-                title: Text(z.$1),
-                onTap: () {
-                  Navigator.pop(context);
-                  _zoomPreset(z.$2);
-                },
-              ),
-          ],
-        ),
       ),
     );
   }
