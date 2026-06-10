@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'ads_screen.dart';
 import 'api_keys_screen.dart';
 import 'app.dart';
+import 'bookmarks_screen.dart';
+import 'circles_screen.dart';
 import 'common.dart';
+import 'connections_screen.dart';
+import 'customize_nav_screen.dart';
+import 'customize_sidebar_screen.dart';
+import 'forms_screen.dart';
+import 'friends_screen.dart';
+import 'guides_screen.dart';
+import 'leaderboard_screen.dart';
+import 'roadside_screen.dart';
 
 /// Account, privacy and notification settings, backed by the auth service.
 class SettingsScreen extends StatefulWidget {
@@ -530,6 +541,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _toggle('sms_notifications', v, (x) => _sms = x),
             ),
           ]),
+          _section('Navigation'),
+          _card([
+            ListTile(
+              leading: const Icon(Icons.dashboard_customize_outlined),
+              title: const Text('Customize navigation'),
+              subtitle: const Text('Choose your bottom bar (max 5)'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const CustomizeNavScreen())),
+            ),
+            const Divider(height: 1, indent: 56),
+            ListTile(
+              leading: const Icon(Icons.view_sidebar_outlined),
+              title: const Text('Customize sidebar'),
+              subtitle: const Text('Choose your sidebar shortcuts (max 5)'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const CustomizeSidebarScreen())),
+            ),
+          ]),
+          _section('Shortcuts'),
+          _card([
+            _shortcut(Icons.collections_bookmark_outlined, 'Places & Guides',
+                () => const GuidesScreen()),
+            const Divider(height: 1, indent: 56),
+            _shortcut(Icons.car_repair_outlined, 'Roadside assistance',
+                () => const RoadsideScreen()),
+            const Divider(height: 1, indent: 56),
+            _shortcut(Icons.assignment_outlined, 'Forms',
+                () => const FormsScreen()),
+            const Divider(height: 1, indent: 56),
+            _shortcut(Icons.campaign_outlined, 'Advertising',
+                () => const AdsScreen()),
+            const Divider(height: 1, indent: 56),
+            _shortcut(Icons.leaderboard_outlined, 'Leaderboard',
+                () => const LeaderboardScreen()),
+            const Divider(height: 1, indent: 56),
+            _shortcut(Icons.bookmark_outline, 'Bookmarks',
+                () => const BookmarksScreen()),
+            const Divider(height: 1, indent: 56),
+            _shortcut(Icons.workspaces_outline, 'Circles',
+                () => const CirclesScreen()),
+            const Divider(height: 1, indent: 56),
+            _shortcut(Icons.people_alt_outlined, 'Friends',
+                () => const FriendsScreen()),
+            const Divider(height: 1, indent: 56),
+            _shortcut(Icons.group_add_outlined, 'Followers & following',
+                () => ConnectionsScreen(userId: widget.user.userId)),
+          ]),
           _section('Developer'),
           _card([
             ListTile(
@@ -573,6 +633,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.bold,
                 fontSize: 13)),
+      );
+
+  /// A settings row that opens a screen.
+  Widget _shortcut(IconData icon, String label, Widget Function() builder) =>
+      ListTile(
+        leading: Icon(icon),
+        title: Text(label),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => builder())),
       );
 }
 

@@ -21,7 +21,7 @@ class CustomizeSidebarScreen extends StatelessWidget {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text('In your sidebar',
+                Text('In your sidebar (${ids.length}/${SidebarController.maxItems})',
                     style: TextStyle(
                         color: scheme.primary,
                         fontWeight: FontWeight.bold,
@@ -65,7 +65,13 @@ class CustomizeSidebarScreen extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                         fontSize: 13)),
                 const SizedBox(height: 8),
-                if (available.isEmpty)
+                if (sidebarController.isFull)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text('Remove an item to add another (max 5).',
+                        style: TextStyle(color: scheme.outline)),
+                  )
+                else if (available.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Text('Everything is in your sidebar.',

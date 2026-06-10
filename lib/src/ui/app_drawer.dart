@@ -9,8 +9,6 @@ import 'circles_screen.dart';
 import 'common.dart';
 import 'communities_screen.dart';
 import 'connections_screen.dart';
-import 'customize_nav_screen.dart';
-import 'customize_sidebar_screen.dart';
 import 'edit_profile_screen.dart';
 import 'forms_screen.dart';
 import 'friends_screen.dart';
@@ -186,18 +184,6 @@ class _AppDrawerState extends State<AppDrawer> {
                   ),
 
                   const Divider(height: 24, indent: 20, endIndent: 20),
-                  _Shortcut(
-                    icon: Icons.dashboard_customize_outlined,
-                    color: const Color(0xFF06B6D4),
-                    label: 'Customize navigation',
-                    onTap: () => _push(const CustomizeNavScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.view_sidebar_outlined,
-                    color: const Color(0xFFA855F7),
-                    label: 'Customize sidebar',
-                    onTap: () => _push(const CustomizeSidebarScreen()),
-                  ),
                   _Shortcut(
                     icon: Icons.settings_rounded,
                     color: const Color(0xFF8696A0),
