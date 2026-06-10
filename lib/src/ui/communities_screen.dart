@@ -175,10 +175,30 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     }
   }
 
+  Future<void> _composePost() async {
+    final text = await promptText(context,
+        title: 'Post to c/${widget.name}', hint: "What's happening?");
+    if (text == null) return;
+    try {
+      final c = await _community;
+      await api.feed.createPost(PostCreate(text: text, communityId: c.id));
+      if (mounted) {
+        showInfo(context, 'Posted');
+        setState(() => _posts = api.communities.posts(widget.name));
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.name)),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _composePost,
+        child: const Icon(Icons.edit),
+      ),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: ListView(

@@ -142,6 +142,21 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     return 'Join';
   }
 
+  Future<void> _composePost() async {
+    final text = await promptText(context,
+        title: 'Post to group', hint: "What's happening?");
+    if (text == null) return;
+    try {
+      await api.groups.createPost(widget.groupId, PostCreate(text: text));
+      if (mounted) {
+        showInfo(context, 'Posted');
+        setState(() => _posts = api.groups.posts(widget.groupId));
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -156,6 +171,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             )),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _composePost,
+        child: const Icon(Icons.edit),
       ),
       body: RefreshIndicator(
         onRefresh: _reload,

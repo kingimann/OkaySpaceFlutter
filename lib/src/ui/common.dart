@@ -148,6 +148,34 @@ class MaxWidth extends StatelessWidget {
       );
 }
 
+/// Prompts for a single block of text in a dialog. Returns null if cancelled
+/// or empty.
+Future<String?> promptText(BuildContext context,
+    {required String title, String hint = '', String action = 'Post'}) async {
+  final controller = TextEditingController();
+  final result = await showDialog<String>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLines: 4,
+        decoration: InputDecoration(hintText: hint, border: const OutlineInputBorder()),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: Text(action)),
+      ],
+    ),
+  );
+  final text = result?.trim();
+  return (text == null || text.isEmpty) ? null : text;
+}
+
 /// Compact count formatter: 1200 → "1.2k", 3_400_000 → "3.4M".
 String formatCount(int n) {
   if (n < 1000) return '$n';

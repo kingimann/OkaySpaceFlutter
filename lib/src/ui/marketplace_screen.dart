@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'create_listing_screen.dart';
 
 String _price(Listing l) => '${l.currency} ${l.price.toStringAsFixed(2)}';
 
@@ -39,11 +40,36 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     await _listings;
   }
 
+  Future<void> _create() async {
+    final listing = await Navigator.of(context).push<Listing>(
+        MaterialPageRoute(builder: (_) => const CreateListingScreen()));
+    if (listing == null || !mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ListingDetailScreen(listingId: listing.id)));
+    _reload();
+  }
+
+  void _openSaved() {
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const _SavedListingsScreen()));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: _create,
+        child: const Icon(Icons.add),
+      ),
       appBar: AppBar(
         title: const Text('Marketplace'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bookmark_border),
+            tooltip: 'Saved',
+            onPressed: _openSaved,
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(
@@ -194,11 +220,28 @@ class ListingDetailScreen extends StatefulWidget {
 
 class _ListingDetailScreenState extends State<ListingDetailScreen> {
   late Future<Listing> _listing;
+  late Future<List<ListingComment>> _comments;
 
   @override
   void initState() {
     super.initState();
     _listing = api.marketplace.get(widget.listingId);
+    _comments = api.marketplace.comments(widget.listingId);
+  }
+
+  Future<void> _addComment() async {
+    final text = await promptText(context,
+        title: 'Add a comment', hint: 'Comment', action: 'Send');
+    if (text == null) return;
+    try {
+      await api.marketplace.addComment(widget.listingId, text);
+      if (mounted) {
+        setState(
+            () => _comments = api.marketplace.comments(widget.listingId));
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Future<void> _save() async {
@@ -303,12 +346,115 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         ),
                       ],
                     ),
+                    const Divider(height: 32),
+                    Row(
+                      children: [
+                        const Text('Comments',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: _addComment,
+                          icon: const Icon(Icons.add_comment_outlined, size: 18),
+                          label: const Text('Add'),
+                        ),
+                      ],
+                    ),
+                    FutureBuilder<List<ListingComment>>(
+                      future: _comments,
+                      builder: (context, snap) {
+                        final comments = snap.data ?? const [];
+                        if (snap.connectionState == ConnectionState.waiting) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        if (comments.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Text('No comments yet.',
+                                style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.outline)),
+                          );
+                        }
+                        return Column(
+                          children: [
+                            for (final cm in comments)
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Avatar(
+                                    url: cm.author.picture,
+                                    name: cm.author.name,
+                                    radius: 16),
+                                title: Text(cm.author.name,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14)),
+                                subtitle: Text(cm.text),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// The current user's saved listings.
+class _SavedListingsScreen extends StatefulWidget {
+  const _SavedListingsScreen();
+
+  @override
+  State<_SavedListingsScreen> createState() => _SavedListingsScreenState();
+}
+
+class _SavedListingsScreenState extends State<_SavedListingsScreen> {
+  late Future<List<Listing>> _saved = api.marketplace.saved();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Saved listings')),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          setState(() => _saved = api.marketplace.saved());
+          await _saved;
+        },
+        child: AsyncList<Listing>(
+          future: _saved,
+          emptyMessage: 'No saved listings.',
+          emptyIcon: Icons.bookmark_border,
+          builder: (context, items) => ListView.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final l = items[i];
+              return ListTile(
+                leading: l.photos.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(l.photos.first,
+                            width: 52, height: 52, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox(
+                                width: 52, height: 52)))
+                    : const Icon(Icons.shopping_bag_outlined),
+                title: Text(l.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text('${l.currency} ${l.price.toStringAsFixed(2)}'),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => ListingDetailScreen(listingId: l.id))),
+              );
+            },
+          ),
+        ),
       ),
     );
   }
