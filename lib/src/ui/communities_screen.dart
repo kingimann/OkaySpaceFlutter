@@ -657,72 +657,57 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                        c.title.isNotEmpty
-                                            ? c.title
-                                            : 'c/${c.name}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleLarge
-                                            ?.copyWith(
-                                                fontWeight: FontWeight.bold)),
-                                    Text('c/${c.name}',
-                                        style: TextStyle(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .outline,
-                                            fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              FilledButton.tonal(
-                                onPressed: _working
-                                    ? null
-                                    : () => _toggleMembership(c),
-                                child: Text(c.isMember ? 'Leave' : 'Join'),
-                              ),
-                            ],
-                          ),
+                          Text(
+                              c.title.isNotEmpty ? c.title : 'c/${c.name}',
+                              softWrap: true,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
+                          Text('c/${c.name}',
+                              style: TextStyle(
+                                  color: Theme.of(context).colorScheme.outline,
+                                  fontSize: 13)),
                           const SizedBox(height: 10),
                           // Stat chips.
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
                               _statChip(context, Icons.people_outline,
                                   '${formatCount(c.memberCount)} members'),
-                              const SizedBox(width: 8),
                               _statChip(context, Icons.article_outlined,
                                   '${formatCount(c.postCount)} posts'),
                             ],
                           ),
-                      if (c.description.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Text(c.description),
-                      ],
-                      if (c.rules.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        Text('Rules',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 6),
-                        for (var r = 0; r < c.rules.length; r++)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text('${r + 1}. ${c.rules[r]}',
-                                style:
-                                    Theme.of(context).textTheme.bodyMedium),
+                          if (c.description.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Text(c.description),
+                          ],
+                          if (c.rules.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Text('Rules',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 6),
+                            for (var r = 0; r < c.rules.length; r++)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text('${r + 1}. ${c.rules[r]}',
+                                    style:
+                                        Theme.of(context).textTheme.bodyMedium),
+                              ),
+                          ],
+                          const SizedBox(height: 14),
+                          FilledButton.tonal(
+                            onPressed:
+                                _working ? null : () => _toggleMembership(c),
+                            child: Text(c.isMember ? 'Leave' : 'Join'),
                           ),
-                      ],
                         ],
                       ),
                     ),
