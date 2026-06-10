@@ -19,6 +19,26 @@ BUILD_DIR="build/web"
 echo "==> Building web bundle"
 flutter build web --release --base-href "$BASE_HREF"
 
+# Replace Flutter's caching service worker with a self-unregistering
+# "kill switch". The browser checks this file on every load; because its
+# bytes change from the previously cached worker, it installs, unregisters
+# itself, clears caches, and reloads — so deploys are always picked up and
+# users never get stuck on a stale build.
+cat > "$BUILD_DIR/flutter_service_worker.js" <<'SW'
+self.addEventListener('install', (e) => self.skipWaiting());
+self.addEventListener('activate', (e) => {
+  e.waitUntil((async () => {
+    try { await self.registration.unregister(); } catch (_) {}
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (_) {}
+    const clients = await self.clients.matchAll({ type: 'window' });
+    for (const c of clients) { try { c.navigate(c.url); } catch (_) {} }
+  })());
+});
+SW
+
 # SPA fallback so deep links don't 404 on GitHub Pages.
 cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"
 touch "$BUILD_DIR/.nojekyll"
