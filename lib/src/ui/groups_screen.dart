@@ -101,8 +101,10 @@ class _GroupsScreenState extends State<GroupsScreen> {
             return ListView.builder(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             itemCount: items.length,
-            itemBuilder: (context, i) =>
-                _GroupCard(group: items[i], onChanged: _reload),
+            itemBuilder: (context, i) => _GroupCard(
+                key: ValueKey(items[i].id),
+                group: items[i],
+                onChanged: _reload),
           );
           },
         ),
@@ -124,7 +126,8 @@ Color _groupColor(Group g, BuildContext context) {
 /// A group list card: avatar, member count, description preview, and an inline
 /// join/requested/joined action.
 class _GroupCard extends StatefulWidget {
-  const _GroupCard({required this.group, required this.onChanged});
+  const _GroupCard(
+      {super.key, required this.group, required this.onChanged});
 
   final Group group;
   final VoidCallback onChanged;

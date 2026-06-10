@@ -165,8 +165,10 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
         builder: (context, items) => ListView.builder(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           itemCount: items.length,
-          itemBuilder: (context, i) =>
-              _CommunityCard(community: items[i], onChanged: _reload),
+          itemBuilder: (context, i) => _CommunityCard(
+              key: ValueKey(items[i].name),
+              community: items[i],
+              onChanged: _reload),
         ),
       ),
     );
@@ -193,7 +195,8 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
 /// A discover-list community card: avatar, stats, description preview and
 /// inline favorite + join actions (optimistic).
 class _CommunityCard extends StatefulWidget {
-  const _CommunityCard({required this.community, required this.onChanged});
+  const _CommunityCard(
+      {super.key, required this.community, required this.onChanged});
 
   final Community community;
   final VoidCallback onChanged;

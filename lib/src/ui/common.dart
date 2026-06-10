@@ -556,8 +556,10 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
   static const double _row = 56;
 
   @override
-  Size get preferredSize =>
-      Size.fromHeight(_row + 16 + (bottom?.preferredSize.height ?? 0));
+  Size get preferredSize => Size.fromHeight(
+      // 12 vertical margin + 56 row + 4 slack, plus the bottom widget's
+      // height and its 6px gap when present.
+      72 + (bottom == null ? 0 : bottom!.preferredSize.height + 8));
 
   @override
   Widget build(BuildContext context) {
