@@ -1,0 +1,89 @@
+name: Deploy web to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One Pages deployment at a time. Don't cancel an in-progress production
+# deploy; queued runs collapse to the latest. This avoids the "Requires
+# authentication (401)" failures the legacy branch pipeline hit when
+# deployments overlapped or its token went stale.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Enables Pages and switches the source to "GitHub Actions" if it isn't
+      # already, so the deploy step authenticates via OIDC (no more 401s).
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Build web
+        run: flutter build web --release --base-href "/OkaySpaceFlutter/"
+
+      - name: Post-process (kill-switch, cache-bust, SPA fallback)
+        run: |
+          set -euo pipefail
+          BUILD_DIR=build/web
+          STAMP="${GITHUB_SHA::7}-$(date -u +%Y%m%d%H%M%S)"
+
+          # Replace Flutter's caching service worker with a self-unregistering
+          # kill-switch so deploys are always picked up immediately.
+          cat > "$BUILD_DIR/flutter_service_worker.js" <<SW
+          // OkaySpace cache kill-switch · build $STAMP
+          self.addEventListener('install', (e) => self.skipWaiting());
+          self.addEventListener('activate', (e) => {
+            e.waitUntil((async () => {
+              try { await self.registration.unregister(); } catch (_) {}
+              try {
+                const keys = await caches.keys();
+                await Promise.all(keys.map((k) => caches.delete(k)));
+              } catch (_) {}
+              const clients = await self.clients.matchAll({ type: 'window' });
+              for (const c of clients) { try { c.navigate(c.url); } catch (_) {} }
+            })());
+          });
+          SW
+
+          # Cache-bust the fixed-name entry scripts so the browser fetches the
+          # new code every deploy.
+          perl -pi -e "s/flutter_bootstrap\.js(\?v=[^\"']*)?/flutter_bootstrap.js?v=$STAMP/g" "$BUILD_DIR/index.html"
+          perl -pi -e "s/main\.dart\.js(\?v=[^\"']*)?/main.dart.js?v=$STAMP/g" "$BUILD_DIR/flutter_bootstrap.js"
+
+          # SPA deep-link fallback + skip Jekyll.
+          cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"
+          touch "$BUILD_DIR/.nojekyll"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Build the web app and publish build/web to the `gh-pages` branch.
+# Manual fallback deploy: build the web app and publish build/web to the
+# `gh-pages` branch.
 #
-# GitHub Pages then serves it at:
+# NOTE: Deploys are now handled automatically by GitHub Actions on every push
+# to `main` (see .github/workflows/deploy.yml), which uses the reliable
+# OIDC-authenticated Pages deployment. This script is only useful if you
+# revert Pages back to "Deploy from a branch". With the source set to
+# "GitHub Actions", pushing this branch will NOT update the live site.
+#
+# GitHub Pages serves the site at:
 #   https://<user>.github.io/OkaySpaceFlutter/
-#
-# One-time setup (cannot be toggled via token): in the repo on GitHub, go to
-# Settings > Pages > Build and deployment > Source: "Deploy from a branch",
-# branch: gh-pages, folder: / (root).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
