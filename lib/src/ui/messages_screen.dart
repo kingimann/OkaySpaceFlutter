@@ -236,6 +236,11 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final msgs = await api.messaging.messages(_convId);
       if (!mounted) return;
+      // Skip the rebuild when a silent poll returns no changes, so it can't
+      // interrupt the UI (e.g. dismiss an open menu) every few seconds.
+      if (silent && !_loading && _error == null && _sameMessages(msgs)) {
+        return;
+      }
       setState(() {
         _items = msgs;
         _loading = false;
@@ -248,6 +253,15 @@ class _ChatScreenState extends State<ChatScreen> {
         _error = e;
       });
     }
+  }
+
+  /// Whether [msgs] matches the currently displayed list (count + last
+  /// message id / edited time), used to avoid redundant poll rebuilds.
+  bool _sameMessages(List<Message> msgs) {
+    if (msgs.length != _items.length) return false;
+    if (msgs.isEmpty) return true;
+    final a = msgs.last, b = _items.last;
+    return a.id == b.id && a.editedAt == b.editedAt && a.deleted == b.deleted;
   }
 
   Future<void> _reload() => _fetch();
