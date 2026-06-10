@@ -25,6 +25,7 @@ class ReelsScreen extends StatefulWidget {
 class _ReelsScreenState extends State<ReelsScreen> {
   late Future<List<Post>> _future;
   List<Post> _reels = const [];
+  int _tab = 0; // 0 = Explore (popular), 1 = Following (personalized)
 
   @override
   void initState() {
@@ -33,16 +34,29 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 
   Future<List<Post>> _load() async {
-    var reels = await api.feed.reelsFeed();
-    // The personalized reels feed can be empty for new accounts; fall back to
-    // popular reels so the screen still has content.
+    // Explore = popular reels; Following = the personalized reels feed.
+    var reels = _tab == 1
+        ? await api.feed.reelsFeed()
+        : await api.feed.popularReels();
+    // Either feed can be empty (e.g. new accounts); fall back to the other so
+    // the screen still has something to show.
     if (reels.isEmpty) {
       try {
-        reels = await api.feed.popularReels();
+        reels = _tab == 1
+            ? await api.feed.popularReels()
+            : await api.feed.reelsFeed();
       } catch (_) {/* keep the empty list */}
     }
     _reels = reels;
     return reels;
+  }
+
+  void _setTab(int t) {
+    if (t == _tab) return;
+    setState(() {
+      _tab = t;
+      _future = _load();
+    });
   }
 
   Future<void> _reload() async {
@@ -61,33 +75,113 @@ class _ReelsScreenState extends State<ReelsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.canPop(context);
     return Scaffold(
       backgroundColor: Colors.black,
       extendBody: !widget.embedded,
       bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
-      body: FutureBuilder<List<Post>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _DarkMessage(
-                message: messageFor(snapshot.error), onRetry: _reload);
-          }
-          if (_reels.isEmpty) {
-            return const _DarkMessage(message: 'No reels yet.');
-          }
-          return RefreshIndicator(
-            onRefresh: _reload,
-            child: PageView.builder(
-              scrollDirection: Axis.vertical,
-              itemCount: _reels.length,
-              itemBuilder: (context, i) =>
-                  _ReelPage(post: _reels[i], onLike: () => _like(i)),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: FutureBuilder<List<Post>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return _DarkMessage(
+                      message: messageFor(snapshot.error), onRetry: _reload);
+                }
+                if (_reels.isEmpty) {
+                  return _DarkMessage(
+                      message: _tab == 1
+                          ? 'No reels from people you follow yet.'
+                          : 'No reels yet.',
+                      onRetry: _reload);
+                }
+                return RefreshIndicator(
+                  onRefresh: _reload,
+                  child: PageView.builder(
+                    scrollDirection: Axis.vertical,
+                    itemCount: _reels.length,
+                    itemBuilder: (context, i) =>
+                        _ReelPage(post: _reels[i], onLike: () => _like(i)),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+          // Top overlay: a back button (when this is a pushed route) and the
+          // Explore / Following tabs, Instagram-style.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: SizedBox(
+                height: 48,
+                child: Stack(
+                  children: [
+                    if (canPop)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: IconButton(
+                          icon: const Icon(Icons.arrow_back,
+                              color: Colors.white),
+                          tooltip: 'Back',
+                          onPressed: () => Navigator.maybePop(context),
+                        ),
+                      ),
+                    Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _topTab('Explore', 0),
+                          const SizedBox(width: 24),
+                          _topTab('Following', 1),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _topTab(String label, int idx) {
+    final selected = _tab == idx;
+    return GestureDetector(
+      onTap: () => _setTab(idx),
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.white60,
+              fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+              fontSize: 16,
+              shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
+            ),
+          ),
+          const SizedBox(height: 3),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 3,
+            width: selected ? 20 : 0,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ],
       ),
     );
   }
