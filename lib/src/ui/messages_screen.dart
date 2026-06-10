@@ -32,7 +32,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Future<void> _newChat() async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const _NewChatScreen()));
-    _reload();
+    if (mounted) _reload();
   }
 
   String _title(ConversationView c) {
@@ -71,7 +71,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   await Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => ChatScreen(conversation: c, title: title),
                   ));
-                  _reload();
+                  if (mounted) _reload();
                 },
               );
             },

@@ -523,13 +523,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => EditProfileScreen(user: user),
     ));
-    if (saved == true) _reload();
+    if (saved == true && mounted) _reload();
   }
 
   Future<void> _openSettings(User u) async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => SettingsScreen(user: u)));
-    _reload();
+    if (mounted) _reload();
   }
 
   int _stat(User u, List<String> keys) {

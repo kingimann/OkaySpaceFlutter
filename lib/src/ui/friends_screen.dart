@@ -45,7 +45,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     final sent = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => const _AddFriendScreen(),
     ));
-    if (sent == true) _reload();
+    if (sent == true && mounted) _reload();
   }
 
   @override

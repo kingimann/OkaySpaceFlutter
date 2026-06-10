@@ -97,7 +97,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     if (listing == null || !mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => ListingDetailScreen(listingId: listing.id)));
-    _reload();
+    if (mounted) _reload();
   }
 
   void _openSaved() {

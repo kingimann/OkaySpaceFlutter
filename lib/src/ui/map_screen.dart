@@ -51,6 +51,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
+    _controller.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }

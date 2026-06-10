@@ -334,7 +334,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
       child: Scaffold(
         appBar: OkayAppBar(
-          title: Text(page == null ? 'Settings' : _pageTitles[page]!),
+          title: Text(page == null ? 'Settings' : _pageTitles[page] ?? 'Settings'),
           leading: page == null
               ? null
               : IconButton(

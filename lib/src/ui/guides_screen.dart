@@ -242,7 +242,7 @@ class _GuidesScreenState extends State<GuidesScreen> {
                 onTap: () async {
                   await Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => GuideDetailScreen(guide: g)));
-                  _reload();
+                  if (mounted) _reload();
                 },
               ),
             );

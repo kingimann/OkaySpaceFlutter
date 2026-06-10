@@ -48,7 +48,7 @@ class _FormsScreenState extends State<FormsScreen> {
   Future<void> _create() async {
     final changed = await Navigator.of(context).push<bool>(
         MaterialPageRoute(builder: (_) => const FormBuilderScreen()));
-    if (changed == true) _reload();
+    if (changed == true && mounted) _reload();
   }
 
   Future<void> _delete(Map<String, dynamic> f) async {
@@ -130,7 +130,7 @@ class _FormsScreenState extends State<FormsScreen> {
                               .push<bool>(MaterialPageRoute(
                                   builder: (_) =>
                                       FormBuilderScreen(existing: f)));
-                          if (changed == true) _reload();
+                          if (changed == true && mounted) _reload();
                         } else if (v == 'delete') {
                           _delete(f);
                         }

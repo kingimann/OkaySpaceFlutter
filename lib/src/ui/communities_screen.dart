@@ -98,7 +98,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => CommunityDetailScreen(name: name),
     ));
-    _reload();
+    if (mounted) _reload();
   }
 
   @override

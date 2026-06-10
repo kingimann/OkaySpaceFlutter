@@ -81,14 +81,14 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
     final created = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => const RoadsideRequestForm(),
     ));
-    if (created == true) _reload();
+    if (created == true && mounted) _reload();
   }
 
   Future<void> _open(RoadsideRequest r) async {
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => RoadsideDetailScreen(requestId: r.id),
     ));
-    _reload();
+    if (mounted) _reload();
   }
 
   @override

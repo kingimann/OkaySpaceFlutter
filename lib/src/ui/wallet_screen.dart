@@ -83,7 +83,7 @@ class _WalletScreenState extends State<WalletScreen> {
   Future<void> _push(Widget screen) async {
     final changed = await Navigator.of(context)
         .push<bool>(MaterialPageRoute(builder: (_) => screen));
-    if (changed == true) _reload();
+    if (changed == true && mounted) _reload();
   }
 
   Future<void> _changeCurrency() async {

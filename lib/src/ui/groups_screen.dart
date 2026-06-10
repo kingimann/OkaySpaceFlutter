@@ -47,7 +47,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => GroupDetailScreen(groupId: id),
     ));
-    _reload();
+    if (mounted) _reload();
   }
 
   @override
@@ -492,7 +492,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   await Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => _GroupRequestsScreen(groupId: widget.groupId),
                   ));
-                  _reload();
+                  if (mounted) _reload();
                 },
               );
             },
