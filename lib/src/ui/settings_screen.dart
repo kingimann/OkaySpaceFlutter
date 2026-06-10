@@ -444,6 +444,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: _showPoints,
               onChanged: (v) => _toggle('show_points', v, (x) => _showPoints = x),
             ),
+            ValueListenableBuilder<bool>(
+              valueListenable: hideStoriesController,
+              builder: (context, hidden, _) => SwitchListTile(
+                secondary: const Icon(Icons.auto_stories_outlined),
+                title: const Text('Hide stories'),
+                subtitle: const Text('Hide the stories row on your feed'),
+                value: hidden,
+                onChanged: (v) {
+                  hideStoriesController.set(v);
+                  // Persist to the profile too, when supported.
+                  api.auth.updateProfile({'hide_stories_row': v}).ignore();
+                },
+              ),
+            ),
           ]),
           _section('Interactions'),
           _card([

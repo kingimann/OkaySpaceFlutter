@@ -35,21 +35,6 @@ class _GroupsScreenState extends State<GroupsScreen> {
     await _groups;
   }
 
-  String _trailingLabel(Group g) {
-    if (g.isMember) return 'Joined';
-    if (g.membershipPending) return 'Requested';
-    return '';
-  }
-
-  Future<void> _quickJoin(Group g) async {
-    try {
-      await api.groups.join(g.id);
-      _reload();
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
-  }
-
   Future<void> _create() async {
     final id = await showDialog<String>(
       context: context,
@@ -114,37 +99,186 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     .where((g) => g.name.toLowerCase().contains(_filter))
                     .toList();
             return ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             itemCount: items.length,
-            itemBuilder: (context, i) {
-              final g = items[i];
-              final label = _trailingLabel(g);
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                child: ListTile(
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  leading: Avatar(name: g.name, radius: 24),
-                  title: Text(g.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text(
-                    '${formatCount(g.memberCount)} members${g.isPrivate ? ' · Private' : ''}',
-                  ),
-                  trailing: label.isEmpty
-                      ? FilledButton.tonal(
-                          onPressed: () => _quickJoin(g),
-                          child: const Text('Join'))
-                      : Chip(label: Text(label)),
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => GroupDetailScreen(groupId: g.id),
-                  )),
-                ),
-              );
-            },
+            itemBuilder: (context, i) =>
+                _GroupCard(group: items[i], onChanged: _reload),
           );
           },
         ),
       ),
+      ),
+    );
+  }
+}
+
+Color _groupColor(Group g, BuildContext context) {
+  final hex = g.color.replaceFirst('#', '');
+  if (hex.length == 6) {
+    final v = int.tryParse(hex, radix: 16);
+    if (v != null) return Color(0xFF000000 | v);
+  }
+  return Theme.of(context).colorScheme.primary;
+}
+
+/// A group list card: avatar, member count, description preview, and an inline
+/// join/requested/joined action.
+class _GroupCard extends StatefulWidget {
+  const _GroupCard({required this.group, required this.onChanged});
+
+  final Group group;
+  final VoidCallback onChanged;
+
+  @override
+  State<_GroupCard> createState() => _GroupCardState();
+}
+
+class _GroupCardState extends State<_GroupCard> {
+  late bool _member = widget.group.isMember;
+  late bool _pending = widget.group.membershipPending;
+  late int _members = widget.group.memberCount;
+
+  Group get g => widget.group;
+
+  Future<void> _join() async {
+    if (_member || _pending) {
+      // Leave.
+      final wasMembers = _members;
+      setState(() {
+        _member = false;
+        _pending = false;
+        _members = (wasMembers - 1).clamp(0, 1 << 30);
+      });
+      try {
+        await api.groups.leave(g.id);
+        widget.onChanged();
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _member = true;
+            _members = wasMembers;
+          });
+          showError(context, e);
+        }
+      }
+      return;
+    }
+    // Join (private groups become "requested").
+    setState(() {
+      if (g.isPrivate) {
+        _pending = true;
+      } else {
+        _member = true;
+        _members += 1;
+      }
+    });
+    try {
+      await api.groups.join(g.id);
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _member = false;
+          _pending = false;
+          _members = widget.group.memberCount;
+        });
+        showError(context, e);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = _groupColor(g, context);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => GroupDetailScreen(groupId: g.id),
+        )),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: color,
+                    child: Text(
+                      g.name.isNotEmpty ? g.name[0].toUpperCase() : '#',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(g.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16)),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(
+                                g.isPrivate
+                                    ? Icons.lock_outline
+                                    : Icons.public,
+                                size: 13,
+                                color: scheme.outline),
+                            const SizedBox(width: 4),
+                            Text(
+                                '${formatCount(_members)} members · '
+                                '${g.isPrivate ? 'Private' : 'Public'}',
+                                style: TextStyle(
+                                    color: scheme.outline, fontSize: 12.5)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (g.description != null && g.description!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(g.description!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: scheme.onSurfaceVariant)),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: _pending
+                    ? OutlinedButton.icon(
+                        onPressed: _join,
+                        icon: const Icon(Icons.hourglass_top, size: 18),
+                        label: const Text('Requested'),
+                      )
+                    : _member
+                        ? OutlinedButton.icon(
+                            onPressed: _join,
+                            icon: const Icon(Icons.check, size: 18),
+                            label: const Text('Joined'),
+                          )
+                        : FilledButton.tonalIcon(
+                            onPressed: _join,
+                            icon: const Icon(Icons.add, size: 18),
+                            label: Text(g.isPrivate ? 'Request to join' : 'Join group'),
+                          ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
 
 import 'common.dart';
+import 'communities_screen.dart';
 import 'feed_screen.dart';
+import 'groups_screen.dart';
+import 'guides_screen.dart';
+import 'map_screen.dart';
 import 'marketplace_screen.dart';
 import 'messages_screen.dart';
+import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
+import 'search_screen.dart';
+import 'wallet_screen.dart';
 
-/// The signed-in app shell: a floating pill bottom navigation over the tabs.
+/// The signed-in app shell: a customizable floating pill bottom navigation
+/// over the selected destinations.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.onSignedOut});
 
@@ -18,124 +26,96 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int _index = 0;
+  late String _currentId = navController.value.first;
+  final Set<String> _visited = {};
 
   @override
   void initState() {
     super.initState();
     loadCurrentUserId();
+    _visited.add(_currentId);
+    homeTabSignal.addListener(_onTabSignal);
+    navController.addListener(_onNavChanged);
   }
 
-  static const _items = <(IconData, IconData)>[
-    (Icons.home_outlined, Icons.home),
-    (Icons.play_circle_outline, Icons.play_circle),
-    (Icons.chat_bubble_outline, Icons.chat_bubble),
-    (Icons.storefront_outlined, Icons.storefront),
-    (Icons.person_outline, Icons.person),
-  ];
+  @override
+  void dispose() {
+    homeTabSignal.removeListener(_onTabSignal);
+    navController.removeListener(_onNavChanged);
+    super.dispose();
+  }
+
+  void _onTabSignal() {
+    final id = homeTabSignal.value;
+    if (!navController.value.contains(id)) return;
+    setState(() {
+      _currentId = id;
+      _visited.add(id);
+    });
+  }
+
+  void _onNavChanged() {
+    // If the current destination was removed, fall back to the first item.
+    if (!navController.value.contains(_currentId)) {
+      setState(() => _currentId = navController.value.first);
+    } else {
+      setState(() {});
+    }
+  }
+
+  /// Builds the screen for a destination id. Heavy screens (reels) are only
+  /// built while selected; others are built lazily on first visit and kept.
+  Widget _screenFor(String id) {
+    switch (id) {
+      case 'feed':
+        return const FeedScreen();
+      case 'reels':
+        // Only mount while selected so its video doesn't play in the
+        // background behind other tabs.
+        return _currentId == 'reels'
+            ? const ReelsScreen()
+            : const SizedBox.shrink();
+      case 'messages':
+        return const MessagesScreen();
+      case 'market':
+        return const MarketplaceScreen();
+      case 'profile':
+        return MyProfileScreen(onSignedOut: widget.onSignedOut);
+      case 'map':
+        return const MapScreen();
+      case 'communities':
+        return const CommunitiesScreen();
+      case 'groups':
+        return const GroupsScreen();
+      case 'wallet':
+        return const WalletScreen();
+      case 'search':
+        return const SearchScreen();
+      case 'notifications':
+        return const NotificationsScreen();
+      case 'guides':
+        return const GuidesScreen();
+      default:
+        return const FeedScreen();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final tabs = [
-      const FeedScreen(),
-      // Reels is only mounted while selected so its video doesn't autoplay
-      // (and keep playing audio) in the background behind other tabs.
-      _index == 1 ? const ReelsScreen() : const SizedBox.shrink(),
-      const MessagesScreen(),
-      const MarketplaceScreen(),
-      MyProfileScreen(onSignedOut: widget.onSignedOut),
-    ];
-
+    final ids = navController.value;
+    final index = ids.indexOf(_currentId).clamp(0, ids.length - 1);
     return Scaffold(
-      body: IndexedStack(index: _index, children: tabs),
-      bottomNavigationBar: _FloatingNav(
-        index: _index,
-        items: _items,
-        onTap: (i) {
-          // Re-tapping the Feed tab scrolls it to top + refreshes.
-          if (i == 0 && _index == 0) feedScrollSignal.value++;
-          setState(() => _index = i);
-        },
+      body: IndexedStack(
+        index: index,
+        children: [
+          for (final id in ids)
+            // Lazy: build only visited destinations (and reels only when active).
+            (_visited.contains(id) || id == _currentId)
+                ? _screenFor(id)
+                : const SizedBox.shrink(),
+        ],
       ),
-    );
-  }
-}
-
-/// A floating, pill-shaped navigation bar; the selected item sits in a teal
-/// capsule (mirrors okayspace.ca).
-class _FloatingNav extends StatelessWidget {
-  const _FloatingNav(
-      {required this.index, required this.items, required this.onTap});
-
-  final int index;
-  final List<(IconData, IconData)> items;
-  final ValueChanged<int> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SafeArea(
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(28, 0, 28, 12),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(32),
-          border: Border.all(color: scheme.outlineVariant),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            for (var i = 0; i < items.length; i++)
-              _NavItem(
-                selected: i == index,
-                icon: i == index ? items[i].$2 : items[i].$1,
-                onTap: () => onTap(i),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  const _NavItem(
-      {required this.selected, required this.icon, required this.onTap});
-
-  final bool selected;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? scheme.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Icon(
-            icon,
-            color: selected ? Colors.white : scheme.outline,
-            size: 24,
-          ),
-        ),
-      ),
+      bottomNavigationBar: OkayBottomNav(currentId: _currentId),
     );
   }
 }

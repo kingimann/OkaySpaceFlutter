@@ -10,6 +10,203 @@ final OkaySpaceApi api = OkaySpaceApi();
 /// listens and scrolls to top + refreshes.
 final ValueNotifier<int> feedScrollSignal = ValueNotifier<int>(0);
 
+/// The home destination the shell should show, identified by its id (see
+/// [kAllNavDests]). [OkayBottomNav] sets this from any screen; the shell
+/// listens and switches tabs (popping back to it first).
+class _HomeTabSignal extends ValueNotifier<String> {
+  _HomeTabSignal(super.value);
+
+  /// Selects [id], re-notifying even if it's already selected (so re-tapping
+  /// the active tab still triggers listeners, e.g. feed scroll-to-top).
+  void select(String id) {
+    if (value == id) {
+      notifyListeners();
+    } else {
+      value = id;
+    }
+  }
+}
+
+final _HomeTabSignal homeTabSignal = _HomeTabSignal('feed');
+
+/// A navigation destination available for the customizable bottom bar.
+class NavDest {
+  const NavDest(this.id, this.label, this.icon, this.activeIcon);
+  final String id;
+  final String label;
+  final IconData icon;
+  final IconData activeIcon;
+}
+
+/// Every destination the user can place in the bottom navigation bar.
+const List<NavDest> kAllNavDests = [
+  NavDest('feed', 'Feed', Icons.home_outlined, Icons.home),
+  NavDest('reels', 'Reels', Icons.play_circle_outline, Icons.play_circle),
+  NavDest('messages', 'Messages', Icons.chat_bubble_outline, Icons.chat_bubble),
+  NavDest('market', 'Market', Icons.storefront_outlined, Icons.storefront),
+  NavDest('profile', 'Profile', Icons.person_outline, Icons.person),
+  NavDest('map', 'Map', Icons.map_outlined, Icons.map),
+  NavDest('communities', 'Communities', Icons.tag, Icons.tag),
+  NavDest('groups', 'Groups', Icons.groups_outlined, Icons.groups),
+  NavDest('wallet', 'Wallet', Icons.account_balance_wallet_outlined,
+      Icons.account_balance_wallet),
+  NavDest('search', 'Search', Icons.search, Icons.search),
+  NavDest('notifications', 'Alerts', Icons.notifications_outlined,
+      Icons.notifications),
+  NavDest('guides', 'Places', Icons.place_outlined, Icons.place),
+];
+
+NavDest navDestById(String id) =>
+    kAllNavDests.firstWhere((d) => d.id == id, orElse: () => kAllNavDests.first);
+
+/// The user's chosen bottom-nav destinations (ordered ids, max 5), persisted.
+class NavController extends ValueNotifier<List<String>> {
+  NavController() : super(const ['feed', 'reels', 'messages', 'market', 'profile']) {
+    _load();
+  }
+
+  static const _key = 'okayspace.nav_items';
+  static const int maxItems = 5;
+  static const int minItems = 2;
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  Future<void> _load() async {
+    try {
+      final stored = await _storage.read(key: _key);
+      if (stored != null && stored.isNotEmpty) {
+        final ids = stored
+            .split(',')
+            .where((id) => kAllNavDests.any((d) => d.id == id))
+            .toList();
+        if (ids.length >= minItems) value = ids.take(maxItems).toList();
+      }
+    } catch (_) {/* keep default */}
+  }
+
+  Future<void> set(List<String> ids) async {
+    final clean = ids.take(maxItems).toList();
+    if (clean.length < minItems) return;
+    value = clean;
+    try {
+      await _storage.write(key: _key, value: clean.join(','));
+    } catch (_) {/* best effort */}
+  }
+
+  /// Feed stays pinned so the sidebar (and nav customizer) is always reachable.
+  static const String pinned = 'feed';
+
+  bool get isFull => value.length >= maxItems;
+  void add(String id) {
+    if (isFull || value.contains(id)) return;
+    set([...value, id]);
+  }
+
+  void remove(String id) {
+    if (id == pinned || value.length <= minItems) return;
+    set(value.where((e) => e != id).toList());
+  }
+}
+
+final NavController navController = NavController();
+
+/// Whether the stories row is hidden on the feed. Persisted locally.
+class HideStoriesController extends ValueNotifier<bool> {
+  HideStoriesController() : super(false) {
+    _load();
+  }
+
+  static const _key = 'okayspace.hide_stories';
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  Future<void> _load() async {
+    try {
+      value = (await _storage.read(key: _key)) == '1';
+    } catch (_) {/* keep default */}
+  }
+
+  Future<void> set(bool hidden) async {
+    value = hidden;
+    try {
+      await _storage.write(key: _key, value: hidden ? '1' : '0');
+    } catch (_) {/* best effort */}
+  }
+}
+
+final HideStoriesController hideStoriesController = HideStoriesController();
+
+/// The floating, customizable pill bottom navigation shown on every screen.
+/// Tapping an item returns to the home shell and selects that destination.
+class OkayBottomNav extends StatelessWidget {
+  const OkayBottomNav({super.key, this.currentId});
+
+  /// Highlighted destination id when this screen *is* a home tab.
+  final String? currentId;
+
+  void _go(BuildContext context, String id) {
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    if (id == 'feed' && homeTabSignal.value == 'feed') {
+      feedScrollSignal.value++;
+    }
+    homeTabSignal.select(id); // re-fires even if unchanged
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ValueListenableBuilder<List<String>>(
+      valueListenable: navController,
+      builder: (context, ids, _) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: scheme.outlineVariant),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (final id in ids)
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _go(context, id),
+                    behavior: HitTestBehavior.opaque,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: id == currentId
+                            ? scheme.primary
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Icon(
+                        id == currentId
+                            ? navDestById(id).activeIcon
+                            : navDestById(id).icon,
+                        color: id == currentId ? Colors.white : scheme.outline,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The signed-in user's id, cached after sign-in so widgets can tell which
 /// content is the current user's (e.g. own-post actions). Null until loaded.
 String? currentUserId;

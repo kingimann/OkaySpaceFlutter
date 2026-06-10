@@ -5,7 +5,6 @@ import 'app_drawer.dart';
 import 'common.dart';
 import 'compose_screen.dart';
 import 'hashtag_screen.dart';
-import 'map_screen.dart';
 import 'messages_screen.dart';
 import 'notifications_screen.dart';
 import 'post_tile.dart';
@@ -136,7 +135,13 @@ class _FeedScreenState extends State<FeedScreen> {
                           return Column(
                             children: [
                               _ComposerPrompt(onTap: _compose),
-                              _StoryTray(future: _stories, onAdd: _addStory),
+                              ValueListenableBuilder<bool>(
+                                valueListenable: hideStoriesController,
+                                builder: (context, hidden, _) => hidden
+                                    ? const SizedBox.shrink()
+                                    : _StoryTray(
+                                        future: _stories, onAdd: _addStory),
+                              ),
                               _TrendingStrip(future: _trending),
                               if (posts.isEmpty)
                                 Padding(
@@ -203,13 +208,6 @@ class _FeedScreenState extends State<FeedScreen> {
                       ?.copyWith(fontWeight: FontWeight.bold, fontSize: 22)),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.map_outlined),
-                tooltip: 'Map',
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const MapScreen(),
-                )),
-              ),
-              IconButton(
                 icon: const Icon(Icons.search),
                 tooltip: 'Search',
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute(
@@ -256,8 +254,6 @@ class _FeedScreenState extends State<FeedScreen> {
                   _tabChip('Explore', 0),
                   const SizedBox(width: 8),
                   _tabChip('Following', 1),
-                  const SizedBox(width: 8),
-                  _tabChip('Popular', 2),
                 ],
               ),
             ),
