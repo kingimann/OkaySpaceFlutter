@@ -91,11 +91,88 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _showActions() async {
+    final u = await _profile;
+    if (!mounted) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.volunteer_activism_outlined),
+              title: const Text('Send a tip'),
+              onTap: () => Navigator.pop(context, 'tip'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.workspace_premium_outlined),
+              title: Text(u.raw['is_subscribed'] == true
+                  ? 'Unsubscribe'
+                  : 'Subscribe'),
+              onTap: () => Navigator.pop(context, 'subscribe'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.waving_hand_outlined),
+              title: const Text('Poke'),
+              onTap: () => Navigator.pop(context, 'poke'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_add_alt_1_outlined),
+              title: const Text('Add friend'),
+              onTap: () => Navigator.pop(context, 'friend'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    try {
+      switch (action) {
+        case 'tip':
+          await _tip();
+        case 'subscribe':
+          if (u.raw['is_subscribed'] == true) {
+            await api.users.unsubscribe(widget.userId);
+            if (mounted) showInfo(context, 'Unsubscribed');
+          } else {
+            await api.users.subscribe(widget.userId);
+            if (mounted) showInfo(context, 'Subscribed');
+          }
+        case 'poke':
+          await api.users.poke(widget.userId);
+          if (mounted) showInfo(context, 'Poked ${u.name}');
+        case 'friend':
+          await api.friends.sendRequest(widget.userId);
+          if (mounted) showInfo(context, 'Friend request sent');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _tip() async {
+    final amountText = await promptText(context,
+        title: 'Send a tip', hint: 'Amount', action: 'Send');
+    final amount = num.tryParse(amountText ?? '');
+    if (amount == null || amount <= 0) return;
+    await api.users.tip(widget.userId, amount);
+    if (mounted) showInfo(context, 'Tipped $amount 🎉');
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(
+        title: const Text('Profile'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: _showActions,
+          ),
+        ],
+      ),
       body: FutureBuilder<PublicUser>(
         future: _profile,
         builder: (context, snapshot) {

@@ -211,6 +211,15 @@ class _ChatScreenState extends State<ChatScreen> {
     await _messages;
   }
 
+  Future<void> _call() async {
+    try {
+      await api.messaging.ringCall(_convId);
+      if (mounted) showInfo(context, 'Calling…');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _send() async {
     final text = _input.text.trim();
     if (text.isEmpty || _sending) return;
@@ -261,6 +270,13 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.call_outlined),
+            tooltip: 'Call',
+            onPressed: _call,
+          ),
+        ],
       ),
       body: Column(
         children: [
