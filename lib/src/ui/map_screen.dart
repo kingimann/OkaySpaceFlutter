@@ -78,7 +78,6 @@ class _MapScreenState extends State<MapScreen> {
   static const _fallback = LatLng(43.6532, -79.3832);
 
   final _controller = MapController();
-  final _searchCtrl = TextEditingController();
   final _storage = const FlutterSecureStorage();
 
   LatLng _center = _fallback;
@@ -88,7 +87,6 @@ class _MapScreenState extends State<MapScreen> {
   bool _showTransit = false;
   bool _showSaved = false;
   bool _loading = false;
-  bool _searching = false;
 
   // Display options (persisted).
   String _tileStyle = 'standard';
@@ -99,7 +97,6 @@ class _MapScreenState extends State<MapScreen> {
   bool _showGrid = false; // lat/lng graticule
   bool _showLabels = false; // marker title labels
   bool _rotationLocked = false;
-  bool _fullscreen = false;
   double _pinSize = 38;
   String _units = 'km'; // 'km' | 'mi'
 
@@ -116,8 +113,8 @@ class _MapScreenState extends State<MapScreen> {
   double _liveZoom = 11;
   bool _mapReady = false;
 
-  // Top/bottom chrome auto-hides while the user pans or zooms the map.
-  bool _chromeVisible = true;
+  // Top/bottom chrome auto-hides (animated, via the global bars controller)
+  // while the user pans or zooms the map.
   Timer? _chromeTimer;
 
   // Multi-stop route (waypoints) + straight-line directions target.
@@ -129,8 +126,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _areaMode = false;
   final List<LatLng> _areaPoints = [];
 
-  // Search suggestions + recents (persisted).
-  List<Map<String, dynamic>> _suggestions = const [];
+  // Recent searches (persisted).
   List<String> _recent = [];
 
   // Saved view bookmarks (persisted): {name, lat, lng, zoom}.
@@ -171,18 +167,19 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _chromeTimer?.cancel();
+    // Don't leave the bars hidden if we leave mid-pan.
+    showBars();
     _controller.dispose();
-    _searchCtrl.dispose();
     super.dispose();
   }
 
-  /// Hides the top/bottom chrome while panning; restores it shortly after the
-  /// gesture settles.
+  /// Hides the top/bottom bars (animated, via [barsVisible]) while panning;
+  /// restores them shortly after the gesture settles.
   void _onMapGesture() {
-    if (_chromeVisible) setState(() => _chromeVisible = false);
+    if (barsVisible.value) barsVisible.value = false;
     _chromeTimer?.cancel();
     _chromeTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (mounted) setState(() => _chromeVisible = true);
+      if (mounted) showBars();
     });
   }
 
@@ -348,45 +345,6 @@ class _MapScreenState extends State<MapScreen> {
     return LatLng(lat, lng);
   }
 
-  Future<void> _search() async {
-    final q = _searchCtrl.text.trim();
-    if (q.isEmpty) return;
-    setState(() {
-      _searching = true;
-      _suggestions = const [];
-    });
-    // Allow direct "lat, lng" jumps.
-    final coords = _parseCoords(q);
-    if (coords != null) {
-      _center = coords;
-      _controller.move(_center, 13);
-      _addRecent(q);
-      setState(() => _searching = false);
-      await _loadAll();
-      return;
-    }
-    try {
-      final results = await api.roadside.geocode(q);
-      if (!mounted) return;
-      if (results.isEmpty) {
-        showInfo(context, 'No places found for “$q”.');
-        return;
-      }
-      _addRecent(q);
-      // More than one hit → show a chooser; otherwise jump straight there.
-      if (results.length > 1) {
-        setState(() => _suggestions = results.cast<Map<String, dynamic>>());
-        return;
-      }
-      _gotoResult(results.first);
-      await _loadAll();
-    } catch (e) {
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => _searching = false);
-    }
-  }
-
   void _gotoResult(Map<String, dynamic> r) {
     final lat = (r['lat'] ?? r['latitude']);
     final lng = (r['lng'] ?? r['lon'] ?? r['longitude']);
@@ -396,12 +354,166 @@ class _MapScreenState extends State<MapScreen> {
       showInfo(context, 'Could not locate that place.');
       return;
     }
-    setState(() {
-      _center = LatLng(dLat, dLng);
-      _suggestions = const [];
-    });
+    setState(() => _center = LatLng(dLat, dLng));
     _controller.move(_center, 12);
     _loadAll();
+  }
+
+  /// Search panel (opened from the app-bar icon): search field, recents,
+  /// geocode results and the layer toggles — replaces the on-map search bar.
+  void _openSearch() {
+    final ctrl = TextEditingController();
+    var results = const <Map<String, dynamic>>[];
+    var busy = false;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetCtx) => Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+        child: StatefulBuilder(
+          builder: (c, setSheet) {
+            Future<void> run() async {
+              final q = ctrl.text.trim();
+              if (q.isEmpty) return;
+              final coords = _parseCoords(q);
+              if (coords != null) {
+                _addRecent(q);
+                Navigator.pop(c);
+                setState(() => _center = coords);
+                _controller.move(coords, 13);
+                _loadAll();
+                return;
+              }
+              setSheet(() => busy = true);
+              try {
+                final r = await api.roadside.geocode(q);
+                if (!c.mounted) return;
+                _addRecent(q);
+                if (r.isEmpty) {
+                  showInfo(c, 'No places found for “$q”.');
+                } else if (r.length == 1) {
+                  Navigator.pop(c);
+                  _gotoResult(r.first.cast<String, dynamic>());
+                } else {
+                  setSheet(() => results = r.cast<Map<String, dynamic>>());
+                }
+              } catch (e) {
+                if (c.mounted) showError(c, e);
+              } finally {
+                if (c.mounted) setSheet(() => busy = false);
+              }
+            }
+
+            Widget chip(String label, IconData icon, bool on, VoidCallback t) =>
+                _layerChip(label, icon, on, () {
+                  t();
+                  setSheet(() {});
+                });
+
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                    child: TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => run(),
+                      decoration: InputDecoration(
+                        hintText: 'Search a place or address',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: busy
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2)))
+                            : IconButton(
+                                icon: const Icon(Icons.arrow_forward),
+                                onPressed: run),
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      children: [
+                        chip('Listings', Icons.storefront, _showListings,
+                            () => _toggle(() => _showListings = !_showListings)),
+                        const SizedBox(width: 8),
+                        chip('Roadside', Icons.car_repair, _showRoadside,
+                            () => _toggle(() => _showRoadside = !_showRoadside)),
+                        const SizedBox(width: 8),
+                        chip('Transit', Icons.directions_transit, _showTransit,
+                            () => _toggle(() => _showTransit = !_showTransit)),
+                        const SizedBox(width: 8),
+                        chip('Saved', Icons.bookmark, _showSaved,
+                            () => _toggle(() => _showSaved = !_showSaved)),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        if (results.isNotEmpty)
+                          for (final r in results.take(8))
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.place_outlined),
+                              title: Text(
+                                  '${r['name'] ?? r['display_name'] ?? r['label'] ?? 'Result'}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              onTap: () {
+                                Navigator.pop(c);
+                                _gotoResult(r);
+                              },
+                            )
+                        else ...[
+                          if (_recent.isNotEmpty)
+                            ListTile(
+                              dense: true,
+                              title: const Text('Recent',
+                                  style: TextStyle(fontWeight: FontWeight.bold)),
+                              trailing: TextButton(
+                                  onPressed: () {
+                                    _clearRecents();
+                                    setSheet(() {});
+                                  },
+                                  child: const Text('Clear')),
+                            ),
+                          for (final q in _recent)
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.history),
+                              title: Text(q),
+                              onTap: () {
+                                ctrl.text = q;
+                                run();
+                              },
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    ).whenComplete(ctrl.dispose);
   }
 
   void _toggle(void Function() change) {
@@ -409,6 +521,59 @@ class _MapScreenState extends State<MapScreen> {
     _savePrefs();
     if (_showSaved && _saved.isEmpty) _loadSaved();
     _loadAll();
+  }
+
+  /// All the map controls, reached by long-pressing the search button (the top
+  /// bar itself is kept to just the search icon for now).
+  void _mapOptionsMenu() {
+    ListTile item(IconData icon, String label, VoidCallback onTap,
+            {bool active = false}) =>
+        ListTile(
+          leading: Icon(icon,
+              color: active ? Theme.of(context).colorScheme.primary : null),
+          title: Text(label),
+          onTap: () {
+            Navigator.pop(context);
+            onTap();
+          },
+        );
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            item(
+                _etaShareId != null ? Icons.share_location : Icons.near_me,
+                _etaShareId != null ? 'Stop sharing ETA' : 'Share my ETA',
+                _etaShareId != null ? _stopEta : _shareEta,
+                active: _etaShareId != null),
+            const Divider(height: 1),
+            item(Icons.straighten, 'Measure distance', _toggleMeasure,
+                active: _measuring),
+            item(Icons.route, 'Build a route', _toggleRouting,
+                active: _routing),
+            item(Icons.crop_square, 'Measure area', _toggleArea,
+                active: _areaMode),
+            const Divider(height: 1),
+            item(Icons.tune, 'Search radius', _radiusSheet),
+            item(Icons.filter_alt_outlined, 'Filters', _filtersSheet),
+            item(Icons.near_me_outlined, 'Nearest to centre', _nearestSheet),
+            item(Icons.fit_screen, 'Fit all markers', _fitAll),
+            item(Icons.bookmark_outline, 'Saved views', _bookmarksSheet),
+            item(Icons.add_location_alt_outlined, 'Save centre as place',
+                _savePlaceAtCenter),
+            item(Icons.my_location, 'Copy centre coords', _copyCenter),
+            item(Icons.settings_outlined, 'Map settings', _settingsSheet),
+            item(Icons.info_outline, 'Legend', _legendSheet),
+            item(Icons.ios_share, 'Share this location', _shareThisLocation),
+            item(Icons.restart_alt, 'Reset all', _resetAll),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Starts a live ETA share to a searched destination and copies the
@@ -1256,104 +1421,9 @@ class _MapScreenState extends State<MapScreen> {
     final shownMarkers = _clusterMarkers(markers);
     final radiusMetres = _radiusKm * 1000;
 
-    final chrome = _chromeVisible && !_fullscreen;
     return Scaffold(
       extendBody: !widget.embedded,
-      bottomNavigationBar:
-          (widget.embedded || !chrome) ? null : const OkayBottomNav(),
-      appBar: !chrome
-          ? null
-          : OkayAppBar(
-        title: const Text('Map'),
-        actions: [
-          IconButton(
-            icon: Icon(
-                _etaShareId != null ? Icons.share_location : Icons.near_me,
-                color: _etaShareId != null ? scheme.primary : null),
-            tooltip: _etaShareId != null ? 'Sharing ETA…' : 'Share my ETA',
-            onPressed: _etaShareId != null ? _stopEta : _shareEta,
-          ),
-          PopupMenuButton<String>(
-            icon: Icon(Icons.architecture,
-                color: (_measuring || _routing || _areaMode)
-                    ? scheme.primary
-                    : null),
-            tooltip: 'Tools',
-            onSelected: (v) {
-              switch (v) {
-                case 'measure':
-                  _toggleMeasure();
-                case 'route':
-                  _toggleRouting();
-                case 'area':
-                  _toggleArea();
-              }
-            },
-            itemBuilder: (_) => [
-              CheckedPopupMenuItem(
-                  value: 'measure',
-                  checked: _measuring,
-                  child: const Text('Measure distance')),
-              CheckedPopupMenuItem(
-                  value: 'route',
-                  checked: _routing,
-                  child: const Text('Build a route')),
-              CheckedPopupMenuItem(
-                  value: 'area',
-                  checked: _areaMode,
-                  child: const Text('Measure area')),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.fullscreen),
-            tooltip: 'Fullscreen',
-            onPressed: () => setState(() => _fullscreen = true),
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (v) {
-              switch (v) {
-                case 'radius':
-                  _radiusSheet();
-                case 'filters':
-                  _filtersSheet();
-                case 'settings':
-                  _settingsSheet();
-                case 'bookmarks':
-                  _bookmarksSheet();
-                case 'nearest':
-                  _nearestSheet();
-                case 'legend':
-                  _legendSheet();
-                case 'share':
-                  _shareThisLocation();
-                case 'savecentre':
-                  _savePlaceAtCenter();
-                case 'copycentre':
-                  _copyCenter();
-                case 'fit':
-                  _fitAll();
-                case 'reset':
-                  _resetAll();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'radius', child: Text('Search radius')),
-              PopupMenuItem(value: 'filters', child: Text('Filters')),
-              PopupMenuItem(value: 'nearest', child: Text('Nearest to centre')),
-              PopupMenuItem(value: 'fit', child: Text('Fit all markers')),
-              PopupMenuItem(value: 'bookmarks', child: Text('Saved views')),
-              PopupMenuItem(
-                  value: 'savecentre', child: Text('Save centre as place')),
-              PopupMenuItem(value: 'copycentre', child: Text('Copy centre coords')),
-              PopupMenuItem(value: 'settings', child: Text('Map settings')),
-              PopupMenuItem(value: 'legend', child: Text('Legend')),
-              PopupMenuItem(value: 'share', child: Text('Share this location')),
-              PopupMenuItem(value: 'reset', child: Text('Reset all')),
-            ],
-          ),
-        ],
-      ),
+      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
       body: Stack(
         children: [
           FlutterMap(
@@ -1468,118 +1538,53 @@ class _MapScreenState extends State<MapScreen> {
                 child: Center(
                     child: Icon(Icons.add, size: 30, color: Colors.black54))),
 
-          // Search bar + layer chips.
-          if (chrome)
+          // Floating header styled like the newsfeed's: a rounded pill that
+          // collapses with the global bars while panning (driven by [barsT]).
           Positioned(
-            top: 8,
-            left: 8,
-            right: 8,
-            child: Column(
-              children: [
-                Material(
-                  elevation: 2,
-                  borderRadius: BorderRadius.circular(14),
-                  color: scheme.surface,
-                  child: TextField(
-                    controller: _searchCtrl,
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _search(),
-                    decoration: InputDecoration(
-                      hintText: 'Search a place or address',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searching
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2)))
-                          : IconButton(
-                              icon: const Icon(Icons.arrow_forward),
-                              onPressed: _search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      isDense: true,
-                    ),
-                  ),
+            top: 0,
+            left: 0,
+            right: 0,
+            child: ValueListenableBuilder<double>(
+              valueListenable: barsT,
+              builder: (context, t, child) => ClipRect(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  heightFactor: t.clamp(0.0, 1.0),
+                  child: child,
                 ),
-                // Search suggestions (multiple geocode hits).
-                if (_suggestions.isNotEmpty)
-                  Material(
-                    elevation: 2,
-                    borderRadius: BorderRadius.circular(14),
-                    color: scheme.surface,
-                    child: Column(
-                      children: [
-                        for (final r in _suggestions.take(6))
-                          ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.place_outlined),
-                            title: Text(
-                                '${r['name'] ?? r['display_name'] ?? r['label'] ?? 'Result'}',
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            onTap: () {
-                              _gotoResult(r);
-                              _loadAll();
-                            },
-                          ),
-                      ],
-                    ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  padding: const EdgeInsets.fromLTRB(6, 4, 8, 4),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(24),
                   ),
-                // Recent searches.
-                if (_suggestions.isEmpty &&
-                    _searchCtrl.text.isEmpty &&
-                    _recent.isNotEmpty)
-                  SizedBox(
-                    height: 38,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          for (final q in _recent)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: ActionChip(
-                                avatar: const Icon(Icons.history, size: 16),
-                                label: Text(q),
-                                onPressed: () {
-                                  _searchCtrl.text = q;
-                                  _search();
-                                },
-                              ),
-                            ),
-                          ActionChip(
-                            label: const Text('Clear'),
-                            onPressed: _clearRecents,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _layerChip('Listings', Icons.storefront, _showListings,
-                          () => _toggle(() => _showListings = !_showListings)),
-                      const SizedBox(width: 8),
-                      _layerChip('Roadside', Icons.car_repair, _showRoadside,
-                          () => _toggle(() => _showRoadside = !_showRoadside)),
-                      const SizedBox(width: 8),
-                      _layerChip('Transit', Icons.directions_transit,
-                          _showTransit,
-                          () => _toggle(() => _showTransit = !_showTransit)),
-                      const SizedBox(width: 8),
-                      _layerChip('Saved', Icons.bookmark, _showSaved,
-                          () => _toggle(() => _showSaved = !_showSaved)),
+                      IconButton(
+                        icon: const Icon(Icons.menu),
+                        tooltip: 'Menu',
+                        onPressed: () => openSidebar(context),
+                      ),
+                      Text('Map',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold, fontSize: 22)),
+                      const Spacer(),
+                      GestureDetector(
+                        onLongPress: _mapOptionsMenu,
+                        child: IconButton(
+                          icon: const Icon(Icons.search),
+                          tooltip: 'Search (long-press for map options)',
+                          onPressed: _openSearch,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
 
@@ -1692,19 +1697,6 @@ class _MapScreenState extends State<MapScreen> {
                   onClear: _areaPoints.isEmpty
                       ? null
                       : () => setState(_areaPoints.clear)),
-            ),
-
-          // Exit-fullscreen control (only affordance left after removing the
-          // on-map button column).
-          if (_fullscreen)
-            Positioned(
-              right: 12,
-              bottom: 76,
-              child: FloatingActionButton.small(
-                heroTag: 'map_exitFs',
-                onPressed: () => setState(() => _fullscreen = false),
-                child: const Icon(Icons.fullscreen_exit),
-              ),
             ),
 
           // Count pill.
