@@ -30,10 +30,12 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Bookmarks')),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<Post>(
           future: _bookmarks,
+          loading: const FeedSkeleton(),
           emptyMessage: 'No bookmarks yet.\nTap the bookmark icon on a post.',
           emptyIcon: Icons.bookmark_border,
           builder: (context, items) => ListView.builder(
@@ -42,6 +44,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
             itemBuilder: (context, i) => PostTile(post: items[i], card: true),
           ),
         ),
+      ),
       ),
     );
   }

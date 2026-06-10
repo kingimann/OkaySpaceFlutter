@@ -60,7 +60,8 @@ class _SearchScreenState extends State<SearchScreen> {
             tabs: [Tab(text: 'People'), Tab(text: 'Tags')],
           ),
         ),
-        body: _query.isEmpty
+        body: MaxWidth(
+          child: _query.isEmpty
             ? _TrendingHashtags()
             : TabBarView(
                 children: [
@@ -102,6 +103,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ],
               ),
+        ),
       ),
     );
   }

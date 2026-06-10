@@ -69,10 +69,12 @@ class _SupportScreenState extends State<SupportScreen> {
         icon: const Icon(Icons.add),
         label: const Text('New ticket'),
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<Map<String, dynamic>>(
           future: _tickets,
+          loading: const ListSkeleton(),
           emptyMessage: 'No support tickets.\nTap “New ticket” to get help.',
           emptyIcon: Icons.support_agent_outlined,
           builder: (context, items) => ListView.separated(
@@ -95,6 +97,7 @@ class _SupportScreenState extends State<SupportScreen> {
             },
           ),
         ),
+      ),
       ),
     );
   }

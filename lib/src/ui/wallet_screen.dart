@@ -81,7 +81,8 @@ class _WalletScreenState extends State<WalletScreen> {
         icon: const Icon(Icons.swap_horiz),
         label: const Text('Transfer'),
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: FutureBuilder<WalletSummary>(
           future: _summary,
@@ -155,6 +156,7 @@ class _WalletScreenState extends State<WalletScreen> {
             );
           },
         ),
+      ),
       ),
     );
   }

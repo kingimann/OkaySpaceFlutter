@@ -66,12 +66,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
             tabs: [Tab(text: 'Friends'), Tab(text: 'Requests')],
           ),
         ),
-        body: TabBarView(
+        body: MaxWidth(
+          child: TabBarView(
           children: [
             RefreshIndicator(
               onRefresh: _reload,
               child: AsyncList<PublicUser>(
                 future: _friends,
+                loading: const ListSkeleton(),
                 emptyMessage: 'No friends yet.\nTap + to add someone.',
                 emptyIcon: Icons.people_outline,
                 builder: (context, items) => ListView.separated(
@@ -134,6 +136,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

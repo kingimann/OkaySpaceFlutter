@@ -62,10 +62,12 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
         icon: const Icon(Icons.add_alert),
         label: const Text('Request help'),
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<RoadsideRequest>(
           future: _mine,
+          loading: const ListSkeleton(),
           emptyMessage: 'No roadside requests.\nTap “Request help” if you’re stuck.',
           emptyIcon: Icons.car_repair,
           builder: (context, items) => ListView.separated(
@@ -94,6 +96,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
             },
           ),
         ),
+      ),
       ),
     );
   }

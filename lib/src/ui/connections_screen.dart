@@ -27,11 +27,17 @@ class ConnectionsScreen extends StatelessWidget {
             tabs: [Tab(text: 'Followers'), Tab(text: 'Following')],
           ),
         ),
-        body: TabBarView(
-          children: [
-            _UserList(future: api.users.followers(userId), empty: 'No followers yet.'),
-            _UserList(future: api.users.following(userId), empty: 'Not following anyone yet.'),
-          ],
+        body: MaxWidth(
+          child: TabBarView(
+            children: [
+              _UserList(
+                  future: api.users.followers(userId),
+                  empty: 'No followers yet.'),
+              _UserList(
+                  future: api.users.following(userId),
+                  empty: 'Not following anyone yet.'),
+            ],
+          ),
         ),
       ),
     );

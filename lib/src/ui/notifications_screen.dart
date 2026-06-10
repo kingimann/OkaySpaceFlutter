@@ -91,8 +91,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ],
           bottom: const TabBar(tabs: [Tab(text: 'All'), Tab(text: 'Activity')]),
         ),
-        body: TabBarView(
-          children: [_buildNotifications(), _buildActivity()],
+        body: MaxWidth(
+          child: TabBarView(
+            children: [_buildNotifications(), _buildActivity()],
+          ),
         ),
       ),
     );

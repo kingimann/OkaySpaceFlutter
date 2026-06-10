@@ -38,10 +38,12 @@ class _HashtagScreenState extends State<HashtagScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('#${widget.tag}')),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<Post>(
           future: _posts,
+          loading: const FeedSkeleton(),
           emptyMessage: 'No posts for #${widget.tag}.',
           emptyIcon: Icons.tag,
           builder: (context, items) => ListView.builder(
@@ -50,6 +52,7 @@ class _HashtagScreenState extends State<HashtagScreen> {
             itemBuilder: (context, i) => PostTile(post: items[i], card: true),
           ),
         ),
+      ),
       ),
     );
   }
