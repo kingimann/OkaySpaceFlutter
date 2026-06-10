@@ -10,10 +10,11 @@ import 'profile_screen.dart';
 /// and open their profile. Uses [WidgetSpan]s so there are no gesture
 /// recognizers to dispose.
 class LinkedText extends StatelessWidget {
-  const LinkedText(this.text, {super.key, this.style});
+  const LinkedText(this.text, {super.key, this.style, this.textAlign});
 
   final String text;
   final TextStyle? style;
+  final TextAlign? textAlign;
 
   static final _token = RegExp(r'[#@][A-Za-z0-9_]+');
 
@@ -56,6 +57,7 @@ class LinkedText extends StatelessWidget {
       last = m.end;
     }
     if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
-    return Text.rich(TextSpan(style: style, children: spans));
+    return Text.rich(TextSpan(style: style, children: spans),
+        textAlign: textAlign);
   }
 }

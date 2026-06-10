@@ -12,7 +12,11 @@ import 'common.dart';
 /// Compose and publish a new post with optional photo attachments.
 /// Returns `true` via [Navigator] when a post was created.
 class ComposeScreen extends StatefulWidget {
-  const ComposeScreen({super.key});
+  const ComposeScreen({super.key, this.quoteOf, this.quotedPreview});
+
+  /// When set, the new post quotes this post id (with [quotedPreview] shown).
+  final String? quoteOf;
+  final Post? quotedPreview;
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -26,6 +30,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
   static const _draftKey = 'okayspace.compose_draft';
   final _storage = const FlutterSecureStorage();
   Timer? _draftTimer;
+
+  // @mention autocomplete.
+  List<PublicUser> _mentions = const [];
+  Timer? _mentionTimer;
 
   // Poll composer.
   bool _poll = false;
@@ -48,6 +56,46 @@ class _ComposeScreenState extends State<ComposeScreen> {
     super.initState();
     _text.addListener(_saveDraft);
     _loadDraft();
+  }
+
+  Widget _quotedPreview(Post p) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Avatar(url: p.author.picture, name: p.author.name, radius: 12),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                    p.author.username != null
+                        ? '${p.author.name} · @${p.author.username}'
+                        : p.author.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 13)),
+              ),
+            ],
+          ),
+          if (p.text.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(p.text,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13)),
+          ],
+        ],
+      ),
+    );
   }
 
   Future<void> _loadDraft() async {
@@ -82,6 +130,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   @override
   void dispose() {
     _draftTimer?.cancel();
+    _mentionTimer?.cancel();
     _text.removeListener(_saveDraft);
     _text.dispose();
     for (final c in _options) {
@@ -91,6 +140,47 @@ class _ComposeScreenState extends State<ComposeScreen> {
   }
 
   void _togglePoll() => setState(() => _poll = !_poll);
+
+  /// Detects an `@token` at the caret and searches users for autocomplete.
+  void _onTextChanged(String _) {
+    setState(() {});
+    final sel = _text.selection;
+    final pos = sel.baseOffset;
+    if (pos < 0) {
+      if (_mentions.isNotEmpty) setState(() => _mentions = const []);
+      return;
+    }
+    final before = _text.text.substring(0, pos);
+    final m = RegExp(r'@(\w{1,30})$').firstMatch(before);
+    _mentionTimer?.cancel();
+    if (m == null) {
+      if (_mentions.isNotEmpty) setState(() => _mentions = const []);
+      return;
+    }
+    final query = m.group(1)!;
+    _mentionTimer = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final users = await api.users.search(query);
+        if (mounted) setState(() => _mentions = users.take(5).toList());
+      } catch (_) {/* ignore */}
+    });
+  }
+
+  /// Replaces the `@token` at the caret with the chosen @username.
+  void _insertMention(PublicUser u) {
+    final handle = u.username ?? u.name;
+    final pos = _text.selection.baseOffset;
+    if (pos < 0) return;
+    final before = _text.text.substring(0, pos);
+    final after = _text.text.substring(pos);
+    final replaced = before.replaceFirst(RegExp(r'@\w*$'), '@$handle ');
+    final next = '$replaced$after';
+    setState(() {
+      _text.text = next;
+      _text.selection = TextSelection.collapsed(offset: replaced.length);
+      _mentions = const [];
+    });
+  }
 
   Future<void> _addPhotos() async {
     final files = await ImagePicker().pickMultiImage(
@@ -221,6 +311,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
         text: _text.text.trim(),
         media: media,
         poll: poll,
+        quoteOf: widget.quoteOf,
         placeName: _placeName,
         placeLatitude: _placeLat,
         placeLongitude: _placeLng,
@@ -267,13 +358,33 @@ class _ComposeScreenState extends State<ComposeScreen> {
             autofocus: true,
             maxLines: null,
             minLines: 4,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              hintText: "What's happening?",
+            onChanged: _onTextChanged,
+            decoration: InputDecoration(
+              hintText:
+                  widget.quoteOf != null ? 'Add a comment…' : "What's happening?",
               border: InputBorder.none,
               filled: false,
             ),
           ),
+          if (_mentions.isNotEmpty)
+            SizedBox(
+              height: 52,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final u in _mentions)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ActionChip(
+                        avatar: Avatar(url: u.picture, name: u.name, radius: 10),
+                        label: Text('@${u.username ?? u.name}'),
+                        onPressed: () => _insertMention(u),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (widget.quotedPreview != null) _quotedPreview(widget.quotedPreview!),
           if (_photos.isNotEmpty)
             SizedBox(
               height: 110,

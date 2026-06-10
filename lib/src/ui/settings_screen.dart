@@ -13,6 +13,7 @@ import 'customize_sidebar_screen.dart';
 import 'forms_screen.dart';
 import 'friends_screen.dart';
 import 'guides_screen.dart';
+import 'connected_apps_screen.dart';
 import 'documents_screen.dart';
 import 'leaderboard_screen.dart';
 import 'muted_words_screen.dart';
@@ -652,6 +653,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const DocumentsScreen())),
+          ),
+          ListTile(
+            leading: const Icon(Icons.apps_outlined),
+            title: const Text('Connected apps'),
+            subtitle: const Text('Third-party apps with account access'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ConnectedAppsScreen())),
           ),
         ]),
       ];

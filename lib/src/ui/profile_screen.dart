@@ -13,6 +13,7 @@ import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
 import 'hashtag_screen.dart';
+import 'linked_text.dart';
 import 'leaderboard_screen.dart';
 import 'messages_screen.dart';
 import 'post_tile.dart';
@@ -650,7 +651,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(u.bio!, textAlign: TextAlign.center),
+              child: LinkedText(u.bio!, textAlign: TextAlign.center),
             ),
           ],
           const SizedBox(height: 16),
@@ -810,6 +811,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               final what = switch (_tab) {
                 1 => 'No media yet.',
                 2 => 'No liked posts yet.',
+                3 => 'No replies yet.',
+                4 => 'No reposts yet.',
                 _ => 'No posts yet.',
               };
               return Padding(
@@ -1490,7 +1493,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(u.bio!, textAlign: TextAlign.center),
+              child: LinkedText(u.bio!, textAlign: TextAlign.center),
             ),
           ],
           const SizedBox(height: 8),
@@ -1852,27 +1855,21 @@ class _MyPostsSectionState extends State<_MyPostsSection> {
                 ? [for (final p in posts) if (p.media.isNotEmpty) p]
                 : posts;
             if (filtered.isEmpty) {
+              final (icon, label) = switch (_tab) {
+                1 => (Icons.photo_library_outlined, 'No media posts yet.'),
+                2 => (Icons.favorite_border, 'No liked posts yet.'),
+                3 => (Icons.reply_outlined, 'No replies yet.'),
+                4 => (Icons.repeat, 'No reposts yet.'),
+                _ => (Icons.article_outlined, 'No posts yet.'),
+              };
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 36),
                 child: Center(
                   child: Column(
                     children: [
-                      Icon(
-                          _tab == 2
-                              ? Icons.favorite_border
-                              : _tab == 1
-                                  ? Icons.photo_library_outlined
-                                  : Icons.article_outlined,
-                          size: 48,
-                          color: scheme.outline),
+                      Icon(icon, size: 48, color: scheme.outline),
                       const SizedBox(height: 10),
-                      Text(
-                          _tab == 2
-                              ? 'No liked posts yet.'
-                              : _tab == 1
-                                  ? 'No media posts yet.'
-                                  : 'No posts yet.',
-                          style: TextStyle(color: scheme.outline)),
+                      Text(label, style: TextStyle(color: scheme.outline)),
                     ],
                   ),
                 ),

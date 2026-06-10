@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'compose_screen.dart';
 import 'linked_text.dart';
 import 'post_detail_screen.dart';
 import 'post_video.dart';
@@ -24,6 +25,12 @@ Future<void> _showPostMenu(BuildContext context, Post post,
             title: const Text('Copy link'),
             onTap: () => Navigator.pop(context, 'copy'),
           ),
+          if (post.text.trim().isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.content_copy),
+              title: const Text('Copy text'),
+              onTap: () => Navigator.pop(context, 'copytext'),
+            ),
           ListTile(
             leading: const Icon(Icons.forward_to_inbox_outlined),
             title: const Text('Share to a chat'),
@@ -75,6 +82,9 @@ Future<void> _showPostMenu(BuildContext context, Post post,
         await Clipboard.setData(
             ClipboardData(text: 'https://okayspace.ca/post/${post.id}'));
         if (context.mounted) showInfo(context, 'Link copied');
+      case 'copytext':
+        await Clipboard.setData(ClipboardData(text: post.text));
+        if (context.mounted) showInfo(context, 'Text copied');
       case 'share':
         await _sharePostToChat(context, post);
       case 'not_interested':
@@ -366,6 +376,38 @@ class _PostTileState extends State<PostTile> {
         _reposts += _reposted ? 1 : -1;
       });
 
+  /// Long-press the repost button: choose a plain repost or a quote.
+  Future<void> _repostMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(_reposted ? Icons.repeat_on : Icons.repeat),
+              title: Text(_reposted ? 'Undo repost' : 'Repost'),
+              onTap: () => Navigator.pop(context, 'repost'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.format_quote),
+              title: const Text('Quote'),
+              onTap: () => Navigator.pop(context, 'quote'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == 'repost') {
+      _repost();
+    } else if (choice == 'quote' && mounted) {
+      final posted = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => ComposeScreen(quoteOf: post.id, quotedPreview: post),
+      ));
+      if (posted == true) onChanged?.call();
+    }
+  }
+
   VoidCallback? get onChanged => widget.onChanged;
   bool get tappable => widget.tappable;
   bool get card => widget.card;
@@ -512,6 +554,7 @@ class _PostTileState extends State<PostTile> {
                 count: _reposts,
                 color: _reposted ? const Color(0xFF22C55E) : null,
                 onTap: _repost,
+                onLongPress: _repostMenu,
               ),
               if (post.viewsCount > 0)
                 _PostAction(
