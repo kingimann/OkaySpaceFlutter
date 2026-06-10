@@ -76,6 +76,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Icons.notifications;
   }
 
+  /// A distinct badge color per notification kind, so the list scans quickly.
+  Color _colorFor(String type, BuildContext context) {
+    if (type.contains('like')) return const Color(0xFFF43F5E); // rosé
+    if (type.contains('follow')) return const Color(0xFF10B981); // emerald
+    if (type.contains('comment') || type.contains('reply')) {
+      return const Color(0xFF06B6D4); // ocean
+    }
+    if (type.contains('message')) return const Color(0xFF6366F1); // midnight
+    if (type.contains('mention')) return const Color(0xFFF97316); // sunset
+    return Theme.of(context).colorScheme.primary;
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -136,6 +148,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               final n = items[i];
               final text = n.message ??
                   '${n.actorName ?? 'Someone'} ${n.type.replaceAll('_', ' ')}';
+              final badge = _colorFor(n.type, context);
               return Dismissible(
                 key: ValueKey(n.id),
                 direction: DismissDirection.endToStart,
@@ -148,29 +161,44 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 onDismissed: (_) =>
                     api.notifications.dismiss(n.id).catchError((_) {}),
                 child: ListTile(
+                  // Unread rows get a faint accent wash so they stand out.
+                  tileColor: n.read
+                      ? null
+                      : Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.06),
                   leading: Stack(
                     children: [
                       Avatar(url: n.actorPicture, name: n.actorName),
                       Positioned(
                         right: 0,
                         bottom: 0,
-                        child: CircleAvatar(
-                          radius: 9,
-                          backgroundColor:
-                              Theme.of(context).colorScheme.primary,
-                          child: Icon(_iconFor(n.type),
-                              size: 11, color: Colors.white),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: Theme.of(context).scaffoldBackgroundColor,
+                                width: 1.5),
+                          ),
+                          child: CircleAvatar(
+                            radius: 9,
+                            backgroundColor: badge,
+                            child: Icon(_iconFor(n.type),
+                                size: 11, color: Colors.white),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  title: Text(text),
+                  title: Text(text,
+                      style: TextStyle(
+                          fontWeight:
+                              n.read ? FontWeight.normal : FontWeight.w600)),
                   subtitle: Text(shortAgo(n.createdAt)),
                   trailing: n.read
                       ? null
-                      : Icon(Icons.circle,
-                          size: 10,
-                          color: Theme.of(context).colorScheme.primary),
+                      : Icon(Icons.circle, size: 10, color: badge),
                   onTap: () => _open(n),
                 ),
               );

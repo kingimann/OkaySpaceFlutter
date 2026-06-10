@@ -22,6 +22,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _password = TextEditingController();
 
   bool _busy = false;
+  bool _obscure = true;
   String? _error;
 
   // Debounced username availability.
@@ -134,9 +135,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextField(
                 controller: _name,
                 textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
-                    labelText: 'Name', border: OutlineInputBorder()),
+                    labelText: 'Name',
+                    prefixIcon: Icon(Icons.person_outline),
+                    border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -156,36 +160,69 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextField(
                 controller: _email,
                 keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
-                    labelText: 'Email', border: OutlineInputBorder()),
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.mail_outline),
+                    border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: _password,
-                obscureText: true,
+                obscureText: _obscure,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
+                onSubmitted: (_) => _canSubmit ? _register() : null,
+                decoration: InputDecoration(
                   labelText: 'Password (min 6 characters)',
-                  border: OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                  border: const OutlineInputBorder(),
                 ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 16),
-                Text(_error!,
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error)),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.onErrorContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(_error!,
+                            style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onErrorContainer)),
+                      ),
+                    ],
+                  ),
+                ),
               ],
               const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _canSubmit ? _register : null,
-                child: _busy
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Create account'),
+              SizedBox(
+                height: 50,
+                child: FilledButton(
+                  onPressed: _canSubmit ? _register : null,
+                  child: _busy
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Create account'),
+                ),
               ),
             ],
           ),

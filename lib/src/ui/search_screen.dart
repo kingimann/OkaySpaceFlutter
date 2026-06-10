@@ -138,25 +138,52 @@ class _TrendingHashtagsState extends State<_TrendingHashtags> {
       future: _trending,
       emptyMessage: 'Search for people or hashtags.',
       emptyIcon: Icons.search,
-      builder: (context, items) => ListView(
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('Trending',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ),
-          for (final m in items)
-            if (_tagOf(m).isNotEmpty)
-              ListTile(
-                leading: const Icon(Icons.tag),
-                title: Text('#${_tagOf(m)}'),
-                subtitle: _countOf(m) > 0
-                    ? Text('${formatCount(_countOf(m))} posts')
-                    : null,
-                onTap: () => HashtagScreen.open(context, _tagOf(m)),
+      builder: (context, items) {
+        final tags = [for (final m in items) if (_tagOf(m).isNotEmpty) m];
+        return ListView(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
+              child: Row(
+                children: [
+                  Icon(Icons.trending_up,
+                      color: Theme.of(context).colorScheme.primary, size: 22),
+                  const SizedBox(width: 8),
+                  const Text('Trending',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                ],
               ),
-        ],
-      ),
+            ),
+            for (var i = 0; i < tags.length; i++)
+              ListTile(
+                leading: Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text('${i + 1}',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold)),
+                ),
+                title: Text('#${_tagOf(tags[i])}',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: _countOf(tags[i]) > 0
+                    ? Text('${formatCount(_countOf(tags[i]))} posts')
+                    : null,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => HashtagScreen.open(context, _tagOf(tags[i])),
+              ),
+          ],
+        );
+      },
     );
   }
 }
