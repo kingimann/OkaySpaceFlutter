@@ -47,6 +47,19 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
     await _communities;
   }
 
+  Future<void> _toggleJoin(Community c) async {
+    try {
+      if (c.isMember) {
+        await api.communities.leave(c.name);
+      } else {
+        await api.communities.join(c.name);
+      }
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _create() async {
     final name = await showDialog<String>(
       context: context,
@@ -99,28 +112,40 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
           loading: const ListSkeleton(),
           emptyMessage: 'No communities found.',
           emptyIcon: Icons.groups_outlined,
-          builder: (context, items) => ListView.separated(
+          builder: (context, items) => ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 6),
             itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final c = items[i];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: _communityColor(c, context),
-                  child: Text(
-                    c.title.isNotEmpty ? c.title[0].toUpperCase() : '#',
-                    style: const TextStyle(color: Colors.white),
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  leading: CircleAvatar(
+                    radius: 24,
+                    backgroundColor: _communityColor(c, context),
+                    child: Text(
+                      c.title.isNotEmpty ? c.title[0].toUpperCase() : '#',
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
                   ),
+                  title: Text(c.title,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                      '${formatCount(c.memberCount)} members · ${formatCount(c.postCount)} posts'),
+                  trailing: c.isMember
+                      ? OutlinedButton(
+                          onPressed: () => _toggleJoin(c),
+                          child: const Text('Joined'))
+                      : FilledButton.tonal(
+                          onPressed: () => _toggleJoin(c),
+                          child: const Text('Join')),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => CommunityDetailScreen(name: c.name),
+                  )),
                 ),
-                title: Text(c.title),
-                subtitle: Text(
-                    '${formatCount(c.memberCount)} members · ${formatCount(c.postCount)} posts'),
-                trailing: c.isMember
-                    ? const Chip(label: Text('Joined'))
-                    : null,
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => CommunityDetailScreen(name: c.name),
-                )),
               );
             },
           ),

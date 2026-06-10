@@ -145,101 +145,143 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(title: const Text('Settings')),
       body: MaxWidth(
         child: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
-          _section('Account'),
-          ListTile(
-            leading: const Icon(Icons.mail_outline),
-            title: const Text('Email'),
-            subtitle: Text(widget.user.email),
-          ),
-          ListTile(
-            leading: const Icon(Icons.password),
-            title: const Text('Change password'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _changePassword,
-          ),
-          const Divider(height: 1),
-          _section('Display'),
-          ListTile(
-            leading: const Icon(Icons.brightness_6_outlined),
-            title: const Text('Appearance'),
-            trailing: Text(_themeLabel(themeController.value)),
-            onTap: () async {
-              await _pickTheme();
-              if (mounted) setState(() {});
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.palette_outlined),
-            title: const Text('Accent color'),
-            trailing: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                shape: BoxShape.circle,
-              ),
+          // Profile header.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                Avatar(
+                    url: widget.user.picture,
+                    name: widget.user.name,
+                    radius: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.user.name,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(widget.user.handle,
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.outline)),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            onTap: _pickAccent,
           ),
-          const Divider(height: 1),
+          _section('Account'),
+          _card([
+            ListTile(
+              leading: const Icon(Icons.mail_outline),
+              title: const Text('Email'),
+              subtitle: Text(widget.user.email),
+            ),
+            const Divider(height: 1, indent: 56),
+            ListTile(
+              leading: const Icon(Icons.password),
+              title: const Text('Change password'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _changePassword,
+            ),
+          ]),
+          _section('Display'),
+          _card([
+            ListTile(
+              leading: const Icon(Icons.brightness_6_outlined),
+              title: const Text('Appearance'),
+              trailing: Text(_themeLabel(themeController.value)),
+              onTap: () async {
+                await _pickTheme();
+                if (mounted) setState(() {});
+              },
+            ),
+            const Divider(height: 1, indent: 56),
+            ListTile(
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('Accent color'),
+              trailing: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              onTap: _pickAccent,
+            ),
+          ]),
           _section('Privacy'),
-          SwitchListTile(
-            secondary: const Icon(Icons.lock_outline),
-            title: const Text('Private account'),
-            subtitle: const Text('Only approved followers see your posts'),
-            value: _private,
-            onChanged: (v) =>
-                _toggle('is_private', v, (x) => _private = x),
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.search),
-            title: const Text('Searchable'),
-            subtitle: const Text('Let people find you in search'),
-            value: _searchable,
-            onChanged: (v) =>
-                _toggle('searchable', v, (x) => _searchable = x),
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.visibility_off_outlined),
-            title: const Text('Hide online status'),
-            value: _hideOnline,
-            onChanged: (v) =>
-                _toggle('hide_online', v, (x) => _hideOnline = x),
-          ),
-          const Divider(height: 1),
+          _card([
+            SwitchListTile(
+              secondary: const Icon(Icons.lock_outline),
+              title: const Text('Private account'),
+              subtitle: const Text('Only approved followers see your posts'),
+              value: _private,
+              onChanged: (v) => _toggle('is_private', v, (x) => _private = x),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.search),
+              title: const Text('Searchable'),
+              subtitle: const Text('Let people find you in search'),
+              value: _searchable,
+              onChanged: (v) => _toggle('searchable', v, (x) => _searchable = x),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.visibility_off_outlined),
+              title: const Text('Hide online status'),
+              value: _hideOnline,
+              onChanged: (v) => _toggle('hide_online', v, (x) => _hideOnline = x),
+            ),
+          ]),
           _section('Notifications'),
-          SwitchListTile(
-            secondary: const Icon(Icons.sms_outlined),
-            title: const Text('SMS notifications'),
-            value: _sms,
-            onChanged: (v) =>
-                _toggle('sms_notifications', v, (x) => _sms = x),
-          ),
-          const Divider(height: 1),
+          _card([
+            SwitchListTile(
+              secondary: const Icon(Icons.sms_outlined),
+              title: const Text('SMS notifications'),
+              value: _sms,
+              onChanged: (v) =>
+                  _toggle('sms_notifications', v, (x) => _sms = x),
+            ),
+          ]),
           _section('Developer'),
-          ListTile(
-            leading: const Icon(Icons.vpn_key_outlined),
-            title: const Text('API keys'),
-            subtitle: const Text('Generate keys for the OkaySpace API'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => const ApiKeysScreen(),
-            )),
-          ),
-          const Divider(height: 1),
-          const SizedBox(height: 8),
-          ListTile(
-            leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
-            title: Text('Sign out',
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            onTap: _signOut,
-          ),
+          _card([
+            ListTile(
+              leading: const Icon(Icons.vpn_key_outlined),
+              title: const Text('API keys'),
+              subtitle: const Text('Generate keys for the OkaySpace API'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ApiKeysScreen(),
+              )),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          _card([
+            ListTile(
+              leading: Icon(Icons.logout,
+                  color: Theme.of(context).colorScheme.error),
+              title: Text('Sign out',
+                  style:
+                      TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: _signOut,
+            ),
+          ]),
         ],
       ),
       ),
     );
   }
+
+  /// Wraps a group of tiles in a rounded card.
+  Widget _card(List<Widget> children) => Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: children),
+      );
 
   Widget _section(String title) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),

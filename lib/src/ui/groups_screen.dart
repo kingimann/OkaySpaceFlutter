@@ -33,6 +33,15 @@ class _GroupsScreenState extends State<GroupsScreen> {
     return '';
   }
 
+  Future<void> _quickJoin(Group g) async {
+    try {
+      await api.groups.join(g.id);
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _create() async {
     final id = await showDialog<String>(
       context: context,
@@ -66,22 +75,32 @@ class _GroupsScreenState extends State<GroupsScreen> {
           loading: const ListSkeleton(),
           emptyMessage: 'No groups yet.',
           emptyIcon: Icons.group_work_outlined,
-          builder: (context, items) => ListView.separated(
+          builder: (context, items) => ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 6),
             itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final g = items[i];
               final label = _trailingLabel(g);
-              return ListTile(
-                leading: Avatar(name: g.name),
-                title: Text(g.name),
-                subtitle: Text(
-                  '${formatCount(g.memberCount)} members${g.isPrivate ? ' · Private' : ''}',
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  leading: Avatar(name: g.name, radius: 24),
+                  title: Text(g.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    '${formatCount(g.memberCount)} members${g.isPrivate ? ' · Private' : ''}',
+                  ),
+                  trailing: label.isEmpty
+                      ? FilledButton.tonal(
+                          onPressed: () => _quickJoin(g),
+                          child: const Text('Join'))
+                      : Chip(label: Text(label)),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => GroupDetailScreen(groupId: g.id),
+                  )),
                 ),
-                trailing: label.isEmpty ? null : Chip(label: Text(label)),
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => GroupDetailScreen(groupId: g.id),
-                )),
               );
             },
           ),
