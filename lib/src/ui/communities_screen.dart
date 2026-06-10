@@ -91,7 +91,8 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
           ),
         ),
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<Community>(
           future: _communities,
@@ -124,6 +125,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
             },
           ),
         ),
+      ),
       ),
     );
   }

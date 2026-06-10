@@ -58,7 +58,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<Group>(
           future: _groups,
@@ -85,6 +86,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
             },
           ),
         ),
+      ),
       ),
     );
   }

@@ -92,10 +92,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
         ),
       ),
-      body: RefreshIndicator(
+      body: MaxWidth(
+        maxWidth: 1000,
+        child: RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<Listing>(
           future: _listings,
+          loading: const GridSkeleton(),
           emptyMessage: 'No listings found.',
           emptyIcon: Icons.storefront_outlined,
           builder: (context, items) => GridView.builder(
@@ -111,6 +114,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 _ListingCard(listing: items[i]),
           ),
         ),
+      ),
       ),
     );
   }

@@ -282,7 +282,9 @@ class PostTile extends StatelessWidget {
             const SizedBox(height: 8),
             LinkedText(post.text),
           ],
-          if (post.media.isNotEmpty) _MediaPreview(media: post.media.first),
+          if (post.media.isNotEmpty)
+            _MediaPreview(
+                media: post.media.first, extra: post.media.length - 1),
           if (post.quotedPost != null) ...[
             const SizedBox(height: 8),
             _QuotedPost(quoted: post.quotedPost!),
@@ -554,9 +556,12 @@ class _PostAction extends StatelessWidget {
 }
 
 class _MediaPreview extends StatelessWidget {
-  const _MediaPreview({required this.media});
+  const _MediaPreview({required this.media, this.extra = 0});
 
   final PostMedia media;
+
+  /// Number of additional media items beyond this one (for a "+N" badge).
+  final int extra;
 
   @override
   Widget build(BuildContext context) {
@@ -568,11 +573,39 @@ class _MediaPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: AspectRatio(
           aspectRatio: 16 / 9,
-          child: media.isVideo
-              ? PostVideo(url: url)
-              : Image.network(url, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      const ColoredBox(color: Colors.black12)),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              media.isVideo
+                  ? PostVideo(url: url)
+                  : Image.network(url, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const ColoredBox(color: Colors.black12)),
+              if (extra > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.collections,
+                          size: 13, color: Colors.white),
+                      const SizedBox(width: 4),
+                      Text('+$extra',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold)),
+                    ]),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

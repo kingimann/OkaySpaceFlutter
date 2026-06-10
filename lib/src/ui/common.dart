@@ -407,6 +407,38 @@ class ListSkeleton extends StatelessWidget {
   }
 }
 
+/// A grid of skeleton tiles for loading grid screens (e.g. marketplace).
+class GridSkeleton extends StatelessWidget {
+  const GridSkeleton({super.key, this.tiles = 6});
+
+  final int tiles;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 220,
+        childAspectRatio: 0.72,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: tiles,
+      itemBuilder: (_, __) => const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Skeleton(height: double.infinity, radius: 14)),
+          SizedBox(height: 6),
+          Skeleton(width: 120, height: 12),
+          SizedBox(height: 6),
+          Skeleton(width: 70, height: 10),
+        ],
+      ),
+    );
+  }
+}
+
 /// Standard async-list scaffold: a [loading] placeholder while loading, an
 /// error+retry state on failure, an [emptyMessage] when empty, else [builder].
 class AsyncList<T> extends StatelessWidget {
