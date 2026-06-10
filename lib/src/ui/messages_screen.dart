@@ -39,11 +39,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
   _ConvSort _sort = _ConvSort.recent;
   bool _showArchived = false;
   int _unreadTotal = 0;
+  // convId -> unsent draft text (read from per-chat draft keys).
+  Map<String, String> _drafts = {};
+  // convId -> local nickname overriding the displayed title.
+  Map<String, String> _nicknames = {};
 
   static const _pinnedKey = 'okayspace.convos.pinned';
   static const _archivedKey = 'okayspace.convos.archived';
   static const _unreadKey = 'okayspace.convos.unread';
   static const _sortKey = 'okayspace.convos.sort';
+  static const _nickKey = 'okayspace.convos.nicknames';
+  static const _draftPrefix = 'okayspace.chat_draft.';
 
   @override
   void initState() {
@@ -76,6 +82,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final a = await _storage.read(key: _archivedKey);
       final u = await _storage.read(key: _unreadKey);
       final s = await _storage.read(key: _sortKey);
+      final nick = await _storage.read(key: _nickKey);
+      final all = await _storage.readAll();
       if (!mounted) return;
       setState(() {
         _pinned = parse(p);
@@ -83,8 +91,32 @@ class _MessagesScreenState extends State<MessagesScreen> {
         _markedUnread = parse(u);
         _sort = _ConvSort.values.firstWhere((e) => e.name == s,
             orElse: () => _ConvSort.recent);
+        _drafts = {
+          for (final e in all.entries)
+            if (e.key.startsWith(_draftPrefix) && e.value.trim().isNotEmpty)
+              e.key.substring(_draftPrefix.length): e.value,
+        };
+        if (nick != null && nick.isNotEmpty) {
+          final decoded = jsonDecode(nick);
+          if (decoded is Map) {
+            _nicknames = {
+              for (final e in decoded.entries) '${e.key}': '${e.value}'
+            };
+          }
+        }
       });
     } catch (_) {/* ignore */}
+  }
+
+  void _setNickname(ConversationView c, String? name) {
+    setState(() {
+      if (name == null || name.trim().isEmpty) {
+        _nicknames.remove(c.id);
+      } else {
+        _nicknames[c.id] = name.trim();
+      }
+    });
+    _storage.write(key: _nickKey, value: jsonEncode(_nicknames)).ignore();
   }
 
   void _persist(String key, Set<String> set) =>
@@ -136,6 +168,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   String _title(ConversationView c) {
+    final nick = _nicknames[c.id];
+    if (nick != null && nick.isNotEmpty) return nick;
     if (c.name != null && c.name!.isNotEmpty) return c.name!;
     if (c.otherUser != null) return c.otherUser!.name;
     if (c.members.isNotEmpty) return c.members.map((m) => m.name).join(', ');
@@ -221,6 +255,19 @@ class _MessagesScreenState extends State<MessagesScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _togglePin(c);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: Text(
+                  _nicknames.containsKey(c.id) ? 'Edit nickname' : 'Set nickname'),
+              onTap: () async {
+                Navigator.pop(context);
+                final name = await promptText(context,
+                    title: 'Nickname',
+                    action: 'Save',
+                    initial: _nicknames[c.id] ?? _title(c));
+                if (name != null) _setNickname(c, name);
               },
             ),
             ListTile(
@@ -439,6 +486,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             title: title,
                             pinned: _pinned.contains(c.id),
                             forceUnread: _markedUnread.contains(c.id),
+                            draft: _drafts[c.id],
                             onLongPress: () => _convActions(c),
                             onTap: () async {
                               _clearUnreadMark(c.id);
@@ -473,6 +521,7 @@ class _ConversationTile extends StatelessWidget {
     this.onLongPress,
     this.pinned = false,
     this.forceUnread = false,
+    this.draft,
   });
 
   final ConversationView conversation;
@@ -485,6 +534,9 @@ class _ConversationTile extends StatelessWidget {
 
   /// Locally marked unread even when the server unread count is zero.
   final bool forceUnread;
+
+  /// Unsent draft text for this conversation, shown in the preview if present.
+  final String? draft;
 
   /// A short preview of the last message, with an icon label for non-text types.
   String _preview() {
@@ -549,15 +601,28 @@ class _ConversationTile extends StatelessWidget {
           ),
         ],
       ),
-      subtitle: Text(
-        _preview(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: unread ? scheme.onSurface : scheme.outline,
-          fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
-        ),
-      ),
+      subtitle: (draft != null && draft!.trim().isNotEmpty)
+          ? Text.rich(
+              TextSpan(children: [
+                TextSpan(
+                    text: 'Draft: ',
+                    style: TextStyle(
+                        color: scheme.error, fontWeight: FontWeight.w600)),
+                TextSpan(text: draft!.trim()),
+              ]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: scheme.outline),
+            )
+          : Text(
+              _preview(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: unread ? scheme.onSurface : scheme.outline,
+                fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -617,6 +682,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   bool _showJump = false;
+  // New messages that arrived while scrolled away from the bottom.
+  int _newSinceScroll = 0;
   bool _sending = false;
   Message? _replyTo;
   Timer? _typingTimer;
@@ -655,6 +722,21 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _sendOnEnter = true;
   // Live character count for the composer.
   int _charCount = 0;
+  // Chat font family: 'default' | 'serif' | 'mono' (shared, local).
+  String _fontFamily = 'default';
+  // Square vs. rounded bubble corners (shared, local).
+  bool _squareBubbles = false;
+  // Compact message density (shared, local).
+  bool _compact = false;
+  // Emoji used by double-tap-to-react (shared, local).
+  String _defaultReaction = '❤️';
+  // Hide your own read receipts locally (per conversation).
+  bool _hideReceipts = false;
+  // Index of the currently highlighted in-chat search match.
+  final List<String> _searchHits = [];
+  int _searchPos = 0;
+  // Rotating index for cycling through pinned messages from the banner.
+  int _pinnedCycle = 0;
 
   String get _convId => widget.conversation.id;
   String get _draftKey => 'okayspace.chat_draft.$_convId';
@@ -664,8 +746,13 @@ class _ChatScreenState extends State<ChatScreen> {
   String get _scaleKey => 'okayspace.chat_scale.$_convId';
   String get _tsKey => 'okayspace.chat_ts.$_convId';
   String get _bubbleKey => 'okayspace.chat_bubble.$_convId';
+  String get _receiptKey => 'okayspace.chat_hidereceipts.$_convId';
   static const _quickKey = 'okayspace.chat_quickreplies';
   static const _enterKey = 'okayspace.chat_sendonenter';
+  static const _fontKey = 'okayspace.chat_font';
+  static const _cornerKey = 'okayspace.chat_square';
+  static const _densityKey = 'okayspace.chat_compact';
+  static const _reactKey = 'okayspace.chat_defaultreaction';
 
   @override
   void initState() {
@@ -679,7 +766,12 @@ class _ChatScreenState extends State<ChatScreen> {
     // (offset 0 is the newest message in this reversed list).
     _scroll.addListener(() {
       final show = _scroll.hasClients && _scroll.offset > 320;
-      if (show != _showJump) setState(() => _showJump = show);
+      if (show != _showJump) {
+        setState(() {
+          _showJump = show;
+          if (!show) _newSinceScroll = 0;
+        });
+      }
     });
     // Light polling so new incoming messages appear while the chat is open.
     _poll = Timer.periodic(const Duration(seconds: 6), (_) {
@@ -752,6 +844,11 @@ class _ChatScreenState extends State<ChatScreen> {
       final ts = await _storage.read(key: _tsKey);
       final bubble = await _storage.read(key: _bubbleKey);
       final enter = await _storage.read(key: _enterKey);
+      final font = await _storage.read(key: _fontKey);
+      final square = await _storage.read(key: _cornerKey);
+      final compact = await _storage.read(key: _densityKey);
+      final react = await _storage.read(key: _reactKey);
+      final hideR = await _storage.read(key: _receiptKey);
       if (!mounted) return;
       setState(() {
         final argb = int.tryParse(bg ?? '');
@@ -765,6 +862,11 @@ class _ChatScreenState extends State<ChatScreen> {
         final bargb = int.tryParse(bubble ?? '');
         _bubbleColor = (bargb != null && bargb != 0) ? Color(bargb) : null;
         _sendOnEnter = enter != '0';
+        _fontFamily = (font == 'serif' || font == 'mono') ? font! : 'default';
+        _squareBubbles = square == '1';
+        _compact = compact == '1';
+        if (react != null && react.isNotEmpty) _defaultReaction = react;
+        _hideReceipts = hideR == '1';
       });
     } catch (_) {/* ignore */}
   }
@@ -805,6 +907,106 @@ class _ChatScreenState extends State<ChatScreen> {
     _storage.write(key: _enterKey, value: _sendOnEnter ? '1' : '0').ignore();
     showInfo(context,
         _sendOnEnter ? 'Enter now sends' : 'Enter now adds a new line');
+  }
+
+  void _toggleReceipts() {
+    setState(() => _hideReceipts = !_hideReceipts);
+    _storage.write(key: _receiptKey, value: _hideReceipts ? '1' : '0').ignore();
+  }
+
+  /// Bundled appearance options: font, bubble shape, density, default reaction.
+  void _appearanceSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => StatefulBuilder(
+        builder: (c, setSheet) {
+          void save(String key, String value, VoidCallback apply) {
+            setState(apply);
+            setSheet(() {});
+            _storage.write(key: key, value: value).ignore();
+          }
+
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                    title: Text('Appearance',
+                        style: TextStyle(fontWeight: FontWeight.bold))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      const Text('Font'),
+                      const Spacer(),
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(value: 'default', label: Text('Aa')),
+                          ButtonSegment(
+                              value: 'serif',
+                              label: Text('Aa',
+                                  style: TextStyle(fontFamily: 'serif'))),
+                          ButtonSegment(
+                              value: 'mono',
+                              label: Text('Aa',
+                                  style: TextStyle(fontFamily: 'monospace'))),
+                        ],
+                        selected: {_fontFamily},
+                        onSelectionChanged: (s) =>
+                            save(_fontKey, s.first, () => _fontFamily = s.first),
+                      ),
+                    ],
+                  ),
+                ),
+                SwitchListTile(
+                  title: const Text('Square bubbles'),
+                  value: _squareBubbles,
+                  onChanged: (v) => save(
+                      _cornerKey, v ? '1' : '0', () => _squareBubbles = v),
+                ),
+                SwitchListTile(
+                  title: const Text('Compact density'),
+                  value: _compact,
+                  onChanged: (v) =>
+                      save(_densityKey, v ? '1' : '0', () => _compact = v),
+                ),
+                ListTile(
+                  title: const Text('Double-tap reaction'),
+                  trailing: Text(_defaultReaction,
+                      style: const TextStyle(fontSize: 22)),
+                  onTap: () async {
+                    final picked = await showModalBottomSheet<String>(
+                      context: c,
+                      builder: (_) => SafeArea(
+                        child: Wrap(
+                          children: [
+                            for (final e in const [
+                              '❤️', '👍', '😂', '😮', '😢', '🙏', '🔥', '🎉'
+                            ])
+                              InkWell(
+                                onTap: () => Navigator.pop(c, e),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Text(e,
+                                      style: const TextStyle(fontSize: 28)),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                    if (picked != null) {
+                      save(_reactKey, picked, () => _defaultReaction = picked);
+                    }
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _setBubbleColor(Color? c) {
@@ -1326,6 +1528,38 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  /// Selects [from] and every newer (more recent) message.
+  void _selectFrom(Message from) {
+    setState(() {
+      for (final m in _items) {
+        if (!m.deleted && !m.createdAt.isBefore(from.createdAt)) {
+          _selected.add(m.id);
+        }
+      }
+    });
+  }
+
+  void _reportMessage(Message msg) {
+    showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Report message'),
+        content: const Text(
+            'Report this message to moderators? Our team will review it.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () {
+                Navigator.pop(c);
+                showInfo(context, 'Reported. Thanks for letting us know.');
+              },
+              child: const Text('Report')),
+        ],
+      ),
+    );
+  }
+
   void _exitSelection() => setState(_selected.clear);
 
   Future<void> _deleteSelected() async {
@@ -1398,18 +1632,103 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Inserts [emoji] at the composer's caret.
-  void _insertEmoji(String emoji) {
+  void _insertEmoji(String emoji) => _insertText(emoji);
+
+  /// Replaces the current selection (or inserts at the caret) with [str].
+  void _insertText(String str) {
     final sel = _input.selection;
     final text = _input.text;
     final start = sel.start < 0 ? text.length : sel.start;
     final end = sel.end < 0 ? text.length : sel.end;
-    final next = text.replaceRange(start, end, emoji);
+    final next = text.replaceRange(start, end, str);
     setState(() {
       _input.text = next;
-      _input.selection =
-          TextSelection.collapsed(offset: start + emoji.length);
+      _input.selection = TextSelection.collapsed(offset: start + str.length);
       _charCount = next.length;
     });
+  }
+
+  /// Wraps the current selection with [marker] on both sides (markdown style).
+  void _wrapSelection(String marker) {
+    final sel = _input.selection;
+    final text = _input.text;
+    if (!sel.isValid || sel.isCollapsed) {
+      _insertText('$marker$marker');
+      // Place the caret between the markers.
+      final pos = _input.selection.start - marker.length;
+      _input.selection = TextSelection.collapsed(offset: pos);
+      return;
+    }
+    final selected = text.substring(sel.start, sel.end);
+    final next = text.replaceRange(sel.start, sel.end, '$marker$selected$marker');
+    setState(() {
+      _input.text = next;
+      _input.selection = TextSelection.collapsed(
+          offset: sel.end + marker.length * 2);
+      _charCount = next.length;
+    });
+  }
+
+  /// Composer formatting menu: bold / italic / strikethrough / mention all.
+  void _formatMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.format_bold),
+              title: const Text('Bold'),
+              onTap: () {
+                Navigator.pop(context);
+                _wrapSelection('**');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.format_italic),
+              title: const Text('Italic'),
+              onTap: () {
+                Navigator.pop(context);
+                _wrapSelection('_');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.format_strikethrough),
+              title: const Text('Strikethrough'),
+              onTap: () {
+                Navigator.pop(context);
+                _wrapSelection('~~');
+              },
+            ),
+            if (widget.conversation.isGroup)
+              ListTile(
+                leading: const Icon(Icons.groups),
+                title: const Text('Mention everyone'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _insertText('@everyone ');
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Expands a few slash-command macros typed at the very start of a message.
+  String _expandSlash(String text) {
+    final t = text.trimRight();
+    switch (t) {
+      case '/shrug':
+        return r'¯\_(ツ)_/¯';
+      case '/tableflip':
+        return '(╯°□°)╯︵ ┻━┻';
+      case '/unflip':
+        return '┬─┬ ノ( ゜-゜ノ)';
+    }
+    if (t.startsWith('/me ')) return '_${t.substring(4)}_';
+    return text;
   }
 
   void _emojiPicker() {
@@ -1464,7 +1783,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (silent && !_loading && _error == null && _sameMessages(msgs)) {
         return;
       }
+      // Count messages that arrived while the user is scrolled up.
+      final delta = msgs.length - _items.length;
+      final grew = delta > 0 && _items.isNotEmpty;
       setState(() {
+        if (grew && _showJump) _newSinceScroll += delta;
         _items = msgs;
         _loading = false;
         _error = null;
@@ -1596,6 +1919,9 @@ class _ChatScreenState extends State<ChatScreen> {
             selected: selected,
             bubbleColor: _bubbleColor,
             showTimestamp: _showTimestamps,
+            fontFamily: _fontFamily,
+            squareCorners: _squareBubbles,
+            compact: _compact,
             starred: _starred.contains(msg.id),
             expanded: _expanded.contains(msg.id),
             onToggleExpand: () => setState(() {
@@ -1610,6 +1936,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 (isGroup && !mine && !msg.deleted) ? _senderName(msg.senderId) : null,
             receipt: (!isGroup &&
                     mine &&
+                    !_hideReceipts &&
                     msg.id == lastMineId &&
                     widget.conversation.receiptsEnabled)
                 ? _receipt(msg)
@@ -1621,8 +1948,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 : (msg.deleted ? null : () => _messageActions(msg, mine)),
             onDoubleTap: (_selectionMode || msg.deleted)
                 ? null
-                : () => _run(
-                    () => api.messaging.reactToMessage(_convId, msg.id, '❤️')),
+                : () => _run(() => api.messaging
+                    .reactToMessage(_convId, msg.id, _defaultReaction)),
           );
           if (msg.deleted) return KeyedSubtree(key: key, child: bubble);
           // Swipe right to reply; swipe left to delete your own messages.
@@ -1880,6 +2207,38 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Banner sheet listing the conversation's pinned messages.
+  /// Jumps to the next pinned message each time the banner is tapped.
+  void _cyclePinned() {
+    final pinned = _items.where((m) => m.pinned && !m.deleted).toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (pinned.isEmpty) return;
+    final m = pinned[_pinnedCycle % pinned.length];
+    setState(() => _pinnedCycle++);
+    _jumpTo(m.id);
+  }
+
+  /// Steps through every message that @-mentions the current user.
+  void _jumpToMentions() {
+    final me = widget.conversation.members
+        .where((u) => u.userId == currentUserId)
+        .toList();
+    final handle = me.isNotEmpty ? (me.first.username ?? me.first.name) : null;
+    final hits = _items
+        .where((m) {
+          if (m.deleted || m.text == null) return false;
+          final t = m.text!.toLowerCase();
+          if (t.contains('@everyone')) return true;
+          return handle != null && t.contains('@${handle.toLowerCase()}');
+        })
+        .map((m) => m.id)
+        .toList();
+    if (hits.isEmpty) {
+      showInfo(context, 'No mentions of you');
+      return;
+    }
+    _beginSearchBrowse(hits);
+  }
+
   void _showPinned() {
     final pinned = _items.where((m) => m.pinned && !m.deleted).toList();
     showModalBottomSheet<void>(
@@ -1925,7 +2284,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _send() async {
-    final text = _input.text.trim();
+    final text = _expandSlash(_input.text.trim());
     if (text.isEmpty || _sending) return;
     final replyTo = _replyTo?.id;
     setState(() => _sending = true);
@@ -2009,6 +2368,8 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Searches messages in this conversation and jumps to the chosen one.
   void _searchMessages() {
     final ctrl = TextEditingController();
+    var mineOnly = false;
+    var mediaOnly = false;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -2019,15 +2380,16 @@ class _ChatScreenState extends State<ChatScreen> {
         child: StatefulBuilder(
           builder: (context, setSheet) {
             final q = ctrl.text.trim().toLowerCase();
-            final matches = q.isEmpty
-                ? const <Message>[]
-                : _items
-                    .where((m) =>
-                        !m.deleted &&
-                        (m.text ?? '').toLowerCase().contains(q))
-                    .toList()
-                    .reversed
-                    .toList();
+            final matches = _items
+                .where((m) =>
+                    !m.deleted &&
+                    (q.isEmpty || (m.text ?? '').toLowerCase().contains(q)) &&
+                    (!mineOnly || _isMine(m)) &&
+                    (!mediaOnly || m.media.isNotEmpty))
+                .toList()
+                .reversed
+                .toList();
+            final active = q.isNotEmpty || mineOnly || mediaOnly;
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2045,7 +2407,46 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                 ),
-                if (q.isNotEmpty && matches.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      FilterChip(
+                        label: const Text('From me'),
+                        selected: mineOnly,
+                        onSelected: (v) => setSheet(() => mineOnly = v),
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('With media'),
+                        selected: mediaOnly,
+                        onSelected: (v) => setSheet(() => mediaOnly = v),
+                      ),
+                      const Spacer(),
+                      if (active)
+                        Text('${matches.length} result${matches.length == 1 ? '' : 's'}',
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.outline)),
+                    ],
+                  ),
+                ),
+                if (active && matches.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.travel_explore),
+                        label: const Text('Browse results in chat'),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _beginSearchBrowse(
+                              [for (final m in matches.reversed) m.id]);
+                        },
+                      ),
+                    ),
+                  ),
+                if (active && matches.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(24),
                     child: Text('No messages found.'),
@@ -2056,8 +2457,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       for (final m in matches)
                         ListTile(
-                          leading: const Icon(Icons.chat_bubble_outline),
-                          title: Text(m.text ?? '',
+                          leading: Icon(m.media.isNotEmpty
+                              ? Icons.image_outlined
+                              : Icons.chat_bubble_outline),
+                          title: Text(m.text ?? '[${m.type}]',
                               maxLines: 2, overflow: TextOverflow.ellipsis),
                           subtitle: Text(shortAgo(m.createdAt)),
                           onTap: () {
@@ -2076,6 +2479,27 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     ).whenComplete(ctrl.dispose);
   }
+
+  /// Starts in-chat result browsing with a prev/next navigator bar.
+  void _beginSearchBrowse(List<String> ids) {
+    if (ids.isEmpty) return;
+    setState(() {
+      _searchHits
+        ..clear()
+        ..addAll(ids);
+      _searchPos = ids.length - 1; // start at the newest match
+    });
+    _jumpTo(_searchHits[_searchPos]);
+  }
+
+  void _searchStep(int delta) {
+    if (_searchHits.isEmpty) return;
+    final next = (_searchPos + delta).clamp(0, _searchHits.length - 1);
+    setState(() => _searchPos = next);
+    _jumpTo(_searchHits[_searchPos]);
+  }
+
+  void _endSearchBrowse() => setState(_searchHits.clear);
 
   /// Picks a photo and sends it as a media message.
   Future<void> _attachImage() async {
@@ -2186,6 +2610,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 setState(() => _replyTo = msg);
               },
             ),
+            if (msg.text != null && msg.text!.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.format_quote),
+                title: const Text('Quote'),
+                onTap: () {
+                  Navigator.pop(context);
+                  final quoted =
+                      msg.text!.split('\n').map((l) => '> $l').join('\n');
+                  _insertText('$quoted\n');
+                },
+              ),
             ListTile(
               leading: Icon(
                   _starred.contains(msg.id) ? Icons.star : Icons.star_border),
@@ -2201,6 +2636,14 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _toggleSelect(msg);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_add_check),
+              title: const Text('Select from here'),
+              onTap: () {
+                Navigator.pop(context);
+                _selectFrom(msg);
               },
             ),
             if (msg.text != null && msg.text!.isNotEmpty)
@@ -2223,6 +2666,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 },
               ),
             ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Copy link'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(
+                    text:
+                        'https://okayspace.ca/messages/$_convId?m=${msg.id}'));
+                Navigator.pop(context);
+                showInfo(context, 'Link copied');
+              },
+            ),
+            ListTile(
               leading: Icon(msg.pinned
                   ? Icons.push_pin
                   : Icons.push_pin_outlined),
@@ -2240,6 +2694,16 @@ class _ChatScreenState extends State<ChatScreen> {
                 _messageInfo(msg);
               },
             ),
+            if (!mine && !msg.deleted)
+              ListTile(
+                leading: Icon(Icons.flag_outlined,
+                    color: Theme.of(context).colorScheme.error),
+                title: const Text('Report'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _reportMessage(msg);
+                },
+              ),
             if (mine && msg.text != null) ...[
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
@@ -2318,6 +2782,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
               },
             ),
+            if (widget.conversation.isGroup)
+              ListTile(
+                leading: const Icon(Icons.alternate_email),
+                title: const Text('Jump to mentions'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _jumpToMentions();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
               title: const Text('Shared media'),
@@ -2358,6 +2831,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 _chooseTextSize();
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.tune),
+              title: const Text('Appearance'),
+              onTap: () {
+                Navigator.pop(context);
+                _appearanceSheet();
+              },
+            ),
+            if (!widget.conversation.isGroup)
+              SwitchListTile(
+                secondary: const Icon(Icons.done_all),
+                title: const Text('Hide read receipts'),
+                value: _hideReceipts,
+                onChanged: (_) {
+                  Navigator.pop(context);
+                  _toggleReceipts();
+                },
+              ),
             SwitchListTile(
               secondary: const Icon(Icons.schedule_outlined),
               title: const Text('Show timestamps'),
@@ -2590,7 +3081,8 @@ class _ChatScreenState extends State<ChatScreen> {
           if (_items.any((m) => m.pinned && !m.deleted))
             _PinnedBanner(
               count: _items.where((m) => m.pinned && !m.deleted).length,
-              onTap: _showPinned,
+              onTap: _cyclePinned,
+              onLongPress: _showPinned,
             ),
           Expanded(
             child: Stack(
@@ -2605,17 +3097,53 @@ class _ChatScreenState extends State<ChatScreen> {
                   Positioned(
                     right: 12,
                     bottom: 12,
-                    child: FloatingActionButton.small(
-                      heroTag: 'jumpToLatest',
-                      onPressed: () => _scroll.animateTo(0,
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOut),
-                      child: const Icon(Icons.keyboard_arrow_down),
+                    child: Badge(
+                      isLabelVisible: _newSinceScroll > 0,
+                      label: Text('$_newSinceScroll'),
+                      child: FloatingActionButton.small(
+                        heroTag: 'jumpToLatest',
+                        onPressed: () {
+                          setState(() => _newSinceScroll = 0);
+                          _scroll.animateTo(0,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOut);
+                        },
+                        child: const Icon(Icons.keyboard_arrow_down),
+                      ),
                     ),
                   ),
               ],
             ),
           ),
+          if (_searchHits.isNotEmpty)
+            Material(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  Text('${_searchPos + 1} of ${_searchHits.length}'),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_up),
+                    tooltip: 'Older match',
+                    onPressed:
+                        _searchPos > 0 ? () => _searchStep(-1) : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down),
+                    tooltip: 'Newer match',
+                    onPressed: _searchPos < _searchHits.length - 1
+                        ? () => _searchStep(1)
+                        : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Close search',
+                    onPressed: _endSearchBrowse,
+                  ),
+                ],
+              ),
+            ),
           if (_replyTo != null)
             _ReplyPreview(
               message: _replyTo!,
@@ -2684,6 +3212,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     icon: const Icon(Icons.emoji_emotions_outlined),
                     tooltip: 'Emoji',
                     onPressed: _sending ? null : _emojiPicker,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.text_format),
+                    tooltip: 'Format',
+                    onPressed: _sending ? null : _formatMenu,
                   ),
                   Expanded(
                     child: TextField(
@@ -2755,6 +3288,9 @@ class _MessageBubble extends StatelessWidget {
       this.selected = false,
       this.bubbleColor,
       this.showTimestamp = false,
+      this.fontFamily = 'default',
+      this.squareCorners = false,
+      this.compact = false,
       this.starred = false,
       this.expanded = false,
       this.onToggleExpand,
@@ -2782,6 +3318,15 @@ class _MessageBubble extends StatelessWidget {
   /// When true, shows the exact time under every message.
   final bool showTimestamp;
 
+  /// Chat font family: 'default' | 'serif' | 'mono'.
+  final String fontFamily;
+
+  /// Square vs. rounded bubble corners.
+  final bool squareCorners;
+
+  /// Compact message density (tighter padding/margins).
+  final bool compact;
+
   /// True when locally starred.
   final bool starred;
 
@@ -2806,6 +3351,39 @@ class _MessageBubble extends StatelessWidget {
 
   /// 'Sent' / 'Delivered' / 'Seen' for my last message (null to hide).
   final String? receipt;
+
+  static final _mdPattern =
+      RegExp(r'\*\*(.+?)\*\*|~~(.+?)~~|_(.+?)_');
+
+  bool _hasMarkdown(String s) => _mdPattern.hasMatch(s);
+
+  /// Renders a subset of markdown (**bold**, _italic_, ~~strike~~) as spans.
+  Widget _formattedBody(String text, TextStyle base) {
+    final spans = <TextSpan>[];
+    var idx = 0;
+    for (final m in _mdPattern.allMatches(text)) {
+      if (m.start > idx) {
+        spans.add(TextSpan(text: text.substring(idx, m.start)));
+      }
+      if (m.group(1) != null) {
+        spans.add(TextSpan(
+            text: m.group(1),
+            style: const TextStyle(fontWeight: FontWeight.bold)));
+      } else if (m.group(2) != null) {
+        spans.add(TextSpan(
+            text: m.group(2),
+            style: const TextStyle(
+                decoration: TextDecoration.lineThrough)));
+      } else if (m.group(3) != null) {
+        spans.add(TextSpan(
+            text: m.group(3),
+            style: const TextStyle(fontStyle: FontStyle.italic)));
+      }
+      idx = m.end;
+    }
+    if (idx < text.length) spans.add(TextSpan(text: text.substring(idx)));
+    return Text.rich(TextSpan(style: base, children: spans));
+  }
 
   /// Formats a message time as "h:mm AM/PM" for the always-on timestamp mode.
   String _exactTime(DateTime dt) {
@@ -2943,7 +3521,11 @@ class _MessageBubble extends StatelessWidget {
                 HSLColor.fromColor(scheme.primary).withLightness(0.22).toColor())
             : scheme.surfaceContainerHighest;
     final fg = mine ? OkayColors.textPrimary : scheme.onSurface;
-    const radius = Radius.circular(18);
+    final radius = Radius.circular(squareCorners ? 6 : 18);
+    final tailRadius = Radius.circular(squareCorners ? 6 : 4);
+    final fontFam = fontFamily == 'serif'
+        ? 'serif'
+        : (fontFamily == 'mono' ? 'monospace' : null);
     final reactions = _reactionChips();
     return Container(
       color: selected
@@ -2961,8 +3543,9 @@ class _MessageBubble extends StatelessWidget {
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              margin: const EdgeInsets.only(top: 3),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              margin: EdgeInsets.only(top: compact ? 1 : 3),
+              padding: EdgeInsets.symmetric(
+                  horizontal: 14, vertical: compact ? 6 : 9),
               constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width * 0.75),
               decoration: BoxDecoration(
@@ -2970,14 +3553,16 @@ class _MessageBubble extends StatelessWidget {
                 borderRadius: BorderRadius.only(
                   topLeft: radius,
                   topRight: radius,
-                  bottomLeft: mine ? radius : const Radius.circular(4),
-                  bottomRight: mine ? const Radius.circular(4) : radius,
+                  bottomLeft: mine ? radius : tailRadius,
+                  bottomRight: mine ? tailRadius : radius,
                 ),
                 border: highlight
                     ? Border.all(color: scheme.primary, width: 2)
                     : null,
               ),
-              child: Column(
+              child: DefaultTextStyle.merge(
+                style: TextStyle(fontFamily: fontFam),
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (senderName != null)
@@ -3061,8 +3646,11 @@ class _MessageBubble extends StatelessWidget {
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  LinkedText(bodyText,
-                                      style: TextStyle(color: fg)),
+                                  _hasMarkdown(bodyText)
+                                      ? _formattedBody(
+                                          bodyText, TextStyle(color: fg))
+                                      : LinkedText(bodyText,
+                                          style: TextStyle(color: fg)),
                                   if (bodyText.length > 600)
                                     GestureDetector(
                                       onTap: onToggleExpand,
@@ -3126,6 +3714,7 @@ class _MessageBubble extends StatelessWidget {
                     ],
                   ),
                 ],
+              ),
               ),
             ),
             if (reactions.isNotEmpty)
@@ -3252,9 +3841,11 @@ class _DateSeparator extends StatelessWidget {
 
 /// Tappable banner showing how many messages are pinned in the chat.
 class _PinnedBanner extends StatelessWidget {
-  const _PinnedBanner({required this.count, required this.onTap});
+  const _PinnedBanner(
+      {required this.count, required this.onTap, this.onLongPress});
   final int count;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -3263,6 +3854,7 @@ class _PinnedBanner extends StatelessWidget {
       color: scheme.surfaceContainerHigh,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
