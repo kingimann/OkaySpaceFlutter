@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'cashout_screen.dart';
 import 'common.dart';
 import 'pay_qr_screen.dart';
 
@@ -121,11 +122,13 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
             PopupMenuButton<String>(
               onSelected: (v) {
+                if (v == 'cashout') _push(const CashOutScreen());
                 if (v == 'currency') _changeCurrency();
                 if (v == 'security') _security();
                 if (v == 'topups') _push(const TopUpHistoryScreen());
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'cashout', child: Text('Cash out')),
                 PopupMenuItem(value: 'currency', child: Text('Change currency')),
                 PopupMenuItem(value: 'security', child: Text('Transfer security')),
                 PopupMenuItem(value: 'topups', child: Text('Top-up history')),
