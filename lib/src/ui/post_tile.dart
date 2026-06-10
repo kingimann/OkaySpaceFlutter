@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'linked_text.dart';
 import 'post_detail_screen.dart';
 import 'post_video.dart';
 import 'profile_screen.dart';
@@ -75,7 +76,7 @@ class PostTile extends StatelessWidget {
           ],
           if (post.text.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(post.text),
+            LinkedText(post.text),
           ],
           if (post.media.isNotEmpty) _MediaPreview(media: post.media.first),
           if (post.quotedPost != null) ...[
