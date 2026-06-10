@@ -14,9 +14,31 @@ class MarketplaceScreen extends StatefulWidget {
   State<MarketplaceScreen> createState() => _MarketplaceScreenState();
 }
 
+/// Browsable marketplace categories (label shown to user, value sent to API).
+const _kCategories = <(String, String?, IconData)>[
+  ('All', null, Icons.grid_view_rounded),
+  ('Electronics', 'electronics', Icons.devices_other),
+  ('Vehicles', 'vehicles', Icons.directions_car),
+  ('Furniture', 'furniture', Icons.chair_alt),
+  ('Fashion', 'fashion', Icons.checkroom),
+  ('Home', 'home', Icons.home_outlined),
+  ('Toys', 'toys', Icons.toys),
+  ('Services', 'services', Icons.handyman),
+  ('Other', 'other', Icons.category_outlined),
+];
+
+const _kSorts = <(String, String?)>[
+  ('Newest', null),
+  ('Price: low to high', 'price_asc'),
+  ('Price: high to low', 'price_desc'),
+  ('Most popular', 'popular'),
+];
+
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   late Future<List<Listing>> _listings;
   final _search = TextEditingController();
+  String? _category;
+  String? _sort;
 
   @override
   void initState() {
@@ -32,7 +54,53 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
 
   void _query() {
     final q = _search.text.trim();
-    _listings = api.marketplace.listings(query: q.isEmpty ? null : q);
+    _listings = api.marketplace.listings(
+      query: q.isEmpty ? null : q,
+      category: _category,
+      sort: _sort,
+    );
+  }
+
+  void _setCategory(String? c) {
+    setState(() {
+      _category = c;
+      _query();
+    });
+  }
+
+  void _pickSort() async {
+    final chosen = await showModalBottomSheet<String?>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Sort by',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            for (final s in _kSorts)
+              ListTile(
+                title: Text(s.$1),
+                trailing: s.$2 == _sort ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(context, s.$2),
+              ),
+          ],
+        ),
+      ),
+    );
+    // showModalBottomSheet returns null both for "Newest" and for dismiss;
+    // only apply when the sheet item was actually tapped.
+    if (!mounted) return;
+    setState(() {
+      _sort = chosen;
+      _query();
+    });
+  }
+
+  void _openMine() {
+    if (currentUserId == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => _MyListingsScreen(userId: currentUserId!)));
   }
 
   Future<void> _reload() async {
@@ -65,30 +133,71 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         title: const Text('Marketplace'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort',
+            onPressed: _pickSort,
+          ),
+          IconButton(
             icon: const Icon(Icons.bookmark_border),
             tooltip: 'Saved',
             onPressed: _openSaved,
           ),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'mine') _openMine();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'mine', child: Text('My listings')),
+            ],
+          ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: TextField(
-              controller: _search,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _reload(),
-              decoration: InputDecoration(
-                hintText: 'Search listings',
-                isDense: true,
-                prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.arrow_forward),
-                  onPressed: _reload,
+          preferredSize: const Size.fromHeight(108),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: TextField(
+                  controller: _search,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _reload(),
+                  decoration: InputDecoration(
+                    hintText: 'Search listings',
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.arrow_forward),
+                      onPressed: _reload,
+                    ),
+                  ),
                 ),
               ),
-            ),
+              SizedBox(
+                height: 40,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: _kCategories.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final (label, value, icon) = _kCategories[i];
+                    final selected = value == _category;
+                    return ChoiceChip(
+                      avatar: Icon(icon,
+                          size: 16,
+                          color: selected
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : Theme.of(context).colorScheme.primary),
+                      label: Text(label),
+                      selected: selected,
+                      onSelected: (_) => _setCategory(value),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
           ),
         ),
       ),
@@ -416,6 +525,104 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
 }
 
 /// The current user's saved listings.
+/// The current user's own listings, with delete.
+class _MyListingsScreen extends StatefulWidget {
+  const _MyListingsScreen({required this.userId});
+
+  final String userId;
+
+  @override
+  State<_MyListingsScreen> createState() => _MyListingsScreenState();
+}
+
+class _MyListingsScreenState extends State<_MyListingsScreen> {
+  late Future<List<Listing>> _mine;
+
+  @override
+  void initState() {
+    super.initState();
+    _mine = api.marketplace.userListings(widget.userId);
+  }
+
+  Future<void> _reload() async {
+    setState(() => _mine = api.marketplace.userListings(widget.userId));
+    await _mine;
+  }
+
+  Future<void> _delete(Listing l) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete listing?'),
+        content: Text('“${l.title}” will be removed permanently.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await api.marketplace.delete(l.id);
+      if (mounted) showInfo(context, 'Listing deleted');
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('My listings')),
+      body: MaxWidth(
+        child: RefreshIndicator(
+          onRefresh: _reload,
+          child: AsyncList<Listing>(
+            future: _mine,
+            emptyMessage: 'You have no listings yet.',
+            emptyIcon: Icons.sell_outlined,
+            builder: (context, items) => ListView.separated(
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, i) {
+                final l = items[i];
+                return ListTile(
+                  leading: l.photos.isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(l.photos.first,
+                              width: 52,
+                              height: 52,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const SizedBox(width: 52, height: 52)))
+                      : const Icon(Icons.shopping_bag_outlined),
+                  title:
+                      Text(l.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle:
+                      Text('${l.currency} ${l.price.toStringAsFixed(2)}'),
+                  trailing: IconButton(
+                    icon: Icon(Icons.delete_outline,
+                        color: Theme.of(context).colorScheme.error),
+                    onPressed: () => _delete(l),
+                  ),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ListingDetailScreen(listingId: l.id))),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SavedListingsScreen extends StatefulWidget {
   const _SavedListingsScreen();
 
