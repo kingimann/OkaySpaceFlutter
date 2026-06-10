@@ -15,11 +15,19 @@ class GroupsScreen extends StatefulWidget {
 
 class _GroupsScreenState extends State<GroupsScreen> {
   late Future<List<Group>> _groups;
+  final _search = TextEditingController();
+  String _filter = '';
 
   @override
   void initState() {
     super.initState();
     _groups = api.groups.list();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<void> _reload() async {
@@ -66,6 +74,30 @@ class _GroupsScreenState extends State<GroupsScreen> {
             onPressed: _create,
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: TextField(
+              controller: _search,
+              onChanged: (v) => setState(() => _filter = v.trim().toLowerCase()),
+              decoration: InputDecoration(
+                hintText: 'Search groups',
+                isDense: true,
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _filter.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _search.clear();
+                          setState(() => _filter = '');
+                        }),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ),
+        ),
       ),
       body: MaxWidth(
         child: RefreshIndicator(
@@ -75,7 +107,13 @@ class _GroupsScreenState extends State<GroupsScreen> {
           loading: const ListSkeleton(),
           emptyMessage: 'No groups yet.',
           emptyIcon: Icons.group_work_outlined,
-          builder: (context, items) => ListView.builder(
+          builder: (context, all) {
+            final items = _filter.isEmpty
+                ? all
+                : all
+                    .where((g) => g.name.toLowerCase().contains(_filter))
+                    .toList();
+            return ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 6),
             itemCount: items.length,
             itemBuilder: (context, i) {
@@ -103,7 +141,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
                 ),
               );
             },
-          ),
+          );
+          },
         ),
       ),
       ),
@@ -164,6 +203,91 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     return 'Join';
   }
 
+  Future<void> _editGroup(Group g) async {
+    final name = TextEditingController(text: g.name);
+    final desc = TextEditingController(text: g.description ?? '');
+    bool private = g.isPrivate;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Edit group'),
+        content: StatefulBuilder(
+          builder: (context, setLocal) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(
+                    labelText: 'Name', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: desc,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                    labelText: 'Description', border: OutlineInputBorder()),
+              ),
+              SwitchListTile(
+                value: private,
+                onChanged: (v) => setLocal(() => private = v),
+                title: const Text('Private group'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await api.groups.update(g.id, {
+        'name': name.text.trim(),
+        'description': desc.text.trim(),
+        'is_private': private,
+      });
+      if (mounted) showInfo(context, 'Group updated');
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _deleteGroup(Group g) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete group?'),
+        content: Text('“${g.name}” and its posts will be removed permanently.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await api.groups.delete(g.id);
+      if (mounted) {
+        showInfo(context, 'Group deleted');
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _composePost() async {
     final text = await promptText(context,
         title: 'Post to group', hint: "What's happening?");
@@ -212,6 +336,36 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => GroupEventsScreen(groupId: widget.groupId),
             )),
+          ),
+          IconButton(
+            icon: const Icon(Icons.people_outline),
+            tooltip: 'Members',
+            onPressed: () async {
+              final g = await _group;
+              if (!context.mounted) return;
+              await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => _GroupMembersScreen(
+                    groupId: widget.groupId, canManage: g.canManage),
+              ));
+              _reload();
+            },
+          ),
+          FutureBuilder<Group>(
+            future: _group,
+            builder: (context, snap) {
+              final g = snap.data;
+              if (g == null || !g.canManage) return const SizedBox.shrink();
+              return PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'edit') _editGroup(g);
+                  if (v == 'delete') _deleteGroup(g);
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Edit group')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete group')),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -393,6 +547,115 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
               : const Text('Create'),
         ),
       ],
+    );
+  }
+}
+
+/// Group members with manager actions (promote/demote/remove).
+class _GroupMembersScreen extends StatefulWidget {
+  const _GroupMembersScreen({required this.groupId, this.canManage = false});
+
+  final String groupId;
+  final bool canManage;
+
+  @override
+  State<_GroupMembersScreen> createState() => _GroupMembersScreenState();
+}
+
+class _GroupMembersScreenState extends State<_GroupMembersScreen> {
+  late Future<List<Map<String, dynamic>>> _members;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    _members = api.groups.members(widget.groupId).then((d) {
+      final list = d is Map ? (d['members'] ?? d['items'] ?? d['users']) : d;
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return <Map<String, dynamic>>[];
+    });
+  }
+
+  Future<void> _act(String userId, Future<void> Function() op, String ok) async {
+    try {
+      await op();
+      if (mounted) showInfo(context, ok);
+      setState(_load);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Members')),
+      body: MaxWidth(
+        child: AsyncList<Map<String, dynamic>>(
+          future: _members,
+          emptyMessage: 'No members yet.',
+          emptyIcon: Icons.people_outline,
+          builder: (context, items) => ListView.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final m = items[i];
+              final id = '${m['user_id'] ?? m['id'] ?? ''}';
+              final name = '${m['name'] ?? m['user_name'] ?? 'Member'}';
+              final role = '${m['role'] ?? m['my_role'] ?? ''}';
+              final isAdmin = role == 'admin' || role == 'owner';
+              return ListTile(
+                leading: Avatar(url: '${m['picture'] ?? ''}', name: name),
+                title: Text(name),
+                subtitle: role.isNotEmpty ? Text(role) : null,
+                trailing: widget.canManage && id.isNotEmpty && role != 'owner'
+                    ? PopupMenuButton<String>(
+                        onSelected: (v) {
+                          if (v == 'promote') {
+                            _act(
+                                id,
+                                () => api.groups
+                                    .promoteMember(widget.groupId, id),
+                                'Promoted');
+                          } else if (v == 'demote') {
+                            _act(
+                                id,
+                                () => api.groups
+                                    .demoteMember(widget.groupId, id),
+                                'Demoted');
+                          } else if (v == 'remove') {
+                            _act(
+                                id,
+                                () => api.groups
+                                    .removeMember(widget.groupId, id),
+                                'Removed');
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          if (!isAdmin)
+                            const PopupMenuItem(
+                                value: 'promote', child: Text('Make admin')),
+                          if (isAdmin)
+                            const PopupMenuItem(
+                                value: 'demote', child: Text('Remove admin')),
+                          const PopupMenuItem(
+                              value: 'remove', child: Text('Remove member')),
+                        ],
+                      )
+                    : null,
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }
