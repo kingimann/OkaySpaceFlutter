@@ -89,7 +89,8 @@ class _FeedScreenState extends State<FeedScreen> {
       drawer: const AppDrawer(),
       body: SafeArea(
         bottom: false,
-        child: Column(
+        child: MaxWidth(
+          child: Column(
           children: [
             _buildHeader(context),
             Expanded(
@@ -153,6 +154,7 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

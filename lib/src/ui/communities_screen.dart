@@ -47,11 +47,30 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
     await _communities;
   }
 
+  Future<void> _create() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => const _CreateCommunityDialog(),
+    );
+    if (name == null || !mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CommunityDetailScreen(name: name),
+    ));
+    _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Communities'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Create community',
+            onPressed: _create,
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(
@@ -252,6 +271,95 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CreateCommunityDialog extends StatefulWidget {
+  const _CreateCommunityDialog();
+
+  @override
+  State<_CreateCommunityDialog> createState() => _CreateCommunityDialogState();
+}
+
+class _CreateCommunityDialogState extends State<_CreateCommunityDialog> {
+  final _name = TextEditingController();
+  final _title = TextEditingController();
+  final _description = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _title.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _name.text.trim();
+    if (name.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      final c = await api.communities.create(
+        name: name,
+        title: _title.text.trim().isEmpty ? null : _title.text.trim(),
+        description:
+            _description.text.trim().isEmpty ? null : _description.text.trim(),
+      );
+      if (mounted) Navigator.pop(context, c.name);
+    } catch (e) {
+      if (mounted) {
+        showError(context, e);
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create community'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(
+                labelText: 'Name (no spaces)',
+                prefixText: 'c/',
+                border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(
+                labelText: 'Display title', border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _description,
+            maxLines: 2,
+            decoration: const InputDecoration(
+                labelText: 'Description (optional)',
+                border: OutlineInputBorder()),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: _busy
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Create'),
+        ),
+      ],
     );
   }
 }

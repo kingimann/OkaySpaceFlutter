@@ -131,6 +131,23 @@ void showInfo(BuildContext context, String message) {
   ));
 }
 
+/// Centers and constrains [child] to [maxWidth] on large screens (web/tablet).
+/// On phones (narrower than [maxWidth]) it has no visible effect.
+class MaxWidth extends StatelessWidget {
+  const MaxWidth({super.key, required this.child, this.maxWidth = 680});
+
+  final Widget child;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: child,
+        ),
+      );
+}
+
 /// Compact count formatter: 1200 → "1.2k", 3_400_000 → "3.4M".
 String formatCount(int n) {
   if (n < 1000) return '$n';

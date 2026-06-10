@@ -34,6 +34,29 @@ class PostTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (post.promoted)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text('SPONSORED',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5)),
+            ),
+          if (post.pinned)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(children: [
+                Icon(Icons.push_pin, size: 13,
+                    color: Theme.of(context).colorScheme.outline),
+                const SizedBox(width: 4),
+                Text('Pinned',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.outline,
+                        fontSize: 12)),
+              ]),
+            ),
           Row(
             children: [
               GestureDetector(
@@ -66,6 +89,25 @@ class PostTile extends StatelessWidget {
                   ],
                 ),
               ),
+              if ((post.raw['min_sub_tier'] is num) &&
+                  (post.raw['min_sub_tier'] as num) > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF6C455).withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.lock, size: 11, color: Color(0xFFF6C455)),
+                    SizedBox(width: 3),
+                    Text('Subscribers',
+                        style: TextStyle(
+                            color: Color(0xFFF6C455),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                  ]),
+                ),
             ],
           ),
           if (post.title != null && post.title!.isNotEmpty) ...[
@@ -100,6 +142,9 @@ class PostTile extends StatelessWidget {
               _PostAction(
                   icon: Icons.mode_comment_outlined, count: post.repliesCount),
               _PostAction(icon: Icons.repeat, count: post.repostsCount),
+              if (post.viewsCount > 0)
+                _PostAction(
+                    icon: Icons.visibility_outlined, count: post.viewsCount),
               _PostAction(
                 icon: post.bookmarkedByMe
                     ? Icons.bookmark

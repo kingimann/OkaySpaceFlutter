@@ -77,4 +77,12 @@ class UsersService {
   /// Posts a user has liked.
   Future<List<Post>> likes(String userId) async => asModelList(
       await _client.getJson('/posts/user/$userId/likes'), Post.fromJson);
+
+  /// A user's replies.
+  Future<List<Post>> replies(String userId) async => asModelList(
+      await _client.getJson('/posts/user/$userId/replies'), Post.fromJson);
+
+  /// A user's reposts.
+  Future<List<Post>> reposts(String userId) async => asModelList(
+      await _client.getJson('/posts/user/$userId/reposts'), Post.fromJson);
 }

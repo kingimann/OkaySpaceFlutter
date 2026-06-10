@@ -1,19 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'app_drawer.dart';
 import 'common.dart';
-import 'bookmarks_screen.dart';
-import 'communities_screen.dart';
 import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
-import 'groups_screen.dart';
 import 'messages_screen.dart';
 import 'post_tile.dart';
-import 'roadside_screen.dart';
 import 'settings_screen.dart';
-import 'support_screen.dart';
-import 'wallet_screen.dart';
 
 /// Public profile of another user, with a follow toggle.
 class ProfileScreen extends StatefulWidget {
@@ -34,9 +29,12 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<PublicUser> _profile;
   late Future<List<Post>> _posts;
+  Future<List<Post>>? _replies;
+  Future<List<Post>>? _reposts;
   Future<List<Post>>? _likes;
   bool _following = false;
-  int _tab = 0; // 0 = Posts, 1 = Media, 2 = Likes
+  // 0 Posts · 1 Replies · 2 Reposts · 3 Media · 4 Likes
+  int _tab = 0;
 
   @override
   void initState() {
@@ -49,9 +47,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (t == _tab) return;
     setState(() {
       _tab = t;
-      if (t == 2) _likes ??= api.users.likes(widget.userId);
+      if (t == 1) _replies ??= api.users.replies(widget.userId);
+      if (t == 2) _reposts ??= api.users.reposts(widget.userId);
+      if (t == 4) _likes ??= api.users.likes(widget.userId);
     });
   }
+
+  Future<List<Post>> get _currentFuture => switch (_tab) {
+        1 => _replies!,
+        2 => _reposts!,
+        4 => _likes!,
+        _ => _posts, // Posts and Media share the posts future
+      };
 
   Future<PublicUser> _load() async {
     final user = await api.users.publicProfile(widget.userId);
@@ -215,7 +222,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _ProfileTabs(tab: _tab, onChanged: _setTab),
               const Divider(height: 1),
               FutureBuilder<List<Post>>(
-                future: _tab == 2 ? _likes : _posts,
+                future: _currentFuture,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Padding(
@@ -225,13 +232,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   }
                   var posts = snap.data ?? const <Post>[];
                   // Media tab: only posts that have attachments.
-                  if (_tab == 1) {
+                  if (_tab == 3) {
                     posts = posts.where((p) => p.media.isNotEmpty).toList();
                   }
                   if (posts.isEmpty) {
                     final what = switch (_tab) {
-                      1 => 'No media yet.',
-                      2 => 'No liked posts yet.',
+                      1 => 'No replies yet.',
+                      2 => 'No reposts yet.',
+                      3 => 'No media yet.',
+                      4 => 'No liked posts yet.',
                       _ => 'No posts yet.',
                     };
                     return Padding(
@@ -261,23 +270,24 @@ class _ProfileTabs extends StatelessWidget {
   final int tab;
   final ValueChanged<int> onChanged;
 
-  static const _labels = ['Posts', 'Media', 'Likes'];
+  static const _labels = ['Posts', 'Replies', 'Reposts', 'Media', 'Likes'];
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        for (var i = 0; i < _labels.length; i++)
-          Expanded(
-            child: InkWell(
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          for (var i = 0; i < _labels.length; i++)
+            InkWell(
               onTap: () => onChanged(i),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
                 child: Column(
                   children: [
                     Text(_labels[i],
-                        textAlign: TextAlign.center,
                         style: TextStyle(
                           fontWeight:
                               tab == i ? FontWeight.bold : FontWeight.normal,
@@ -293,13 +303,14 @@ class _ProfileTabs extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// The signed-in user's own profile (read-only fields + sign out).
+
+/// The signed-in user's own profile — okayspace-style profile card.
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key, required this.onSignedOut});
 
@@ -310,282 +321,403 @@ class MyProfileScreen extends StatefulWidget {
 }
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
-  late Future<User> _me;
+  late Future<User> _me = api.auth.me();
 
-  @override
-  void initState() {
-    super.initState();
-    _me = api.auth.me();
-  }
-
-  Future<void> _signOut() async {
-    await api.auth.logout();
-    widget.onSignedOut();
+  Future<void> _reload() async {
+    setState(() => _me = api.auth.me());
+    await _me;
   }
 
   Future<void> _editProfile(User user) async {
     final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
       builder: (_) => EditProfileScreen(user: user),
     ));
-    if (saved == true && mounted) setState(() => _me = api.auth.me());
+    if (saved == true) _reload();
   }
 
-  Future<void> _pickTheme() async {
-    final current = themeController.value;
-    final mode = await showModalBottomSheet<ThemeMode>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(title: Text('Appearance', style: TextStyle(fontWeight: FontWeight.bold))),
-            for (final m in ThemeMode.values)
-              ListTile(
-                title: Text(switch (m) {
-                  ThemeMode.system => 'System default',
-                  ThemeMode.light => 'Light',
-                  ThemeMode.dark => 'Dark',
-                }),
-                trailing: m == current ? const Icon(Icons.check) : null,
-                onTap: () => Navigator.pop(context, m),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (mode != null) themeController.set(mode);
+  Future<void> _openSettings(User u) async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => SettingsScreen(user: u)));
+    _reload();
   }
 
-  String _themeLabel(ThemeMode m) => switch (m) {
-        ThemeMode.system => 'System',
-        ThemeMode.light => 'Light',
-        ThemeMode.dark => 'Dark',
-      };
-
-  Future<void> _pickAccent() async {
-    final chosen = await showModalBottomSheet<Color>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 12, left: 4),
-                child: Text('Accent color',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: [
-                  for (final a in kAccents)
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context, a.color),
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: a.color,
-                              shape: BoxShape.circle,
-                              border: a.color.toARGB32() ==
-                                      accentController.value.toARGB32()
-                                  ? Border.all(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface,
-                                      width: 3)
-                                  : null,
-                            ),
-                            child: a.color.toARGB32() ==
-                                    accentController.value.toARGB32()
-                                ? const Icon(Icons.check,
-                                    color: Colors.white, size: 20)
-                                : null,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(a.label,
-                              style: Theme.of(context).textTheme.bodySmall),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (chosen != null) accentController.set(chosen);
+  int _stat(User u, List<String> keys) {
+    final s = u.raw['stats'];
+    if (s is Map) {
+      for (final k in keys) {
+        final v = s[k];
+        if (v is num) return v.toInt();
+      }
+    }
+    for (final k in keys) {
+      final v = u.raw[k];
+      if (v is num) return v.toInt();
+    }
+    return 0;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        actions: [
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () async {
-              final u = await _me;
-              if (!context.mounted) return;
-              await Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => SettingsScreen(user: u),
-              ));
-              if (mounted) setState(() => _me = api.auth.me());
-            },
+      drawer: const AppDrawer(),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _header(),
+            Expanded(
+              child: FutureBuilder<User>(
+                future: _me,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return CenteredMessage(
+                        message: messageFor(snapshot.error),
+                        icon: Icons.error_outline);
+                  }
+                  final u = snapshot.data!;
+                  return RefreshIndicator(
+                    onRefresh: _reload,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+                      children: [MaxWidth(child: _profileCard(u))],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _header() {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () => Scaffold.of(ctx).openDrawer(),
+            ),
           ),
+          Text('Profile',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold, fontSize: 22)),
+          const Spacer(),
           IconButton(
-            onPressed: _signOut,
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Share',
+            onPressed: () => showInfo(context, 'Profile link copied'),
+          ),
+          FutureBuilder<User>(
+            future: _me,
+            builder: (c, s) => IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Settings',
+              onPressed: s.data == null ? null : () => _openSettings(s.data!),
+            ),
           ),
         ],
       ),
-      body: FutureBuilder<User>(
-        future: _me,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return CenteredMessage(
-                message: messageFor(snapshot.error), icon: Icons.error_outline);
-          }
-          final u = snapshot.data!;
-          return ListView(
-            padding: const EdgeInsets.all(24),
+    );
+  }
+
+  Widget _profileCard(User u) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
             children: [
-              Center(child: Avatar(url: u.picture, name: u.name, radius: 48)),
-              const SizedBox(height: 16),
-              Center(
-                child: Text(u.name,
-                    style: Theme.of(context).textTheme.headlineSmall),
+              Container(
+                height: 100,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [scheme.primary, darken(scheme.primary, 0.25)],
+                  ),
+                ),
               ),
-              Center(child: Text(u.handle)),
-              if (u.headline != null && u.headline!.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Center(child: Text(u.headline!)),
-              ],
-              if (u.bio != null && u.bio!.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(u.bio!, textAlign: TextAlign.center),
-              ],
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
+              Positioned(
+                top: 56,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.surfaceContainerLow,
+                    border: Border.all(color: scheme.primary, width: 2),
+                  ),
+                  child: Avatar(url: u.picture, name: u.name, radius: 42),
+                ),
+              ),
+              Positioned(
+                right: 12,
+                top: 12,
+                child: GestureDetector(
+                  onTap: () => _editProfile(u),
+                  child: const CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Colors.black45,
+                    child: Icon(Icons.photo_camera, size: 16, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 52),
+          Text(u.name,
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+          Text(u.handle, style: TextStyle(color: scheme.primary)),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _levelPill(u),
+          ),
+          const SizedBox(height: 12),
+          if (u.interests.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final t in u.interests)
+                    Chip(
+                        label: Text(t),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap),
+                ],
+              ),
+            ),
+          if (u.headline != null && u.headline!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(u.headline!, style: const TextStyle(fontWeight: FontWeight.w600)),
+          ],
+          const SizedBox(height: 8),
+          _infoRow(u),
+          if (u.bio != null && u.bio!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(u.bio!, textAlign: TextAlign.center),
+            ),
+          ],
+          const SizedBox(height: 8),
+          _emailRow(u),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _statsRow(u),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
                 onPressed: () => _editProfile(u),
                 icon: const Icon(Icons.edit_outlined),
                 label: const Text('Edit profile'),
               ),
-              const SizedBox(height: 16),
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.people_alt_outlined),
-                      title: const Text('Friends'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const FriendsScreen(),
-                      )),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.bookmark_border),
-                      title: const Text('Bookmarks'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const BookmarksScreen(),
-                      )),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading:
-                          const Icon(Icons.account_balance_wallet_outlined),
-                      title: const Text('Wallet'),
-                      subtitle: Text(
-                          '${u.currency} ${u.walletBalance.toStringAsFixed(2)}'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const WalletScreen(),
-                      )),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.groups_outlined),
-                      title: const Text('Communities'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const CommunitiesScreen(),
-                      )),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.group_work_outlined),
-                      title: const Text('Groups'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const GroupsScreen(),
-                      )),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.car_repair),
-                      title: const Text('Roadside assistance'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const RoadsideScreen(),
-                      )),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.support_agent_outlined),
-                      title: const Text('Support'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const SupportScreen(),
-                      )),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.stars_outlined),
-                      title: const Text('Level'),
-                      trailing: Text('${u.levelTitle} · ${u.points} pts'),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.brightness_6_outlined),
-                      title: const Text('Appearance'),
-                      trailing: Text(_themeLabel(themeController.value)),
-                      onTap: _pickTheme,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.palette_outlined),
-                      title: const Text('Accent color'),
-                      trailing: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      onTap: _pickAccent,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _levelPill(User u) {
+    final scheme = Theme.of(context).colorScheme;
+    final raw = u.raw['points_to_next'] ?? u.raw['pts_to_next'];
+    final toNext = raw is num ? raw.toInt() : null;
+    final progress = (toNext != null && (u.points + toNext) > 0)
+        ? u.points / (u.points + toNext)
+        : (u.points % 100) / 100;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.local_fire_department, color: scheme.primary, size: 18),
+              const SizedBox(width: 6),
+              Text('${u.points} points',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                    color: scheme.primary,
+                    borderRadius: BorderRadius.circular(10)),
+                child: Text('Lv ${u.level}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(u.levelTitle,
+                    style: TextStyle(color: scheme.outline)),
+              ),
+              Icon(Icons.chevron_right, color: scheme.outline, size: 18),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: scheme.surfaceContainerHighest,
+            ),
+          ),
+          if (toNext != null) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('$toNext pts to Lv ${u.level + 1}',
+                  style: TextStyle(color: scheme.outline, fontSize: 12)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(User u) {
+    final scheme = Theme.of(context).colorScheme;
+    final birthday = '${u.raw['birthday'] ?? ''}';
+    final items = <Widget>[
+      if (u.location != null && u.location!.isNotEmpty)
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.place_outlined, size: 16, color: scheme.outline),
+          const SizedBox(width: 4),
+          Text(u.location!),
+        ]),
+      if (birthday.isNotEmpty)
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.cake_outlined, size: 16, color: scheme.outline),
+          const SizedBox(width: 4),
+          Text(birthday.split('T').first),
+        ]),
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 16,
+        runSpacing: 4,
+        children: items);
+  }
+
+  Widget _emailRow(User u) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(u.email,
+              style: TextStyle(color: scheme.outline),
+              overflow: TextOverflow.ellipsis),
+        ),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(6)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.lock_outline, size: 11, color: scheme.outline),
+            const SizedBox(width: 3),
+            Text('Only you',
+                style: TextStyle(color: scheme.outline, fontSize: 11)),
+          ]),
+        ),
+      ],
+    );
+  }
+
+  Widget _statsRow(User u) {
+    final scheme = Theme.of(context).colorScheme;
+    final posts = _stat(u, ['posts', 'post_count', 'posts_count']);
+    final followers =
+        _stat(u, ['followers', 'followers_count', 'follower_count']);
+    final following = _stat(u, ['following', 'following_count']);
+    final friends = _stat(u, ['friends', 'friends_count', 'friend_count']);
+    Widget cell(String label, int value, VoidCallback? onTap) => Expanded(
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(children: [
+                Text(formatCount(value),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 2),
+                Text(label,
+                    style: TextStyle(color: scheme.outline, fontSize: 12)),
+              ]),
+            ),
+          ),
+        );
+    final divider = Container(width: 1, height: 28, color: scheme.outlineVariant);
+    return Container(
+      decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(14)),
+      child: Row(children: [
+        cell('Posts', posts, null),
+        divider,
+        cell(
+            'Followers',
+            followers,
+            () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) =>
+                    ConnectionsScreen(userId: u.userId, initialIndex: 0)))),
+        divider,
+        cell(
+            'Following',
+            following,
+            () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) =>
+                    ConnectionsScreen(userId: u.userId, initialIndex: 1)))),
+        divider,
+        cell(
+            'Friends',
+            friends,
+            () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const FriendsScreen()))),
+      ]),
     );
   }
 }
