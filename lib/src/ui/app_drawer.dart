@@ -4,30 +4,20 @@ import '../../okayspace_api.dart';
 import 'ads_screen.dart';
 import 'api_keys_screen.dart';
 import 'app.dart';
-import 'bookmarks_screen.dart';
-import 'circles_screen.dart';
 import 'common.dart';
 import 'communities_screen.dart';
-import 'compose_screen.dart';
 import 'customize_nav_screen.dart';
-import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'forms_screen.dart';
-import 'friends_screen.dart';
 import 'groups_screen.dart';
 import 'guides_screen.dart';
-import 'leaderboard_screen.dart';
 import 'map_screen.dart';
 import 'marketplace_screen.dart';
-import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
 import 'roadside_screen.dart';
-import 'search_screen.dart';
 import 'settings_screen.dart';
-import 'story_composer.dart';
 import 'support_screen.dart';
-import 'wallet_screen.dart';
 
 /// Side menu opened from the feed header — styled after okayspace.ca's sidebar.
 ///
@@ -118,8 +108,6 @@ class _AppDrawerState extends State<AppDrawer> {
                 padding: EdgeInsets.zero,
                 children: [
                   _profileCard(scheme),
-                  const SizedBox(height: 12),
-                  _quickActions(scheme),
                   const SizedBox(height: 8),
 
                   _sectionHeader('DISCOVER'),
@@ -166,58 +154,6 @@ class _AppDrawerState extends State<AppDrawer> {
                     onTap: () => _push(const GroupsScreen()),
                   ),
 
-                  _sectionHeader('YOU'),
-                  _Shortcut(
-                    icon: Icons.person_rounded,
-                    color: const Color(0xFF14B8A6),
-                    label: 'My profile',
-                    onTap: () => _pushWithUser(
-                        (u) => ProfileScreen(userId: u.userId)),
-                  ),
-                  _Shortcut(
-                    icon: Icons.people_alt_rounded,
-                    color: const Color(0xFF6366F1),
-                    label: 'Friends',
-                    onTap: () => _push(const FriendsScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.group_add_rounded,
-                    color: const Color(0xFF8B5CF6),
-                    label: 'Followers & following',
-                    onTap: () => _pushWithUser(
-                        (u) => ConnectionsScreen(userId: u.userId)),
-                  ),
-                  _Shortcut(
-                    icon: Icons.workspaces_outline,
-                    color: const Color(0xFFEC4899),
-                    label: 'Circles',
-                    onTap: () => _push(const CirclesScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.bookmark_rounded,
-                    color: const Color(0xFFF59E0B),
-                    label: 'Bookmarks',
-                    onTap: () => _push(const BookmarksScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.leaderboard_rounded,
-                    color: const Color(0xFFEAB308),
-                    label: 'Leaderboard',
-                    onTap: () => _push(const LeaderboardScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.notifications_rounded,
-                    color: const Color(0xFFEAB308),
-                    label: 'Notifications',
-                    onTap: () => _push(const NotificationsScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.account_balance_wallet_rounded,
-                    color: const Color(0xFF22C55E),
-                    label: 'Wallet',
-                    onTap: () => _push(const WalletScreen()),
-                  ),
-
                   _sectionHeader('SERVICES'),
                   _Shortcut(
                     icon: Icons.car_repair_rounded,
@@ -249,10 +185,6 @@ class _AppDrawerState extends State<AppDrawer> {
                     label: 'Help & support',
                     onTap: () => _push(const SupportScreen()),
                   ),
-
-                  _sectionHeader('APPEARANCE'),
-                  _themePicker(scheme),
-                  _accentPicker(scheme),
 
                   const Divider(height: 24, indent: 20, endIndent: 20),
                   _Shortcut(
@@ -368,192 +300,9 @@ class _AppDrawerState extends State<AppDrawer> {
                         ),
                       ],
                     ),
-                    if (u != null) ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          _stat(
-                              scheme,
-                              Icons.military_tech_rounded,
-                              const Color(0xFFF59E0B),
-                              u.levelTitle.isNotEmpty
-                                  ? u.levelTitle
-                                  : 'Level ${u.level}',
-                              '${formatCount(u.points)} pts'),
-                          const SizedBox(width: 10),
-                          _stat(
-                              scheme,
-                              Icons.account_balance_wallet_rounded,
-                              const Color(0xFF22C55E),
-                              'Wallet',
-                              '${u.currency} ${u.walletBalance.toStringAsFixed(2)}'),
-                        ],
-                      ),
-                    ],
                   ],
                 ),
               ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _stat(ColorScheme scheme, IconData icon, Color color, String title,
-      String value) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 13)),
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: scheme.outline, fontSize: 11)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- Quick actions ------------------------------------------------------
-
-  Widget _quickActions(ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          _quickAction(scheme, Icons.edit_rounded, 'Post',
-              () => _push(const ComposeScreen())),
-          const SizedBox(width: 8),
-          _quickAction(scheme, Icons.add_a_photo_rounded, 'Story', () {
-            Navigator.pop(context);
-            StoryComposer.start(context);
-          }),
-          const SizedBox(width: 8),
-          _quickAction(scheme, Icons.search_rounded, 'Search',
-              () => _push(const SearchScreen())),
-        ],
-      ),
-    );
-  }
-
-  Widget _quickAction(
-      ColorScheme scheme, IconData icon, String label, VoidCallback onTap) {
-    return Expanded(
-      child: Material(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Column(
-              children: [
-                Icon(icon, color: scheme.primary, size: 22),
-                const SizedBox(height: 4),
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // --- Inline appearance settings ----------------------------------------
-
-  Widget _themePicker(ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-      child: ValueListenableBuilder<ThemeMode>(
-        valueListenable: themeController,
-        builder: (context, mode, _) {
-          return SegmentedButton<ThemeMode>(
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            segments: const [
-              ButtonSegment(
-                  value: ThemeMode.system,
-                  icon: Icon(Icons.brightness_auto, size: 18),
-                  label: Text('Auto')),
-              ButtonSegment(
-                  value: ThemeMode.light,
-                  icon: Icon(Icons.light_mode, size: 18),
-                  label: Text('Light')),
-              ButtonSegment(
-                  value: ThemeMode.dark,
-                  icon: Icon(Icons.dark_mode, size: 18),
-                  label: Text('Dark')),
-            ],
-            selected: {mode},
-            onSelectionChanged: (s) => themeController.set(s.first),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _accentPicker(ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 6, 12, 8),
-      child: ValueListenableBuilder<Color>(
-        valueListenable: accentController,
-        builder: (context, current, _) {
-          return SizedBox(
-            height: 36,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: kAccents.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (context, i) {
-                final a = kAccents[i];
-                final selected =
-                    a.color.toARGB32() == current.toARGB32();
-                return GestureDetector(
-                  onTap: () => accentController.set(a.color),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: a.color,
-                      shape: BoxShape.circle,
-                      border: selected
-                          ? Border.all(color: scheme.onSurface, width: 3)
-                          : null,
-                    ),
-                    child: selected
-                        ? const Icon(Icons.check,
-                            color: Colors.white, size: 18)
-                        : null,
-                  ),
-                );
-              },
             ),
           );
         },
