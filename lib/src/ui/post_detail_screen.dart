@@ -57,6 +57,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _toggleRepost() async {
+    try {
+      final updated = await api.feed.toggleRepost(_post.id);
+      if (mounted) {
+        setState(() => _post = updated);
+        showInfo(context, updated.repostedByMe ? 'Reposted' : 'Repost removed');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _toggleBookmark() async {
+    try {
+      final updated = await api.feed.toggleBookmark(_post.id);
+      if (mounted) {
+        setState(() => _post = updated);
+        showInfo(context,
+            updated.bookmarkedByMe ? 'Bookmarked' : 'Removed bookmark');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _sendReply() async {
     final text = _input.text.trim();
     if (text.isEmpty || _sending) return;
@@ -88,7 +113,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               onRefresh: _reloadReplies,
               child: ListView(
                 children: [
-                  _PostHeader(post: _post, onLike: _toggleLike),
+                  _PostHeader(
+                    post: _post,
+                    onLike: _toggleLike,
+                    onRepost: _toggleRepost,
+                    onBookmark: _toggleBookmark,
+                  ),
                   const Divider(height: 1, thickness: 6),
                   FutureBuilder<List<Post>>(
                     future: _replies,
@@ -164,10 +194,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
 /// The focused post, rendered larger than a feed row.
 class _PostHeader extends StatelessWidget {
-  const _PostHeader({required this.post, required this.onLike});
+  const _PostHeader({
+    required this.post,
+    required this.onLike,
+    required this.onRepost,
+    required this.onBookmark,
+  });
 
   final Post post;
   final VoidCallback onLike;
+  final VoidCallback onRepost;
+  final VoidCallback onBookmark;
 
   @override
   Widget build(BuildContext context) {
@@ -234,17 +271,35 @@ class _PostHeader extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               IconButton(
+                tooltip: 'Like',
                 onPressed: onLike,
                 icon: Icon(
                   post.likedByMe ? Icons.favorite : Icons.favorite_border,
                   color: post.likedByMe ? Colors.red : muted,
                 ),
               ),
-              Icon(Icons.mode_comment_outlined, color: muted),
-              Icon(Icons.repeat, color: muted),
-              Icon(
-                post.bookmarkedByMe ? Icons.bookmark : Icons.bookmark_border,
-                color: muted,
+              IconButton(
+                tooltip: 'Reply',
+                onPressed: null,
+                icon: Icon(Icons.mode_comment_outlined, color: muted),
+              ),
+              IconButton(
+                tooltip: 'Repost',
+                onPressed: onRepost,
+                icon: Icon(Icons.repeat,
+                    color: post.repostedByMe
+                        ? Theme.of(context).colorScheme.primary
+                        : muted),
+              ),
+              IconButton(
+                tooltip: 'Bookmark',
+                onPressed: onBookmark,
+                icon: Icon(
+                  post.bookmarkedByMe ? Icons.bookmark : Icons.bookmark_border,
+                  color: post.bookmarkedByMe
+                      ? Theme.of(context).colorScheme.primary
+                      : muted,
+                ),
               ),
             ],
           ),
