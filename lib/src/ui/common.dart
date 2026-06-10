@@ -947,7 +947,9 @@ class AsyncList<T> extends StatelessWidget {
       future: future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return loading ?? const Center(child: CircularProgressIndicator());
+          // A skeleton reads as more polished than a bare spinner; callers can
+          // still pass a tailored one (e.g. GridSkeleton/FeedSkeleton).
+          return loading ?? const ListSkeleton();
         }
         if (snapshot.hasError) {
           return CenteredMessage(
