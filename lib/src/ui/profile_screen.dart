@@ -10,6 +10,7 @@ import 'groups_screen.dart';
 import 'messages_screen.dart';
 import 'post_tile.dart';
 import 'roadside_screen.dart';
+import 'settings_screen.dart';
 import 'support_screen.dart';
 import 'wallet_screen.dart';
 
@@ -340,6 +341,18 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       appBar: AppBar(
         title: const Text('Profile'),
         actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () async {
+              final u = await _me;
+              if (!context.mounted) return;
+              await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => SettingsScreen(user: u),
+              ));
+              if (mounted) setState(() => _me = api.auth.me());
+            },
+          ),
           IconButton(
             onPressed: _signOut,
             icon: const Icon(Icons.logout),
