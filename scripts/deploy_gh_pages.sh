@@ -15,16 +15,18 @@ cd "$REPO_ROOT"
 BASE_HREF="/OkaySpaceFlutter/"
 BRANCH="gh-pages"
 BUILD_DIR="build/web"
+BUILD_STAMP="$(git rev-parse --short HEAD 2>/dev/null || echo dev)-$(date -u +%Y%m%d%H%M%S)"
 
 echo "==> Building web bundle"
 flutter build web --release --base-href "$BASE_HREF"
 
 # Replace Flutter's caching service worker with a self-unregistering
-# "kill switch". The browser checks this file on every load; because its
-# bytes change from the previously cached worker, it installs, unregisters
-# itself, clears caches, and reloads — so deploys are always picked up and
+# "kill switch". It is stamped with a unique build id every deploy so the
+# browser always detects a change, installs it, unregisters itself, clears
+# caches, and reloads — so deploys are always picked up immediately and
 # users never get stuck on a stale build.
-cat > "$BUILD_DIR/flutter_service_worker.js" <<'SW'
+cat > "$BUILD_DIR/flutter_service_worker.js" <<SW
+// OkaySpace cache kill-switch · build $BUILD_STAMP
 self.addEventListener('install', (e) => self.skipWaiting());
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
