@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/update_checker.dart';
 import 'app_drawer.dart';
 import 'common.dart';
 import 'home_shell.dart';
@@ -16,6 +17,7 @@ class OkaySpaceApp extends StatefulWidget {
 class _OkaySpaceAppState extends State<OkaySpaceApp>
     with SingleTickerProviderStateMixin {
   final _navKey = GlobalKey<NavigatorState>();
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   final _barsNavObserver = _BarsNavObserver();
   bool _resetting = false;
 
@@ -35,6 +37,9 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
     // back into view whenever the user switches home tabs.
     barsVisible.addListener(_animateBars);
     homeTabSignal.addListener(showBars);
+    // Show a banner when a newer build is deployed while the app is open.
+    updateAvailable.addListener(_onUpdateAvailable);
+    startUpdateChecks();
     // When the server rejects our credential, drop back to the gate (login).
     api.client.onUnauthorized = () {
       if (_resetting) return;
@@ -51,10 +56,33 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
 
   void _animateBars() => barsVisible.value ? _bars.forward() : _bars.reverse();
 
+  void _onUpdateAvailable() {
+    if (!updateAvailable.value) return;
+    _messengerKey.currentState
+      ?..hideCurrentMaterialBanner()
+      ..showMaterialBanner(MaterialBanner(
+        content: const Text('A new version of OkaySpace is available.'),
+        leading: const Icon(Icons.system_update_alt),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                _messengerKey.currentState?.hideCurrentMaterialBanner(),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
+            onPressed: reloadApp,
+            child: const Text('Reload'),
+          ),
+        ],
+      ));
+  }
+
   @override
   void dispose() {
     barsVisible.removeListener(_animateBars);
     homeTabSignal.removeListener(showBars);
+    updateAvailable.removeListener(_onUpdateAvailable);
     _bars.dispose();
     super.dispose();
   }
@@ -258,6 +286,7 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
           title: 'OkaySpace',
           debugShowCheckedModeBanner: false,
           navigatorKey: _navKey,
+          scaffoldMessengerKey: _messengerKey,
           navigatorObservers: [_barsNavObserver],
           theme: _theme(Brightness.light, accent),
           darkTheme: _theme(Brightness.dark, accent),

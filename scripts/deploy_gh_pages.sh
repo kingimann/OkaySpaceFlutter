@@ -21,7 +21,8 @@ BUILD_DIR="build/web"
 BUILD_STAMP="$(git rev-parse --short HEAD 2>/dev/null || echo dev)-$(date -u +%Y%m%d%H%M%S)"
 
 echo "==> Building web bundle"
-flutter build web --release --base-href "$BASE_HREF"
+flutter build web --release --base-href "$BASE_HREF" \
+  --dart-define=BUILD_STAMP="$BUILD_STAMP"
 
 # Replace Flutter's caching service worker with a self-unregistering
 # "kill switch". It is stamped with a unique build id every deploy so the
@@ -54,6 +55,9 @@ perl -pi -e "s/main\.dart\.js(\?v=[^\"']*)?/main.dart.js?v=$BUILD_STAMP/g" "$BUI
 # Make the HTML itself always revalidate, so a new deploy is picked up on the
 # next load instead of waiting out GitHub Pages' ~10-min HTML CDN cache.
 perl -0pi -e 's/<head>/<head>\n  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">\n  <meta http-equiv="Pragma" content="no-cache">\n  <meta http-equiv="Expires" content="0">/' "$BUILD_DIR/index.html"
+
+# Version manifest the running app polls to detect a new deploy.
+echo "{\"build\":\"$BUILD_STAMP\"}" > "$BUILD_DIR/version.json"
 
 # SPA fallback so deep links don't 404 on GitHub Pages.
 cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"

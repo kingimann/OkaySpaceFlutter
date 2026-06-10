@@ -38,14 +38,16 @@ jobs:
 
       - run: flutter pub get
 
-      - name: Build web
-        run: flutter build web --release --base-href "/OkaySpaceFlutter/"
+      - name: Compute build stamp
+        run: echo "STAMP=${GITHUB_SHA::7}-$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_ENV"
 
-      - name: Post-process (kill-switch, cache-bust, SPA fallback)
+      - name: Build web
+        run: flutter build web --release --base-href "/OkaySpaceFlutter/" --dart-define=BUILD_STAMP="$STAMP"
+
+      - name: Post-process (kill-switch, cache-bust, version, SPA fallback)
         run: |
           set -euo pipefail
           BUILD_DIR=build/web
-          STAMP="${GITHUB_SHA::7}-$(date -u +%Y%m%d%H%M%S)"
 
           # Replace Flutter's caching service worker with a self-unregistering
           # kill-switch so deploys are always picked up immediately.
@@ -76,6 +78,9 @@ jobs:
           # the browser never to reuse a cached HTML, so the new build (and its
           # cache-busted scripts) is picked up on the very next load.
           perl -0pi -e 's/<head>/<head>\n  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">\n  <meta http-equiv="Pragma" content="no-cache">\n  <meta http-equiv="Expires" content="0">/' "$BUILD_DIR/index.html"
+
+          # Version manifest the running app polls to detect a new deploy.
+          echo "{\"build\":\"$STAMP\"}" > "$BUILD_DIR/version.json"
 
           # SPA deep-link fallback + skip Jekyll.
           cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"
