@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'ads_screen.dart';
 import 'api_keys_screen.dart';
 import 'app.dart';
 import 'bookmarks_screen.dart';
@@ -221,6 +222,12 @@ class _AppDrawerState extends State<AppDrawer> {
                     color: const Color(0xFF8B5CF6),
                     label: 'Forms',
                     onTap: () => _push(const FormsScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.campaign_rounded,
+                    color: const Color(0xFFF97316),
+                    label: 'Advertising',
+                    onTap: () => _push(const AdsScreen()),
                   ),
                   _Shortcut(
                     icon: Icons.vpn_key_rounded,

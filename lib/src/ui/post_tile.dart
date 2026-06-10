@@ -36,6 +36,11 @@ Future<void> _showPostMenu(BuildContext context, Post post,
               onTap: () => Navigator.pop(context, 'pin'),
             ),
             ListTile(
+              leading: const Icon(Icons.campaign_outlined),
+              title: const Text('Promote'),
+              onTap: () => Navigator.pop(context, 'promote'),
+            ),
+            ListTile(
               leading: Icon(Icons.delete_outline,
                   color: Theme.of(context).colorScheme.error),
               title: Text('Delete',
@@ -73,6 +78,8 @@ Future<void> _showPostMenu(BuildContext context, Post post,
       case 'pin':
         await api.feed.togglePin(post.id);
         onChanged?.call();
+      case 'promote':
+        if (context.mounted) await _promotePost(context, post);
       case 'delete':
         await api.feed.deletePost(post.id);
         if (context.mounted) showInfo(context, 'Deleted');
@@ -85,6 +92,22 @@ Future<void> _showPostMenu(BuildContext context, Post post,
         await api.feed.editPost(post.id, {'text': text});
         onChanged?.call();
     }
+  } catch (e) {
+    if (context.mounted) showError(context, e);
+  }
+}
+
+/// Promotes a post as a sponsored ad (budget, days, CPC).
+Future<void> _promotePost(BuildContext context, Post post) async {
+  final result = await showDialog<(int, double, double)>(
+    context: context,
+    builder: (_) => const _PromoteDialog(),
+  );
+  if (result == null || !context.mounted) return;
+  try {
+    await api.ads.promotePost(post.id,
+        days: result.$1, budget: result.$2, cpc: result.$3);
+    if (context.mounted) showInfo(context, 'Post promoted 🚀');
   } catch (e) {
     if (context.mounted) showError(context, e);
   }
@@ -635,6 +658,88 @@ class _MediaPreview extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Budget / duration / CPC input for promoting a post.
+class _PromoteDialog extends StatefulWidget {
+  const _PromoteDialog();
+
+  @override
+  State<_PromoteDialog> createState() => _PromoteDialogState();
+}
+
+class _PromoteDialogState extends State<_PromoteDialog> {
+  int _days = 7;
+  final _budget = TextEditingController(text: '20');
+  final _cpc = TextEditingController(text: '0.50');
+
+  @override
+  void dispose() {
+    _budget.dispose();
+    _cpc.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Promote post'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Text('Run for'),
+              const SizedBox(width: 12),
+              DropdownButton<int>(
+                value: _days,
+                onChanged: (v) => setState(() => _days = v ?? _days),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('1 day')),
+                  DropdownMenuItem(value: 3, child: Text('3 days')),
+                  DropdownMenuItem(value: 7, child: Text('7 days')),
+                  DropdownMenuItem(value: 14, child: Text('14 days')),
+                  DropdownMenuItem(value: 30, child: Text('30 days')),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _budget,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Total budget',
+                prefixIcon: Icon(Icons.attach_money),
+                border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _cpc,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Max cost per click',
+                prefixIcon: Icon(Icons.ads_click),
+                border: OutlineInputBorder()),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () {
+            final b = double.tryParse(_budget.text.trim());
+            final c = double.tryParse(_cpc.text.trim());
+            if (b == null || b <= 0 || c == null || c <= 0) return;
+            Navigator.pop(context, (_days, b, c));
+          },
+          child: const Text('Promote'),
+        ),
+      ],
     );
   }
 }

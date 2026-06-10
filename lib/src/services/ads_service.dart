@@ -12,6 +12,27 @@ class AdsService {
 
   Map<String, dynamic> _map(Object? d) => asMapOrNull(d) ?? const {};
 
+  List<Map<String, dynamic>> _list(Object? d, [String? key]) {
+    final list = d is Map ? (d[key] ?? d['campaigns'] ?? d['items'] ?? d['data']) : d;
+    if (list is List) {
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
+  /// Promotes a post as a sponsored ad ([budget]/[cpc] in account currency).
+  Future<Map<String, dynamic>> promotePost(String postId,
+          {required int days, required num budget, required num cpc}) async =>
+      _map(await _client.postJson('/posts/$postId/promote',
+          body: {'days': days, 'budget': budget, 'cpc': cpc}));
+
+  /// Campaigns as a parsed list.
+  Future<List<Map<String, dynamic>>> campaignList() async =>
+      _list(await _client.getJson('/ads/campaigns'), 'campaigns');
+
   /// The advertiser account (balance, status).
   Future<Map<String, dynamic>> account() async =>
       _map(await _client.getJson('/ads/account'));
