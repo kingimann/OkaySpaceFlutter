@@ -11,6 +11,7 @@ import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
 import 'groups_screen.dart';
+import 'guides_screen.dart';
 import 'leaderboard_screen.dart';
 import 'map_screen.dart';
 import 'marketplace_screen.dart';
@@ -135,6 +136,12 @@ class _AppDrawerState extends State<AppDrawer> {
                     color: const Color(0xFF10B981),
                     label: 'Map',
                     onTap: () => _push(const MapScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.collections_bookmark_rounded,
+                    color: const Color(0xFF14B8A6),
+                    label: 'Places & Guides',
+                    onTap: () => _push(const GuidesScreen()),
                   ),
                   _Shortcut(
                     icon: Icons.storefront_rounded,

@@ -8,6 +8,7 @@ import 'services/communities_service.dart';
 import 'services/feed_service.dart';
 import 'services/friends_service.dart';
 import 'services/groups_service.dart';
+import 'services/guides_service.dart';
 import 'services/marketplace_service.dart';
 import 'services/messaging_service.dart';
 import 'services/notifications_service.dart';
@@ -53,6 +54,7 @@ class OkaySpaceApi {
     messaging = MessagingService(this.client);
     communities = CommunitiesService(this.client);
     groups = GroupsService(this.client);
+    guides = GuidesService(this.client);
     marketplace = MarketplaceService(this.client);
     wallet = WalletService(this.client);
     users = UsersService(this.client);
@@ -87,6 +89,9 @@ class OkaySpaceApi {
 
   /// `/groups` — membership groups, posts, events and requests.
   late final GroupsService groups;
+
+  /// `/places`, `/guides` — saved places and curated guide collections.
+  late final GuidesService guides;
 
   /// `/listings`, `/marketplace` — buying and selling.
   late final MarketplaceService marketplace;
