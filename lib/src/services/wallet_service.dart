@@ -110,6 +110,11 @@ class WalletService {
     await _client.postJson('/money/transfers/$transferId/decline');
   }
 
+  /// Reverses a recent outgoing transfer (within the reversal window).
+  Future<void> reverseTransfer(String transferId) async {
+    await _client.postJson('/money/transfers/$transferId/reverse');
+  }
+
   // --- Security -----------------------------------------------------------
 
   /// The current money-transfer security configuration.

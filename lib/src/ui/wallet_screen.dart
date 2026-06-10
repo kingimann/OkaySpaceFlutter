@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'pay_qr_screen.dart';
 
 String _money(num amount, String currency) =>
     '$currency ${amount.toStringAsFixed(2)}';
@@ -41,6 +42,7 @@ class WalletScreen extends StatefulWidget {
 class _WalletScreenState extends State<WalletScreen> {
   late Future<WalletSummary> _summary;
   late Future<List<Map<String, dynamic>>> _requests;
+  late Future<List<Map<String, dynamic>>> _transfers;
 
   @override
   void initState() {
@@ -51,6 +53,8 @@ class _WalletScreenState extends State<WalletScreen> {
   void _load() {
     _summary = api.wallet.summary();
     _requests = api.wallet.moneyRequests().then((d) => _mapList(d, 'requests'));
+    _transfers =
+        api.wallet.transfers().then((d) => _mapList(d, 'transfers'));
   }
 
   Future<void> _reload() async {
@@ -105,11 +109,16 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Wallet'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.qr_code),
+              tooltip: 'Pay by QR',
+              onPressed: () => _push(const PayQrScreen()),
+            ),
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'currency') _changeCurrency();
@@ -124,12 +133,16 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
           ],
           bottom: const TabBar(
-            tabs: [Tab(text: 'Overview'), Tab(text: 'Requests')],
+            tabs: [
+              Tab(text: 'Overview'),
+              Tab(text: 'Requests'),
+              Tab(text: 'Transfers'),
+            ],
           ),
         ),
         body: MaxWidth(
           child: TabBarView(
-            children: [_overview(), _requestsTab()],
+            children: [_overview(), _requestsTab(), _transfersTab()],
           ),
         ),
       ),
@@ -293,6 +306,102 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _transfersTab() {
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: AsyncList<Map<String, dynamic>>(
+        future: _transfers,
+        emptyMessage: 'No transfers yet.',
+        emptyIcon: Icons.swap_horiz,
+        builder: (context, items) => ListView.separated(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (context, i) => _TransferTile(
+            transfer: items[i],
+            onChanged: _reload,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A pending/recent transfer — accept/decline if incoming, reverse if mine
+/// and still inside the reversal window.
+class _TransferTile extends StatelessWidget {
+  const _TransferTile({required this.transfer, required this.onChanged});
+
+  final Map<String, dynamic> transfer;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final id = _pick(transfer, ['id', 'transfer_id', 'tid']);
+    final amount = num.tryParse(_pick(transfer, ['amount'], '0')) ?? 0;
+    final currency = _pick(transfer, ['currency'], 'USD');
+    final status = _pick(transfer, ['status'], 'pending');
+    final toUserId = _pick(transfer, ['to_user_id', 'recipient_id']);
+    final incoming = currentUserId != null && toUserId == currentUserId;
+    final who = _pick(transfer, [
+      incoming ? 'from_name' : 'to_name',
+      'counterparty_name',
+      'user_name',
+    ], 'Someone');
+    final pending = status.toLowerCase() == 'pending';
+    final reversible = !incoming &&
+        (transfer['can_reverse'] == true || pending);
+    final scheme = Theme.of(context).colorScheme;
+
+    Future<void> act(Future<void> Function() op, String ok) async {
+      try {
+        await op();
+        if (context.mounted) showInfo(context, ok);
+        onChanged();
+      } catch (e) {
+        if (context.mounted) showError(context, e);
+      }
+    }
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor:
+            (incoming ? const Color(0xFF22C55E) : scheme.primary)
+                .withValues(alpha: 0.16),
+        child: Icon(incoming ? Icons.south_west : Icons.north_east,
+            color: incoming ? const Color(0xFF22C55E) : scheme.primary),
+      ),
+      title: Text(
+          incoming ? 'From $who' : 'To $who',
+          style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text('${_money(amount, currency)} · $status'),
+      trailing: incoming && pending
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Decline',
+                  icon: Icon(Icons.close, color: scheme.error),
+                  onPressed: () =>
+                      act(() => api.wallet.declineTransfer(id), 'Declined'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      act(() => api.wallet.acceptTransfer(id), 'Accepted'),
+                  child: const Text('Accept'),
+                ),
+              ],
+            )
+          : reversible
+              ? OutlinedButton(
+                  onPressed: () => act(
+                      () => api.wallet.reverseTransfer(id), 'Reversed'),
+                  child: const Text('Reverse'),
+                )
+              : null,
     );
   }
 }
@@ -674,7 +783,10 @@ class _SecurityDialogState extends State<_SecurityDialog> {
 /// Send money: search a recipient, then enter amount, note and the security
 /// answer required by the transfer.
 class SendMoneyScreen extends StatefulWidget {
-  const SendMoneyScreen({super.key});
+  const SendMoneyScreen({super.key, this.recipient});
+
+  /// Optional preselected recipient (e.g. from a scanned pay QR).
+  final PublicUser? recipient;
 
   @override
   State<SendMoneyScreen> createState() => _SendMoneyScreenState();
@@ -687,7 +799,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   final _answer = TextEditingController();
 
   Future<List<PublicUser>>? _results;
-  PublicUser? _recipient;
+  late PublicUser? _recipient = widget.recipient;
   bool _busy = false;
 
   @override
