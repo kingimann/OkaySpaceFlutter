@@ -35,6 +35,21 @@ class UsersService {
 
   // --- Interactions -------------------------------------------------------
 
+  /// The global activity-points leaderboard (raw payloads).
+  Future<List<Map<String, dynamic>>> leaderboard() async {
+    final data = await _client.getJson('/points/leaderboard');
+    final list = data is Map
+        ? (data['leaderboard'] ?? data['users'] ?? data['items'] ?? data['data'])
+        : data;
+    if (list is List) {
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
   /// Toggles following a user.
   Future<void> follow(String userId) async {
     await _client.postJson('/users/$userId/follow');

@@ -11,6 +11,7 @@ import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
 import 'groups_screen.dart';
+import 'leaderboard_screen.dart';
 import 'map_screen.dart';
 import 'marketplace_screen.dart';
 import 'notifications_screen.dart';
@@ -180,6 +181,12 @@ class _AppDrawerState extends State<AppDrawer> {
                     color: const Color(0xFFF59E0B),
                     label: 'Bookmarks',
                     onTap: () => _push(const BookmarksScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.leaderboard_rounded,
+                    color: const Color(0xFFEAB308),
+                    label: 'Leaderboard',
+                    onTap: () => _push(const LeaderboardScreen()),
                   ),
                   _Shortcut(
                     icon: Icons.notifications_rounded,

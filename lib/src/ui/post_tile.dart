@@ -305,6 +305,23 @@ class PostTile extends StatelessWidget {
                 onLongPress: () => _reactToPost(context, post),
               ),
               _PostAction(
+                icon: post.dislikedByMe
+                    ? Icons.thumb_down
+                    : Icons.thumb_down_outlined,
+                count: post.dislikesCount,
+                color: post.dislikedByMe
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+                onTap: () async {
+                  try {
+                    await api.feed.toggleDislike(post.id);
+                    onChanged?.call();
+                  } catch (e) {
+                    if (context.mounted) showError(context, e);
+                  }
+                },
+              ),
+              _PostAction(
                   icon: Icons.mode_comment_outlined, count: post.repliesCount),
               _PostAction(icon: Icons.repeat, count: post.repostsCount),
               if (post.viewsCount > 0)
