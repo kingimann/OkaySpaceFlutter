@@ -45,7 +45,12 @@ class _AppDrawerState extends State<AppDrawer> {
     // modal (on pushed routes), the pop deactivates this context.
     final nav = Navigator.of(context);
     nav.pop();
-    nav.push(MaterialPageRoute(builder: (_) => screen));
+    // Tagged primary so the destination's app bar shows the sidebar menu
+    // (not a back button).
+    nav.push(MaterialPageRoute(
+      settings: const RouteSettings(name: kPrimaryRouteName),
+      builder: (_) => screen,
+    ));
   }
 
   /// Pushes a screen that needs the loaded [User]; waits for it first.
@@ -54,7 +59,10 @@ class _AppDrawerState extends State<AppDrawer> {
     if (!mounted) return;
     final nav = Navigator.of(context);
     nav.pop();
-    nav.push(MaterialPageRoute(builder: (_) => builder(u)));
+    nav.push(MaterialPageRoute(
+      settings: const RouteSettings(name: kPrimaryRouteName),
+      builder: (_) => builder(u),
+    ));
   }
 
   /// Builds a sidebar shortcut row for a destination id (see [kAllSidebarDests]).

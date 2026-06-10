@@ -43,6 +43,11 @@ const double kBottomNavInset = 96;
 /// its own inner Scaffold) can open the shared navigation drawer (sidebar).
 final GlobalKey<ScaffoldState> homeScaffoldKey = GlobalKey<ScaffoldState>();
 
+/// Route name tagged on top-level destinations opened from the sidebar, so
+/// their app bar shows the sidebar menu instead of a back button. Deeper
+/// screens (pushed without this name) keep the back button.
+const String kPrimaryRouteName = 'okay.primary';
+
 /// Builds the sidebar widget for the modal fallback. Registered by the app so
 /// this file doesn't need to import the drawer (which imports back here).
 WidgetBuilder? sidebarModalBuilder;
@@ -659,17 +664,28 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // The leading is the sidebar (menu) on every screen, like the feed —
-    // replacing the back button. Screens that pass an explicit [leading]
-    // (e.g. the Settings sub-pages' back-to-hub) keep it.
+    // Top-level destinations (home tabs + screens opened from the sidebar)
+    // show the sidebar menu; deeper pushed screens show a back button. Screens
+    // that pass an explicit [leading] (e.g. Settings sub-pages) keep it.
+    final route = ModalRoute.of(context);
+    final isPrimary = route == null ||
+        route.isFirst ||
+        route.settings.name == kPrimaryRouteName;
+    final canPop = automaticallyImplyLeading && Navigator.canPop(context);
     final Widget? lead = leading ??
-        (automaticallyImplyLeading
-            ? IconButton(
-                icon: const Icon(Icons.menu),
-                tooltip: 'Menu',
-                onPressed: () => openSidebar(context),
-              )
-            : null);
+        (!automaticallyImplyLeading
+            ? null
+            : (isPrimary || !canPop)
+                ? IconButton(
+                    icon: const Icon(Icons.menu),
+                    tooltip: 'Menu',
+                    onPressed: () => openSidebar(context),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.maybePop(context),
+                  ));
 
     final bar = SafeArea(
       bottom: false,
