@@ -51,6 +51,10 @@ SW
 perl -pi -e "s/flutter_bootstrap\.js(\?v=[^\"']*)?/flutter_bootstrap.js?v=$BUILD_STAMP/g" "$BUILD_DIR/index.html"
 perl -pi -e "s/main\.dart\.js(\?v=[^\"']*)?/main.dart.js?v=$BUILD_STAMP/g" "$BUILD_DIR/flutter_bootstrap.js"
 
+# Make the HTML itself always revalidate, so a new deploy is picked up on the
+# next load instead of waiting out GitHub Pages' ~10-min HTML CDN cache.
+perl -0pi -e 's/<head>/<head>\n  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">\n  <meta http-equiv="Pragma" content="no-cache">\n  <meta http-equiv="Expires" content="0">/' "$BUILD_DIR/index.html"
+
 # SPA fallback so deep links don't 404 on GitHub Pages.
 cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"
 touch "$BUILD_DIR/.nojekyll"

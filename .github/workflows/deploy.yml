@@ -70,6 +70,13 @@ jobs:
           perl -pi -e "s/flutter_bootstrap\.js(\?v=[^\"']*)?/flutter_bootstrap.js?v=$STAMP/g" "$BUILD_DIR/index.html"
           perl -pi -e "s/main\.dart\.js(\?v=[^\"']*)?/main.dart.js?v=$STAMP/g" "$BUILD_DIR/flutter_bootstrap.js"
 
+          # Make the HTML itself always revalidate. GitHub Pages serves
+          # index.html with a ~10-min CDN cache, which can briefly serve the
+          # old HTML (and old ?v= scripts) after a deploy. These meta tags tell
+          # the browser never to reuse a cached HTML, so the new build (and its
+          # cache-busted scripts) is picked up on the very next load.
+          perl -0pi -e 's/<head>/<head>\n  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">\n  <meta http-equiv="Pragma" content="no-cache">\n  <meta http-equiv="Expires" content="0">/' "$BUILD_DIR/index.html"
+
           # SPA deep-link fallback + skip Jekyll.
           cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"
           touch "$BUILD_DIR/.nojekyll"
