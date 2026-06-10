@@ -506,17 +506,21 @@ class Avatar extends StatelessWidget {
     // Deterministic tint per name so avatars are distinguishable.
     final hue = hasName ? (name!.codeUnitAt(0) * 47) % 360 : 200;
     final bg = HSLColor.fromAHSL(1, hue.toDouble(), 0.5, 0.6).toColor();
+    final hasImage = url != null && url!.isNotEmpty;
     return CircleAvatar(
       radius: radius,
       backgroundColor: bg,
-      backgroundImage: (url != null && url!.isNotEmpty) ? NetworkImage(url!) : null,
-      child: (url == null || url!.isEmpty)
-          ? Text(initial,
+      backgroundImage: hasImage ? NetworkImage(url!) : null,
+      // Swallow image load errors (broken URLs) so they don't spam the
+      // console; the colored circle remains as the fallback.
+      onBackgroundImageError: hasImage ? (_, __) {} : null,
+      child: hasImage
+          ? null
+          : Text(initial,
               style: TextStyle(
                   fontSize: radius * 0.8,
                   color: Colors.white,
-                  fontWeight: FontWeight.w600))
-          : null,
+                  fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -634,21 +638,35 @@ class CenteredMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = Theme.of(context).colorScheme.outline;
+    final scheme = Theme.of(context).colorScheme;
+    final muted = scheme.outline;
     return LayoutBuilder(
       builder: (context, constraints) => ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          SizedBox(height: constraints.maxHeight * 0.22),
-          Icon(icon ?? Icons.inbox_outlined, size: 56, color: muted),
-          const SizedBox(height: 12),
+          SizedBox(height: constraints.maxHeight * 0.20),
+          Center(
+            child: Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon ?? Icons.inbox_outlined,
+                  size: 40, color: scheme.primary),
+            ),
+          ),
+          const SizedBox(height: 16),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Text(message,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: muted)),
+                style: TextStyle(
+                    color: muted, fontSize: 14.5, height: 1.35)),
           ),
           if (onRetry != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             Center(
               child: OutlinedButton.icon(
                 onPressed: onRetry,
