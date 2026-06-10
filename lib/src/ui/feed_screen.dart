@@ -27,6 +27,8 @@ class _FeedScreenState extends State<FeedScreen> {
   int _unread = 0;
   int _tab = 0; // 0 = Explore, 1 = Following, 2 = Popular
   final _scrollController = ScrollController();
+  // Measured height of the floating header, used to inset the list beneath it.
+  double _headerHeight = 124;
 
   @override
   void initState() {
@@ -99,33 +101,40 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const AppDrawer(),
-      body: SafeArea(
-        bottom: false,
-        child: MaxWidth(
-          child: Column(
+      // The header floats over the list (content shows behind it) and slides
+      // away on scroll, matching the floating bottom nav.
+      body: MaxWidth(
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            _buildHeader(context),
-            Expanded(
+            Positioned.fill(
               child: RefreshIndicator(
                 onRefresh: _reload,
+                edgeOffset: _headerHeight,
                 child: FutureBuilder<List<Post>>(
                   future: _feed,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const FeedSkeleton();
+                      return Padding(
+                        padding: EdgeInsets.only(top: _headerHeight),
+                        child: const FeedSkeleton(),
+                      );
                     }
                     if (snapshot.hasError) {
-                      return CenteredMessage(
-                        message:
-                            'Could not load feed.\n${messageFor(snapshot.error)}',
-                        icon: Icons.cloud_off_outlined,
-                        onRetry: _reload,
+                      return Padding(
+                        padding: EdgeInsets.only(top: _headerHeight),
+                        child: CenteredMessage(
+                          message:
+                              'Could not load feed.\n${messageFor(snapshot.error)}',
+                          icon: Icons.cloud_off_outlined,
+                          onRetry: _reload,
+                        ),
                       );
                     }
                     final posts = snapshot.data ?? const [];
                     return ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.only(bottom: 16),
+                      padding: EdgeInsets.only(top: _headerHeight + 4, bottom: 16),
                       itemCount: posts.length + 1,
                       itemBuilder: (context, i) {
                         if (i == 0) {
@@ -141,7 +150,7 @@ class _FeedScreenState extends State<FeedScreen> {
                               _TrendingStrip(future: _trending),
                               if (posts.isEmpty)
                                 Padding(
-                                  padding: const EdgeInsets.only(top: 90),
+                                  padding: const EdgeInsets.only(top: 48),
                                   child: Column(
                                     children: [
                                       Container(
@@ -194,8 +203,30 @@ class _FeedScreenState extends State<FeedScreen> {
                 ),
               ),
             ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder<double>(
+                valueListenable: barsT,
+                builder: (context, t, child) => ClipRect(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    heightFactor: t.clamp(0.0, 1.0),
+                    child: child,
+                  ),
+                ),
+                child: _MeasureSize(
+                  onChange: (h) {
+                    if (h != _headerHeight && mounted) {
+                      setState(() => _headerHeight = h);
+                    }
+                  },
+                  child: _buildHeader(context),
+                ),
+              ),
+            ),
           ],
-        ),
         ),
       ),
     );
@@ -203,7 +234,9 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildHeader(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    return SafeArea(
+      bottom: false,
+      child: Container(
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       padding: const EdgeInsets.fromLTRB(6, 4, 8, 10),
       decoration: BoxDecoration(
@@ -279,6 +312,7 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -308,6 +342,30 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 }
 
+/// Reports its child's rendered height after layout, so the feed can inset the
+/// list beneath the floating header without hard-coding its height.
+class _MeasureSize extends StatefulWidget {
+  const _MeasureSize({required this.onChange, required this.child});
+
+  final ValueChanged<double> onChange;
+  final Widget child;
+
+  @override
+  State<_MeasureSize> createState() => _MeasureSizeState();
+}
+
+class _MeasureSizeState extends State<_MeasureSize> {
+  final _key = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final h = _key.currentContext?.size?.height;
+      if (h != null) widget.onChange(h);
+    });
+    return SizedBox(key: _key, child: widget.child);
+  }
+}
 
 /// Horizontal strip of trending hashtags below the composer.
 class _TrendingStrip extends StatelessWidget {
