@@ -78,6 +78,7 @@ class _SupportScreenState extends State<SupportScreen> {
           emptyMessage: 'No support tickets.\nTap “New ticket” to get help.',
           emptyIcon: Icons.support_agent_outlined,
           builder: (context, items) => ListView.separated(
+            padding: const EdgeInsets.only(bottom: 88),
             itemCount: items.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {

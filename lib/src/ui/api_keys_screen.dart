@@ -133,6 +133,7 @@ class _ApiKeysScreenState extends State<ApiKeysScreen> {
           emptyMessage: 'No API keys.\nCreate one to use the OkaySpace API.',
           emptyIcon: Icons.vpn_key_outlined,
           builder: (context, items) => ListView.separated(
+            padding: const EdgeInsets.only(bottom: 88),
             itemCount: items.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {

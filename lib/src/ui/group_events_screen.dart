@@ -75,6 +75,7 @@ class _GroupEventsScreenState extends State<GroupEventsScreen> {
           emptyMessage: 'No upcoming events.',
           emptyIcon: Icons.event_outlined,
           builder: (context, items) => ListView.separated(
+            padding: const EdgeInsets.only(bottom: 88),
             itemCount: items.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {

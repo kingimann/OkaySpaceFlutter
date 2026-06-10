@@ -124,6 +124,7 @@ class _GuidesScreenState extends State<GuidesScreen> {
         emptyMessage: 'No saved places yet.\nTap “New” to save somewhere.',
         emptyIcon: Icons.place_outlined,
         builder: (context, items) => ListView.separated(
+          padding: const EdgeInsets.only(bottom: 88),
           itemCount: items.length,
           separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
           itemBuilder: (context, i) {
@@ -221,7 +222,7 @@ class _GuidesScreenState extends State<GuidesScreen> {
         emptyMessage: 'No guides yet.\nCreate one to organize your places.',
         emptyIcon: Icons.collections_bookmark_outlined,
         builder: (context, items) => ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.only(top: 6, bottom: 88),
           itemCount: items.length,
           itemBuilder: (context, i) {
             final g = items[i];

@@ -145,7 +145,7 @@ class _CirclesScreenState extends State<CirclesScreen> {
                 'No circles yet.\nGroup people to share posts privately.',
             emptyIcon: Icons.group_work_outlined,
             builder: (context, items) => ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.only(top: 6, bottom: 88),
               itemCount: items.length,
               itemBuilder: (context, i) {
                 final c = items[i];
