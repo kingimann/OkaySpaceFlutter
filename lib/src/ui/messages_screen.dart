@@ -43,7 +43,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Messages')),
+      appBar: const OkayAppBar(title: Text('Messages')),
       floatingActionButton: FloatingActionButton(
         onPressed: _newChat,
         child: const Icon(Icons.edit_square),
@@ -420,7 +420,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final other = widget.conversation.otherUser;
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         titleSpacing: 0,
         title: Row(
           children: [
@@ -693,7 +693,7 @@ class _NewChatScreenState extends State<_NewChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: TextField(
           controller: _search,
           autofocus: true,

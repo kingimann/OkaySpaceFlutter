@@ -103,7 +103,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        appBar: AppBar(
+        appBar: OkayAppBar(
           title: const Text('Communities'),
           actions: [
             IconButton(
@@ -533,7 +533,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: Text('c/${widget.name}'),
         actions: [
           FutureBuilder<Community>(
@@ -827,7 +827,7 @@ class _CommunityMembersScreenState extends State<CommunityMembersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Members')),
+      appBar: const OkayAppBar(title: Text('Members')),
       body: MaxWidth(
         child: RefreshIndicator(
           onRefresh: _reload,

@@ -195,7 +195,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: const Text('New post'),
         actions: [
           Padding(

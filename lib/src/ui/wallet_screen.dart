@@ -112,7 +112,7 @@ class _WalletScreenState extends State<WalletScreen> {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(
+        appBar: OkayAppBar(
           title: const Text('Wallet'),
           actions: [
             IconButton(
@@ -606,7 +606,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add money')),
+      appBar: const OkayAppBar(title: Text('Add money')),
       body: MaxWidth(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -673,7 +673,7 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Top-up history')),
+      appBar: const OkayAppBar(title: Text('Top-up history')),
       body: MaxWidth(
         child: AsyncList<Map<String, dynamic>>(
           future: _topups,
@@ -848,7 +848,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Send money')),
+      appBar: const OkayAppBar(title: Text('Send money')),
       body: MaxWidth(
         child: ListView(
         padding: const EdgeInsets.all(16),
@@ -1013,7 +1013,7 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Request money')),
+      appBar: const OkayAppBar(title: Text('Request money')),
       body: MaxWidth(
         child: ListView(
         padding: const EdgeInsets.all(16),

@@ -81,7 +81,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: const Text('New listing'),
         actions: [
           Padding(

@@ -245,6 +245,101 @@ class Avatar extends StatelessWidget {
   }
 }
 
+/// App-wide header styled like the newsfeed: a rounded "pill" surface card
+/// with a leading icon (back/menu), a bold title, and trailing actions —
+/// a drop-in replacement for [AppBar] in `Scaffold.appBar`.
+class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const OkayAppBar({
+    super.key,
+    this.title,
+    this.actions,
+    this.leading,
+    this.bottom,
+    this.automaticallyImplyLeading = true,
+    // Accepted for drop-in compatibility with AppBar; styling is fixed.
+    this.titleSpacing,
+    this.centerTitle,
+    this.backgroundColor,
+    this.foregroundColor,
+    this.elevation,
+    this.scrolledUnderElevation,
+  });
+
+  final Widget? title;
+  final List<Widget>? actions;
+  final Widget? leading;
+  final PreferredSizeWidget? bottom;
+  final bool automaticallyImplyLeading;
+  final double? titleSpacing;
+  final bool? centerTitle;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
+  final double? elevation;
+  final double? scrolledUnderElevation;
+
+  static const double _row = 56;
+
+  @override
+  Size get preferredSize =>
+      Size.fromHeight(_row + 16 + (bottom?.preferredSize.height ?? 0));
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final canPop = automaticallyImplyLeading && Navigator.canPop(context);
+    final Widget? lead = leading ??
+        (canPop
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.maybePop(context),
+              )
+            : null);
+
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: _row,
+              child: Row(
+                children: [
+                  if (lead != null)
+                    lead
+                  else
+                    const SizedBox(width: 16),
+                  Expanded(
+                    child: DefaultTextStyle.merge(
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold, fontSize: 21),
+                      overflow: TextOverflow.ellipsis,
+                      child: title ?? const SizedBox.shrink(),
+                    ),
+                  ),
+                  if (actions != null) ...actions!,
+                  if (actions == null || actions!.isEmpty)
+                    const SizedBox(width: 8),
+                ],
+              ),
+            ),
+            if (bottom != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: bottom!,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// A friendly empty/error state with an icon, message and optional retry.
 /// Lives in a scrollable so it works inside [RefreshIndicator].
 class CenteredMessage extends StatelessWidget {

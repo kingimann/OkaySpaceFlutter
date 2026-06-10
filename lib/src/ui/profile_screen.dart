@@ -165,7 +165,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: const Text('Profile'),
         actions: [
           IconButton(

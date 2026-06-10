@@ -32,9 +32,9 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       length: 2,
       initialIndex: widget.initialIndex,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Connections'),
-          bottom: const TabBar(
+        appBar: const OkayAppBar(
+          title: Text('Connections'),
+          bottom: TabBar(
             tabs: [Tab(text: 'Followers'), Tab(text: 'Following')],
           ),
         ),

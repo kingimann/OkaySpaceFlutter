@@ -118,7 +118,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Cash out')),
+      appBar: const OkayAppBar(title: Text('Cash out')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : MaxWidth(

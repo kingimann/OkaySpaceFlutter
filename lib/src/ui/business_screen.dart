@@ -155,7 +155,7 @@ class _BusinessScreenState extends State<BusinessScreen> {
     final rating = _business['rating'];
     final reviewCount = _business['review_count'];
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: Text(_exists ? 'My storefront' : 'Open a storefront'),
         actions: [
           if (_exists)

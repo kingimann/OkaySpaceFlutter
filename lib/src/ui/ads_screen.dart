@@ -53,7 +53,7 @@ class _AdsScreenState extends State<AdsScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Advertising')),
+      appBar: const OkayAppBar(title: Text('Advertising')),
       body: MaxWidth(
         child: RefreshIndicator(
           onRefresh: _reload,

@@ -118,7 +118,7 @@ class _ApiKeysScreenState extends State<ApiKeysScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Developer API')),
+      appBar: const OkayAppBar(title: Text('Developer API')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.add),

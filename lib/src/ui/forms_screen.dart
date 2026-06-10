@@ -81,7 +81,7 @@ class _FormsScreenState extends State<FormsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Forms')),
+      appBar: const OkayAppBar(title: Text('Forms')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.add),
@@ -251,7 +251,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: Text(widget.existing != null ? 'Edit form' : 'New form'),
         actions: [
           TextButton(
@@ -497,7 +497,7 @@ class _FormSubmissionsScreenState extends State<FormSubmissionsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: OkayAppBar(title: Text(widget.title)),
       body: MaxWidth(
         child: RefreshIndicator(
           onRefresh: _reload,

@@ -37,7 +37,7 @@ class _HashtagScreenState extends State<HashtagScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('#${widget.tag}')),
+      appBar: OkayAppBar(title: Text('#${widget.tag}')),
       body: MaxWidth(
         child: RefreshIndicator(
         onRefresh: _reload,

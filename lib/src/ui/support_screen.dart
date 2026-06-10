@@ -63,7 +63,7 @@ class _SupportScreenState extends State<SupportScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Support')),
+      appBar: const OkayAppBar(title: Text('Support')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _newTicket,
         icon: const Icon(Icons.add),
@@ -155,7 +155,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.subject)),
+      appBar: OkayAppBar(title: Text(widget.subject)),
       body: MaxWidth(
         child: Column(
         children: [

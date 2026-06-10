@@ -55,7 +55,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Leaderboard')),
+      appBar: const OkayAppBar(title: Text('Leaderboard')),
       body: MaxWidth(
         child: RefreshIndicator(
           onRefresh: _reload,

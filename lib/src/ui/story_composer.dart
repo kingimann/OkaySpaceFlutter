@@ -73,10 +73,10 @@ class _StoryComposerState extends State<StoryComposer> {
     final bytes = widget.bytes;
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
+      appBar: const OkayAppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('New story'),
+        title: Text('New story'),
       ),
       body: Column(
         children: [

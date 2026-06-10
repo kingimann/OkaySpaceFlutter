@@ -93,7 +93,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        appBar: AppBar(
+        appBar: OkayAppBar(
           title: const Text('Notifications'),
           actions: [
             TextButton(

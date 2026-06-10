@@ -60,7 +60,7 @@ class _GroupEventsScreenState extends State<GroupEventsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Events')),
+      appBar: const OkayAppBar(title: Text('Events')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.event),

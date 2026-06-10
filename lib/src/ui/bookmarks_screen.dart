@@ -29,7 +29,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Bookmarks')),
+      appBar: const OkayAppBar(title: Text('Bookmarks')),
       body: MaxWidth(
         child: RefreshIndicator(
         onRefresh: _reload,

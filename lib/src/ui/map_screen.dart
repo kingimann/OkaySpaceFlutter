@@ -209,7 +209,7 @@ class _MapScreenState extends State<MapScreen> {
     ];
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: const Text('Map'),
         actions: [
           IconButton(

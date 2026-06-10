@@ -129,7 +129,7 @@ class _CirclesScreenState extends State<CirclesScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Circles')),
+      appBar: const OkayAppBar(title: Text('Circles')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.add),

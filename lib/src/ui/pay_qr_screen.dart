@@ -62,7 +62,7 @@ class _PayQrScreenState extends State<PayQrScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Pay by QR')),
+      appBar: const OkayAppBar(title: Text('Pay by QR')),
       body: MaxWidth(
         child: FutureBuilder<User>(
           future: _me,

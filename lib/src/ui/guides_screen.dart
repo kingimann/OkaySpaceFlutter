@@ -91,9 +91,9 @@ class _GuidesScreenState extends State<GuidesScreen> {
       length: 2,
       child: Builder(
         builder: (context) => Scaffold(
-          appBar: AppBar(
-            title: const Text('Places & Guides'),
-            bottom: const TabBar(
+          appBar: const OkayAppBar(
+            title: Text('Places & Guides'),
+            bottom: TabBar(
               tabs: [Tab(text: 'Saved places'), Tab(text: 'Guides')],
             ),
           ),
@@ -356,7 +356,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: Text(_guide.name),
         actions: [
           IconButton(

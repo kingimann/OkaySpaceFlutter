@@ -65,7 +65,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: const Text('Groups'),
         actions: [
           IconButton(
@@ -306,7 +306,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: const Text('Group'),
         actions: [
           FutureBuilder<Group>(
@@ -597,7 +597,7 @@ class _GroupMembersScreenState extends State<_GroupMembersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Members')),
+      appBar: const OkayAppBar(title: Text('Members')),
       body: MaxWidth(
         child: AsyncList<Map<String, dynamic>>(
           future: _members,
@@ -708,7 +708,7 @@ class _GroupRequestsScreenState extends State<_GroupRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Join requests')),
+      appBar: const OkayAppBar(title: Text('Join requests')),
       body: AsyncList<Map<String, dynamic>>(
         future: _requests,
         emptyMessage: 'No pending requests.',

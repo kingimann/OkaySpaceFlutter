@@ -96,9 +96,9 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
     return DefaultTabController(
       length: 4,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Roadside assistance'),
-          bottom: const TabBar(
+        appBar: const OkayAppBar(
+          title: Text('Roadside assistance'),
+          bottom: TabBar(
             isScrollable: true,
             tabs: [
               Tab(text: 'My requests'),
@@ -243,7 +243,7 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Request')),
+      appBar: const OkayAppBar(title: Text('Request')),
       body: MaxWidth(
         child: FutureBuilder<RoadsideRequest>(
           future: _req,
@@ -506,7 +506,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Request help')),
+      appBar: const OkayAppBar(title: Text('Request help')),
       body: MaxWidth(
         child: ListView(
         padding: const EdgeInsets.all(16),

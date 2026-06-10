@@ -130,7 +130,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         onPressed: _create,
         child: const Icon(Icons.add),
       ),
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: const Text('Marketplace'),
         actions: [
           IconButton(
@@ -390,7 +390,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Listing')),
+      appBar: const OkayAppBar(title: Text('Listing')),
       body: MaxWidth(
         child: FutureBuilder<Listing>(
         future: _listing,
@@ -584,7 +584,7 @@ class _MyListingsScreenState extends State<_MyListingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My listings')),
+      appBar: const OkayAppBar(title: Text('My listings')),
       body: MaxWidth(
         child: RefreshIndicator(
           onRefresh: _reload,
@@ -642,7 +642,7 @@ class _SavedListingsScreenState extends State<_SavedListingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Saved listings')),
+      appBar: const OkayAppBar(title: Text('Saved listings')),
       body: RefreshIndicator(
         onRefresh: () async {
           setState(() => _saved = api.marketplace.saved());

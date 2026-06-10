@@ -166,7 +166,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Post')),
+      appBar: const OkayAppBar(title: Text('Post')),
       body: MaxWidth(
         child: Column(
         children: [

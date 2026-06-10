@@ -53,7 +53,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        appBar: AppBar(
+        appBar: OkayAppBar(
           title: const Text('Friends'),
           actions: [
             IconButton(
@@ -180,7 +180,7 @@ class _AddFriendScreenState extends State<_AddFriendScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: OkayAppBar(
         title: TextField(
           controller: _search,
           autofocus: true,
