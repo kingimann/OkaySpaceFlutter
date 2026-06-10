@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'app_drawer.dart';
@@ -459,7 +460,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                     onRefresh: _reload,
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-                      children: [MaxWidth(child: _profileCard(u))],
+                      children: [
+                        MaxWidth(child: _profileCard(u)),
+                        const SizedBox(height: 12),
+                        MaxWidth(child: _MyPostsSection(userId: u.userId)),
+                      ],
                     ),
                   );
                 },
@@ -494,10 +499,21 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   .titleLarge
                   ?.copyWith(fontWeight: FontWeight.bold, fontSize: 22)),
           const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.ios_share),
-            tooltip: 'Share',
-            onPressed: () => showInfo(context, 'Profile link copied'),
+          FutureBuilder<User>(
+            future: _me,
+            builder: (c, s) => IconButton(
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'Share',
+              onPressed: s.data == null
+                  ? null
+                  : () {
+                      final u = s.data!;
+                      final handle = (u.username ?? u.userId);
+                      final url = 'https://okayspace.ca/$handle';
+                      Clipboard.setData(ClipboardData(text: url));
+                      showInfo(context, 'Profile link copied: $url');
+                    },
+            ),
           ),
           FutureBuilder<User>(
             future: _me,
@@ -795,6 +811,172 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const FriendsScreen()))),
       ]),
+    );
+  }
+}
+
+/// The signed-in user's own posts, with Posts / Media / Likes tabs, rendered
+/// inline so it scrolls with the profile card above it.
+class _MyPostsSection extends StatefulWidget {
+  const _MyPostsSection({required this.userId});
+
+  final String userId;
+
+  @override
+  State<_MyPostsSection> createState() => _MyPostsSectionState();
+}
+
+class _MyPostsSectionState extends State<_MyPostsSection> {
+  int _tab = 0;
+  late Future<List<Post>> _posts = api.users.posts(widget.userId);
+  Future<List<Post>>? _media;
+  Future<List<Post>>? _likes;
+
+  Future<List<Post>> _future() {
+    switch (_tab) {
+      case 1:
+        return _media ??= api.users.posts(widget.userId);
+      case 2:
+        return _likes ??= api.users.likes(widget.userId);
+      default:
+        return _posts;
+    }
+  }
+
+  void _reloadCurrent() {
+    setState(() {
+      switch (_tab) {
+        case 1:
+          _media = api.users.posts(widget.userId);
+        case 2:
+          _likes = api.users.likes(widget.userId);
+        default:
+          _posts = api.users.posts(widget.userId);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Segmented tab selector.
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              for (final (i, label, icon) in const [
+                (0, 'Posts', Icons.grid_view_rounded),
+                (1, 'Media', Icons.photo_library_outlined),
+                (2, 'Likes', Icons.favorite_border),
+              ])
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _tab = i),
+                    behavior: HitTestBehavior.opaque,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: _tab == i ? scheme.primary : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icon,
+                              size: 16,
+                              color: _tab == i ? Colors.white : scheme.outline),
+                          const SizedBox(width: 6),
+                          Text(label,
+                              style: TextStyle(
+                                  color:
+                                      _tab == i ? Colors.white : scheme.outline,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        FutureBuilder<List<Post>>(
+          future: _future(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(28),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Text(messageFor(snapshot.error),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: scheme.outline)),
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                          onPressed: _reloadCurrent,
+                          child: const Text('Retry')),
+                    ],
+                  ),
+                ),
+              );
+            }
+            final posts = snapshot.data ?? const [];
+            final filtered = _tab == 1
+                ? [for (final p in posts) if (p.media.isNotEmpty) p]
+                : posts;
+            if (filtered.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 36),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(
+                          _tab == 2
+                              ? Icons.favorite_border
+                              : _tab == 1
+                                  ? Icons.photo_library_outlined
+                                  : Icons.article_outlined,
+                          size: 48,
+                          color: scheme.outline),
+                      const SizedBox(height: 10),
+                      Text(
+                          _tab == 2
+                              ? 'No liked posts yet.'
+                              : _tab == 1
+                                  ? 'No media posts yet.'
+                                  : 'No posts yet.',
+                          style: TextStyle(color: scheme.outline)),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (final p in filtered)
+                  PostTile(post: p, card: true, onChanged: _reloadCurrent),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
