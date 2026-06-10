@@ -23,12 +23,15 @@ class CommunitiesScreen extends StatefulWidget {
 
 class _CommunitiesScreenState extends State<CommunitiesScreen> {
   late Future<List<Community>> _communities;
+  late Future<List<Post>> _feed;
   final _search = TextEditingController();
+  String? _sort;
 
   @override
   void initState() {
     super.initState();
     _query();
+    _feed = api.communities.feed();
   }
 
   @override
@@ -39,12 +42,47 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
 
   void _query() {
     final q = _search.text.trim();
-    _communities = api.communities.list(query: q.isEmpty ? null : q);
+    _communities =
+        api.communities.list(query: q.isEmpty ? null : q, sort: _sort);
   }
 
   Future<void> _reload() async {
-    setState(_query);
+    setState(() {
+      _query();
+      _feed = api.communities.feed();
+    });
     await _communities;
+  }
+
+  Future<void> _pickSort() async {
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Sort communities',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            for (final s in const [
+              ('Popular', 'popular'),
+              ('Newest', 'new'),
+              ('Most active', 'active'),
+            ])
+              ListTile(
+                title: Text(s.$1),
+                trailing: s.$2 == _sort ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(context, s.$2),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null) return;
+    setState(() {
+      _sort = chosen;
+      _query();
+    });
   }
 
   Future<void> _toggleJoin(Community c) async {
@@ -53,6 +91,19 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
         await api.communities.leave(c.name);
       } else {
         await api.communities.join(c.name);
+      }
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _toggleFavorite(Community c) async {
+    try {
+      if (c.isFavorite) {
+        await api.communities.unfavorite(c.name);
+      } else {
+        await api.communities.favorite(c.name);
       }
       _reload();
     } catch (e) {
@@ -74,83 +125,136 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Communities'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Create community',
-            onPressed: _create,
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: TextField(
-              controller: _search,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _reload(),
-              decoration: InputDecoration(
-                hintText: 'Search communities',
-                isDense: true,
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_forward), onPressed: _reload),
-                border: const OutlineInputBorder(),
-              ),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Communities'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.sort),
+              tooltip: 'Sort',
+              onPressed: _pickSort,
+            ),
+            IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: 'Create community',
+              onPressed: _create,
+            ),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(104),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: TextField(
+                    controller: _search,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _reload(),
+                    decoration: InputDecoration(
+                      hintText: 'Search communities',
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: IconButton(
+                          icon: const Icon(Icons.arrow_forward),
+                          onPressed: _reload),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const TabBar(
+                  tabs: [Tab(text: 'Discover'), Tab(text: 'My feed')],
+                ),
+              ],
             ),
           ),
         ),
-      ),
-      body: MaxWidth(
-        child: RefreshIndicator(
-        onRefresh: _reload,
-        child: AsyncList<Community>(
-          future: _communities,
-          loading: const ListSkeleton(),
-          emptyMessage: 'No communities found.',
-          emptyIcon: Icons.groups_outlined,
-          builder: (context, items) => ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            itemCount: items.length,
-            itemBuilder: (context, i) {
-              final c = items[i];
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                child: ListTile(
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  leading: CircleAvatar(
-                    radius: 24,
-                    backgroundColor: _communityColor(c, context),
-                    child: Text(
-                      c.title.isNotEmpty ? c.title[0].toUpperCase() : '#',
-                      style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  title: Text(c.title,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text(
-                      '${formatCount(c.memberCount)} members · ${formatCount(c.postCount)} posts'),
-                  trailing: c.isMember
-                      ? OutlinedButton(
-                          onPressed: () => _toggleJoin(c),
-                          child: const Text('Joined'))
-                      : FilledButton.tonal(
-                          onPressed: () => _toggleJoin(c),
-                          child: const Text('Join')),
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => CommunityDetailScreen(name: c.name),
-                  )),
-                ),
-              );
-            },
+        body: MaxWidth(
+          child: TabBarView(
+            children: [_discover(), _myFeed()],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _discover() {
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: AsyncList<Community>(
+        future: _communities,
+        loading: const ListSkeleton(),
+        emptyMessage: 'No communities found.',
+        emptyIcon: Icons.groups_outlined,
+        builder: (context, items) => ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          itemCount: items.length,
+          itemBuilder: (context, i) {
+            final c = items[i];
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                leading: CircleAvatar(
+                  radius: 24,
+                  backgroundColor: _communityColor(c, context),
+                  child: Text(
+                    c.title.isNotEmpty ? c.title[0].toUpperCase() : '#',
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                title: Text(c.title,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                    '${formatCount(c.memberCount)} members · ${formatCount(c.postCount)} posts'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: c.isFavorite ? 'Unfavorite' : 'Favorite',
+                      icon: Icon(
+                          c.isFavorite ? Icons.star : Icons.star_border,
+                          color: c.isFavorite
+                              ? const Color(0xFFF59E0B)
+                              : Theme.of(context).colorScheme.outline),
+                      onPressed: () => _toggleFavorite(c),
+                    ),
+                    c.isMember
+                        ? OutlinedButton(
+                            onPressed: () => _toggleJoin(c),
+                            child: const Text('Joined'))
+                        : FilledButton.tonal(
+                            onPressed: () => _toggleJoin(c),
+                            child: const Text('Join')),
+                  ],
+                ),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => CommunityDetailScreen(name: c.name),
+                )),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _myFeed() {
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: AsyncList<Post>(
+        future: _feed,
+        loading: const FeedSkeleton(),
+        emptyMessage: 'Join communities to see their posts here.',
+        emptyIcon: Icons.dynamic_feed_outlined,
+        builder: (context, items) => ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          itemCount: items.length,
+          itemBuilder: (context, i) => PostTile(post: items[i], card: true),
+        ),
       ),
     );
   }
@@ -219,10 +323,59 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
     }
   }
 
+  Future<void> _toggleFavorite(Community c) async {
+    try {
+      if (c.isFavorite) {
+        await api.communities.unfavorite(c.name);
+      } else {
+        await api.communities.favorite(c.name);
+      }
+      await _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.name)),
+      appBar: AppBar(
+        title: Text('c/${widget.name}'),
+        actions: [
+          FutureBuilder<Community>(
+            future: _community,
+            builder: (context, snap) {
+              final c = snap.data;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (c != null)
+                    IconButton(
+                      tooltip: c.isFavorite ? 'Unfavorite' : 'Favorite',
+                      icon: Icon(
+                          c.isFavorite ? Icons.star : Icons.star_border,
+                          color: c.isFavorite
+                              ? const Color(0xFFF59E0B)
+                              : null),
+                      onPressed: () => _toggleFavorite(c),
+                    ),
+                  IconButton(
+                    tooltip: 'Members',
+                    icon: const Icon(Icons.people_outline),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => CommunityMembersScreen(
+                            name: widget.name,
+                            canModerate: c?.canModerate ?? false),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _composePost,
         child: const Icon(Icons.edit),
@@ -288,6 +441,22 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                         const SizedBox(height: 12),
                         Text(c.description),
                       ],
+                      if (c.rules.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text('Rules',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        for (var r = 0; r < c.rules.length; r++)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text('${r + 1}. ${c.rules[r]}',
+                                style:
+                                    Theme.of(context).textTheme.bodyMedium),
+                          ),
+                      ],
                     ],
                   ),
                 );
@@ -320,6 +489,133 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
           ],
         ),
       ),
+      ),
+    );
+  }
+}
+
+/// Members of a community, with moderator actions for moderators.
+class CommunityMembersScreen extends StatefulWidget {
+  const CommunityMembersScreen(
+      {super.key, required this.name, this.canModerate = false});
+
+  final String name;
+  final bool canModerate;
+
+  @override
+  State<CommunityMembersScreen> createState() => _CommunityMembersScreenState();
+}
+
+class _CommunityMembersScreenState extends State<CommunityMembersScreen> {
+  late Future<List<Map<String, dynamic>>> _members;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    _members = api.communities.members(widget.name).then((d) {
+      final list = d is Map
+          ? (d['members'] ?? d['items'] ?? d['data'])
+          : d;
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return <Map<String, dynamic>>[];
+    });
+  }
+
+  Future<void> _reload() async {
+    setState(_load);
+    await _members;
+  }
+
+  Future<void> _modAction(
+      String userId, Future<void> Function() op, String ok) async {
+    try {
+      await op();
+      if (mounted) showInfo(context, ok);
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Members')),
+      body: MaxWidth(
+        child: RefreshIndicator(
+          onRefresh: _reload,
+          child: AsyncList<Map<String, dynamic>>(
+            future: _members,
+            emptyMessage: 'No members yet.',
+            emptyIcon: Icons.people_outline,
+            builder: (context, items) => ListView.separated(
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, i) {
+                final m = items[i];
+                final userId =
+                    '${m['user_id'] ?? m['id'] ?? ''}';
+                final name = '${m['name'] ?? m['username'] ?? 'Member'}';
+                final role = '${m['role'] ?? ''}';
+                final isMod = role == 'moderator' || role == 'owner' ||
+                    m['is_moderator'] == true;
+                return ListTile(
+                  leading: Avatar(
+                      url: '${m['picture'] ?? ''}', name: name),
+                  title: Text(name),
+                  subtitle: role.isNotEmpty ? Text(role) : null,
+                  trailing: widget.canModerate && userId.isNotEmpty
+                      ? PopupMenuButton<String>(
+                          onSelected: (v) {
+                            if (v == 'mod') {
+                              _modAction(
+                                  userId,
+                                  () => api.communities
+                                      .addModerator(widget.name, userId),
+                                  'Promoted to moderator');
+                            } else if (v == 'unmod') {
+                              _modAction(
+                                  userId,
+                                  () => api.communities
+                                      .removeModerator(widget.name, userId),
+                                  'Removed moderator');
+                            } else if (v == 'remove') {
+                              _modAction(
+                                  userId,
+                                  () => api.communities
+                                      .removeMember(widget.name, userId),
+                                  'Removed member');
+                            }
+                          },
+                          itemBuilder: (_) => [
+                            if (!isMod)
+                              const PopupMenuItem(
+                                  value: 'mod',
+                                  child: Text('Make moderator')),
+                            if (isMod)
+                              const PopupMenuItem(
+                                  value: 'unmod',
+                                  child: Text('Remove moderator')),
+                            const PopupMenuItem(
+                                value: 'remove',
+                                child: Text('Remove from community')),
+                          ],
+                        )
+                      : null,
+                );
+              },
+            ),
+          ),
+        ),
       ),
     );
   }

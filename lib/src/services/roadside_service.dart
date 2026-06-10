@@ -44,6 +44,40 @@ class RoadsideService {
       _list(await _client.getJson('/roadside/nearby',
           query: {'lat': lat, 'lng': lng, 'radius_km': radiusKm}));
 
+  /// Geocodes a free-text place query into candidate locations.
+  /// Each result is a map with at least `lat`/`lng` and a display name.
+  Future<List<Map<String, dynamic>>> geocode(String query) async {
+    final data = await _client.getJson('/pub/geocode', query: {'q': query});
+    final list = data is Map ? (data['results'] ?? data['items'] ?? data['data']) : data;
+    if (list is List) {
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
+  /// Public transit stops/lines near a location (raw payloads).
+  Future<List<Map<String, dynamic>>> transitNearby({
+    required double lat,
+    required double lng,
+    double? radius,
+  }) async {
+    final data = await _client.getJson('/transit/nearby',
+        query: {'lat': lat, 'lon': lng, 'radius': radius});
+    final list = data is Map
+        ? (data['results'] ?? data['stops'] ?? data['items'] ?? data['data'])
+        : data;
+    if (list is List) {
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
   Future<RoadsideRequest> get(String requestId) async =>
       _req(await _client.getJson('/roadside/requests/$requestId'));
 
