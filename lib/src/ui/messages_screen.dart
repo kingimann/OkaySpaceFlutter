@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -2080,6 +2081,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 ? () => _jumpTo(msg.replyToId!)
                 : null,
             onTapReactions: () => _reactionDetails(msg),
+            onVotePoll: msg.type == 'poll' && !msg.deleted
+                ? (i) => _run(() => api.messaging.votePoll(_convId, msg.id, i))
+                : null,
             senderName:
                 (isGroup && !mine && !msg.deleted) ? _senderName(msg.senderId) : null,
             receipt: (!isGroup &&
@@ -2473,6 +2477,14 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.attach_file),
+              title: const Text('File'),
+              onTap: () {
+                Navigator.pop(context);
+                _attachFile();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.place_outlined),
               title: const Text('Location'),
               onTap: () {
@@ -2702,6 +2714,42 @@ class _ChatScreenState extends State<ChatScreen> {
   void _endSearchBrowse() => setState(_searchHits.clear);
 
   /// Picks a photo and sends it as a media message.
+  /// Picks a file and sends it as a file message (capped at ~6 MB).
+  Future<void> _attachFile() async {
+    if (_sending) return;
+    final result = await FilePicker.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    final bytes = file.bytes;
+    if (bytes == null) return;
+    if (bytes.length > 6 * 1024 * 1024) {
+      if (mounted) showInfo(context, 'File is too large (max 6 MB)');
+      return;
+    }
+    final replyTo = _replyTo?.id;
+    setState(() => _sending = true);
+    try {
+      await api.messaging.send(
+        _convId,
+        MessageCreate(
+          type: 'file',
+          fileBase64: base64Encode(bytes),
+          fileName: file.name,
+          fileSize: bytes.length,
+          fileMime: file.extension != null ? 'application/${file.extension}' : null,
+          replyTo: replyTo,
+        ),
+      );
+      if (mounted) setState(() => _replyTo = null);
+      await _fetch(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   Future<void> _attachImage() async {
     if (_sending) return;
     final source = await showModalBottomSheet<ImageSource>(
@@ -3515,6 +3563,7 @@ class _MessageBubble extends StatelessWidget {
       this.onDoubleTap,
       this.onTapReply,
       this.onTapReactions,
+      this.onVotePoll,
       this.replyTo,
       this.senderName,
       this.receipt});
@@ -3558,6 +3607,9 @@ class _MessageBubble extends StatelessWidget {
 
   /// Tapped the reaction summary — shows who reacted.
   final VoidCallback? onTapReactions;
+
+  /// Casts a vote on this poll message (option index).
+  final void Function(int optionIndex)? onVotePoll;
 
   /// The message this one is replying to (resolved), if any.
   final Message? replyTo;
@@ -3638,6 +3690,30 @@ class _MessageBubble extends StatelessWidget {
     final question = '${message.raw['poll_question'] ?? 'Poll'}';
     final opts = message.raw['poll_options'];
     final options = opts is List ? opts.map((e) => '$e').toList() : <String>[];
+
+    // Vote counts: list of ints, or a map of index/option -> count.
+    final votesRaw = message.raw['poll_votes'] ??
+        message.raw['votes'] ??
+        message.raw['poll_results'];
+    int toInt(Object? v) =>
+        v is num ? v.toInt() : (v is Map ? toInt(v['count']) : int.tryParse('$v') ?? 0);
+    final counts = List<int>.filled(options.length, 0);
+    if (votesRaw is List) {
+      for (var i = 0; i < votesRaw.length && i < counts.length; i++) {
+        counts[i] = toInt(votesRaw[i]);
+      }
+    } else if (votesRaw is Map) {
+      votesRaw.forEach((k, v) {
+        final i = int.tryParse('$k');
+        if (i != null && i >= 0 && i < counts.length) counts[i] = toInt(v);
+      });
+    }
+    final total = counts.fold<int>(0, (a, b) => a + b);
+    final myVoteRaw =
+        message.raw['poll_voted_index'] ?? message.raw['my_vote'] ?? message.raw['voted'];
+    final myVote = myVoteRaw is num ? myVoteRaw.toInt() : int.tryParse('$myVoteRaw');
+    final voted = myVote != null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3650,15 +3726,50 @@ class _MessageBubble extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 6),
-        for (final o in options)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: fg.withValues(alpha: 0.4)),
-              borderRadius: BorderRadius.circular(10),
+        for (var i = 0; i < options.length; i++)
+          GestureDetector(
+            onTap: onVotePoll == null ? null : () => onVotePoll!(i),
+            child: Container(
+              margin: const EdgeInsets.only(top: 4),
+              decoration: BoxDecoration(
+                border: Border.all(
+                    color: fg.withValues(alpha: myVote == i ? 0.9 : 0.4),
+                    width: myVote == i ? 1.5 : 1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  if (voted && total > 0)
+                    Positioned.fill(
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: (counts[i] / total).clamp(0.0, 1.0),
+                        child: ColoredBox(color: fg.withValues(alpha: 0.15)),
+                      ),
+                    ),
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(options[i], style: TextStyle(color: fg))),
+                        if (voted)
+                          Text('${counts[i]}',
+                              style: TextStyle(
+                                  color: fg, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-            child: Text(o, style: TextStyle(color: fg)),
+          ),
+        if (voted)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text('$total vote${total == 1 ? '' : 's'}',
+                style: TextStyle(color: fg.withValues(alpha: 0.7), fontSize: 11)),
           ),
       ],
     );
