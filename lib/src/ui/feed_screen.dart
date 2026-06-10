@@ -142,8 +142,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       // Bottom inset clears the floating nav pill so the last
                       // card isn't hidden behind it on short feeds.
                       padding: EdgeInsets.only(
-                          top: _headerHeight + 4,
-                          bottom: 84 + MediaQuery.of(context).padding.bottom),
+                          top: _headerHeight + 4, bottom: kBottomNavInset),
                       itemCount: posts.length + 1,
                       itemBuilder: (context, i) {
                         if (i == 0) {

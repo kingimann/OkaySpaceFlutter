@@ -11,7 +11,10 @@ import 'marketplace_screen.dart';
 /// roadside requests and nearby transit — plus location search and an
 /// adjustable radius (OpenStreetMap tiles, no API key required).
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  const MapScreen({super.key, this.embedded = false});
+
+  /// True as a home tab (shell provides the nav); false when pushed standalone.
+  final bool embedded;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -215,6 +218,8 @@ class _MapScreenState extends State<MapScreen> {
     ];
 
     return Scaffold(
+      extendBody: !widget.embedded,
+      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
       appBar: OkayAppBar(
         title: const Text('Map'),
         actions: [

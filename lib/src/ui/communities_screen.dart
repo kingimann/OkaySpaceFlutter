@@ -16,7 +16,10 @@ Color _communityColor(Community c, BuildContext context) {
 
 /// Browse and search communities.
 class CommunitiesScreen extends StatefulWidget {
-  const CommunitiesScreen({super.key});
+  const CommunitiesScreen({super.key, this.embedded = false});
+
+  /// True as a home tab (shell provides the nav); false when pushed standalone.
+  final bool embedded;
 
   @override
   State<CommunitiesScreen> createState() => _CommunitiesScreenState();
@@ -103,6 +106,9 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
+        extendBody: !widget.embedded,
+        bottomNavigationBar:
+            widget.embedded ? null : const OkayBottomNav(),
         appBar: OkayAppBar(
           title: const Text('Communities'),
           actions: [
@@ -163,7 +169,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
         emptyMessage: 'No communities found.',
         emptyIcon: Icons.groups_outlined,
         builder: (context, items) => ListView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, kBottomNavInset),
           itemCount: items.length,
           itemBuilder: (context, i) => _CommunityCard(
               key: ValueKey(items[i].name),
@@ -183,7 +189,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
         emptyMessage: 'Join communities to see their posts here.',
         emptyIcon: Icons.dynamic_feed_outlined,
         builder: (context, items) => ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.fromLTRB(0, 4, 0, kBottomNavInset),
           itemCount: items.length,
           itemBuilder: (context, i) => PostTile(post: items[i], card: true),
         ),

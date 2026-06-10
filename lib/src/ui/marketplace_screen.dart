@@ -175,8 +175,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           emptyIcon: Icons.storefront_outlined,
           builder: (context, items) => GridView.builder(
             // Bottom inset clears the floating nav pill.
-            padding: EdgeInsets.fromLTRB(
-                12, 12, 12, 84 + MediaQuery.of(context).padding.bottom),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, kBottomNavInset),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 220,
               childAspectRatio: 0.72,

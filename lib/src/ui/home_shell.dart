@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_drawer.dart';
 import 'common.dart';
 import 'communities_screen.dart';
 import 'feed_screen.dart';
@@ -73,7 +74,7 @@ class _HomeShellState extends State<HomeShell> {
         // Only mount while selected so its video doesn't play in the
         // background behind other tabs.
         return _currentId == 'reels'
-            ? const ReelsScreen()
+            ? const ReelsScreen(embedded: true)
             : const SizedBox.shrink();
       case 'messages':
         return const MessagesScreen();
@@ -82,11 +83,11 @@ class _HomeShellState extends State<HomeShell> {
       case 'profile':
         return MyProfileScreen(onSignedOut: widget.onSignedOut);
       case 'map':
-        return const MapScreen();
+        return const MapScreen(embedded: true);
       case 'communities':
-        return const CommunitiesScreen();
+        return const CommunitiesScreen(embedded: true);
       case 'groups':
-        return const GroupsScreen();
+        return const GroupsScreen(embedded: true);
       case 'wallet':
         return const WalletScreen();
       case 'search':
@@ -105,6 +106,13 @@ class _HomeShellState extends State<HomeShell> {
     final ids = navController.value;
     final index = ids.indexOf(_currentId).clamp(0, ids.length - 1);
     return Scaffold(
+      key: homeScaffoldKey,
+      // Shared sidebar, reachable from every home-tab screen's menu button.
+      drawer: const AppDrawer(),
+      // Scrolling the drawer can hide the bars; restore them when it closes.
+      onDrawerChanged: (open) {
+        if (!open) showBars();
+      },
       // Let the body show behind the floating nav pill instead of a dark strip.
       extendBody: true,
       body: IndexedStack(

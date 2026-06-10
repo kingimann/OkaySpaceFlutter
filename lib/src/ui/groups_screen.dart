@@ -7,7 +7,10 @@ import 'post_tile.dart';
 
 /// Browse the groups the current user can see.
 class GroupsScreen extends StatefulWidget {
-  const GroupsScreen({super.key});
+  const GroupsScreen({super.key, this.embedded = false});
+
+  /// True as a home tab (shell provides the nav); false when pushed standalone.
+  final bool embedded;
 
   @override
   State<GroupsScreen> createState() => _GroupsScreenState();
@@ -50,6 +53,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: !widget.embedded,
+      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
       appBar: OkayAppBar(
         title: const Text('Groups'),
         actions: [
@@ -99,7 +104,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     .where((g) => g.name.toLowerCase().contains(_filter))
                     .toList();
             return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, kBottomNavInset),
             itemCount: items.length,
             itemBuilder: (context, i) => _GroupCard(
                 key: ValueKey(items[i].id),

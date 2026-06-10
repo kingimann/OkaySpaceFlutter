@@ -13,7 +13,10 @@ import 'profile_screen.dart';
 /// engagement). Videos show a play affordance over the thumbnail — actual video
 /// playback would need a video plugin; this keeps it dependency-free.
 class ReelsScreen extends StatefulWidget {
-  const ReelsScreen({super.key});
+  const ReelsScreen({super.key, this.embedded = false});
+
+  /// True as a home tab (shell provides the nav); false when pushed standalone.
+  final bool embedded;
 
   @override
   State<ReelsScreen> createState() => _ReelsScreenState();
@@ -60,6 +63,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+      extendBody: !widget.embedded,
+      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
       body: FutureBuilder<List<Post>>(
         future: _future,
         builder: (context, snapshot) {

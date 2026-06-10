@@ -35,6 +35,25 @@ void reportUserScroll(ScrollDirection direction, Axis axis) {
 /// Forces the bars back into view (on navigation, tab switch, or reaching top).
 void showBars() => barsVisible.value = true;
 
+/// Bottom inset for scrollable content so the last item clears the floating
+/// nav pill (which overlays the body via `extendBody`).
+const double kBottomNavInset = 96;
+
+/// Key to the home shell's [Scaffold] so any home-tab screen (each of which is
+/// its own inner Scaffold) can open the shared navigation drawer (sidebar).
+final GlobalKey<ScaffoldState> homeScaffoldKey = GlobalKey<ScaffoldState>();
+
+/// Opens the navigation drawer: the screen's own drawer if it has one, else
+/// the shared home-shell drawer.
+void openSidebar(BuildContext context) {
+  final local = Scaffold.maybeOf(context);
+  if (local != null && local.hasDrawer) {
+    local.openDrawer();
+  } else {
+    homeScaffoldKey.currentState?.openDrawer();
+  }
+}
+
 /// The home destination the shell should show, identified by its id (see
 /// [kAllNavDests]). [OkayBottomNav] sets this from any screen; the shell
 /// listens and switches tabs (popping back to it first).
@@ -620,7 +639,14 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => Navigator.maybePop(context),
               )
-            : null);
+            // Root screens show the sidebar (drawer) menu, like the feed.
+            : automaticallyImplyLeading
+                ? IconButton(
+                    icon: const Icon(Icons.menu),
+                    tooltip: 'Menu',
+                    onPressed: () => openSidebar(context),
+                  )
+                : null);
 
     final bar = SafeArea(
       bottom: false,
