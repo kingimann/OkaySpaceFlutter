@@ -263,10 +263,16 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
           // scrolling back up or reaching the top reveals them again.
           builder: (context, child) => NotificationListener<ScrollNotification>(
             onNotification: (n) {
+              if (n.metrics.axis != Axis.vertical) return false;
               if (n is UserScrollNotification) {
-                reportUserScroll(n.direction, n.metrics.axis);
+                // Content that can't actually scroll (short/empty screens, or
+                // a bounce overscroll) must never hide the bars.
+                if (n.metrics.maxScrollExtent <= 0) {
+                  showBars();
+                } else {
+                  reportUserScroll(n.direction, n.metrics.axis);
+                }
               } else if (n is ScrollUpdateNotification &&
-                  n.metrics.axis == Axis.vertical &&
                   n.metrics.pixels <= n.metrics.minScrollExtent + 8) {
                 showBars();
               }

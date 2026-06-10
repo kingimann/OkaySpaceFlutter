@@ -101,6 +101,11 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const AppDrawer(),
+      // Scrolling the drawer can hide the bars; a drawer isn't a route, so the
+      // nav observer won't restore them — re-show them when it closes.
+      onDrawerChanged: (open) {
+        if (!open) showBars();
+      },
       // The header floats over the list (content shows behind it) and slides
       // away on scroll, matching the floating bottom nav.
       body: MaxWidth(
@@ -134,7 +139,11 @@ class _FeedScreenState extends State<FeedScreen> {
                     final posts = snapshot.data ?? const [];
                     return ListView.builder(
                       controller: _scrollController,
-                      padding: EdgeInsets.only(top: _headerHeight + 4, bottom: 16),
+                      // Bottom inset clears the floating nav pill so the last
+                      // card isn't hidden behind it on short feeds.
+                      padding: EdgeInsets.only(
+                          top: _headerHeight + 4,
+                          bottom: 84 + MediaQuery.of(context).padding.bottom),
                       itemCount: posts.length + 1,
                       itemBuilder: (context, i) {
                         if (i == 0) {
