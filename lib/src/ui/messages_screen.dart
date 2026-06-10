@@ -3,7 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../okayspace_api.dart';
 import 'call_screen.dart';
@@ -337,12 +340,42 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _highlightTimer;
   late String _chatTitle = widget.title;
 
+  // Per-conversation unsent-text drafts.
+  final _storage = const FlutterSecureStorage();
+  Timer? _draftTimer;
+  // @mention autocomplete (group chats).
+  List<PublicUser> _mentions = const [];
+  // Auto-scroll to the first unread message, once, on open.
+  final _unreadKey = GlobalKey();
+  bool _scrolledToUnread = false;
+  // Locally starred messages (per conversation).
+  Set<String> _starred = {};
+  // Expanded (Read more) long messages.
+  final Set<String> _expanded = {};
+  // Chat wallpaper tint (per conversation, local).
+  Color? _bgTint;
+  // Muted notifications (per conversation, local).
+  bool _muted = false;
+  // Chat text size multiplier (per conversation, local).
+  double _textScale = 1.0;
+  // Saved quick-reply phrases (shared across conversations, local).
+  List<String> _quickReplies = const [];
+
   String get _convId => widget.conversation.id;
+  String get _draftKey => 'okayspace.chat_draft.$_convId';
+  String get _starKey => 'okayspace.chat_starred.$_convId';
+  String get _bgKey => 'okayspace.chat_bg.$_convId';
+  String get _muteKey => 'okayspace.chat_mute.$_convId';
+  String get _scaleKey => 'okayspace.chat_scale.$_convId';
+  static const _quickKey = 'okayspace.chat_quickreplies';
 
   @override
   void initState() {
     super.initState();
     _fetch();
+    _loadDraft();
+    _loadStarred();
+    _loadPrefs();
     api.messaging.markRead(_convId).ignore();
     // Show the jump-to-latest button once scrolled away from the bottom
     // (offset 0 is the newest message in this reversed list).
@@ -362,9 +395,508 @@ class _ChatScreenState extends State<ChatScreen> {
     _poll?.cancel();
     _typingTimer?.cancel();
     _highlightTimer?.cancel();
+    _draftTimer?.cancel();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadDraft() async {
+    try {
+      final d = await _storage.read(key: _draftKey);
+      if (d != null && d.isNotEmpty && mounted && _input.text.isEmpty) {
+        _input.text = d;
+      }
+    } catch (_) {/* ignore */}
+  }
+
+  void _saveDraft() {
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 500), () {
+      final t = _input.text;
+      if (t.trim().isEmpty) {
+        _storage.delete(key: _draftKey).ignore();
+      } else {
+        _storage.write(key: _draftKey, value: t).ignore();
+      }
+    });
+  }
+
+  void _clearDraft() {
+    _draftTimer?.cancel();
+    _storage.delete(key: _draftKey).ignore();
+  }
+
+  Future<void> _loadStarred() async {
+    try {
+      final d = await _storage.read(key: _starKey);
+      if (d != null && d.isNotEmpty && mounted) {
+        setState(() =>
+            _starred = d.split('\n').where((s) => s.isNotEmpty).toSet());
+      }
+    } catch (_) {/* ignore */}
+  }
+
+  void _toggleStar(Message m) {
+    setState(() {
+      if (!_starred.remove(m.id)) _starred.add(m.id);
+    });
+    _storage.write(key: _starKey, value: _starred.join('\n')).ignore();
+  }
+
+  /// Loads per-conversation prefs: wallpaper tint, mute, text size, quick replies.
+  Future<void> _loadPrefs() async {
+    try {
+      final bg = await _storage.read(key: _bgKey);
+      final muted = await _storage.read(key: _muteKey);
+      final scale = await _storage.read(key: _scaleKey);
+      final quick = await _storage.read(key: _quickKey);
+      if (!mounted) return;
+      setState(() {
+        final argb = int.tryParse(bg ?? '');
+        _bgTint = (argb != null && argb != 0) ? Color(argb) : null;
+        _muted = muted == '1';
+        _textScale = double.tryParse(scale ?? '') ?? 1.0;
+        if (quick != null && quick.isNotEmpty) {
+          _quickReplies = quick.split('\n').where((s) => s.isNotEmpty).toList();
+        }
+      });
+    } catch (_) {/* ignore */}
+  }
+
+  void _setBgTint(Color? c) {
+    setState(() => _bgTint = c);
+    if (c == null) {
+      _storage.delete(key: _bgKey).ignore();
+    } else {
+      _storage.write(key: _bgKey, value: '${c.toARGB32()}').ignore();
+    }
+  }
+
+  void _toggleMute() {
+    setState(() => _muted = !_muted);
+    _storage.write(key: _muteKey, value: _muted ? '1' : '0').ignore();
+    showInfo(context,
+        _muted ? 'Notifications muted' : 'Notifications unmuted');
+  }
+
+  void _setTextScale(double s) {
+    setState(() => _textScale = s);
+    _storage.write(key: _scaleKey, value: '$s').ignore();
+  }
+
+  void _saveQuickReplies(List<String> list) {
+    setState(() => _quickReplies = list);
+    _storage.write(key: _quickKey, value: list.join('\n')).ignore();
+  }
+
+  /// Wallpaper tint picker.
+  void _chooseWallpaper() {
+    const swatches = <Color?>[
+      null,
+      Color(0xFFE3F2FD),
+      Color(0xFFE8F5E9),
+      Color(0xFFFFF3E0),
+      Color(0xFFF3E5F5),
+      Color(0xFFFCE4EC),
+      Color(0xFFEFEBE9),
+      Color(0xFF263238),
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Chat wallpaper',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final c in swatches)
+                    GestureDetector(
+                      onTap: () {
+                        _setBgTint(c);
+                        Navigator.pop(context);
+                      },
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: c ?? Theme.of(context).colorScheme.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: (_bgTint == c)
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).dividerColor,
+                            width: (_bgTint == c) ? 3 : 1,
+                          ),
+                        ),
+                        child: c == null
+                            ? const Icon(Icons.format_color_reset, size: 20)
+                            : null,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Text-size chooser for chat bubbles.
+  void _chooseTextSize() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => StatefulBuilder(
+        builder: (c, setSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Text size',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text('The quick brown fox',
+                    style: TextStyle(fontSize: 15 * _textScale)),
+                Slider(
+                  value: _textScale,
+                  min: 0.8,
+                  max: 1.6,
+                  divisions: 8,
+                  label: '${(_textScale * 100).round()}%',
+                  onChanged: (v) {
+                    setSheet(() {});
+                    _setTextScale(v);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Manages the saved quick-reply phrases (add / remove).
+  void _manageQuickReplies() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => StatefulBuilder(
+        builder: (c, setSheet) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                bottom: MediaQuery.of(c).viewInsets.bottom + 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Quick replies',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 8),
+                for (final q in _quickReplies)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(q),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () {
+                        final next = [..._quickReplies]..remove(q);
+                        _saveQuickReplies(next);
+                        setSheet(() {});
+                      },
+                    ),
+                  ),
+                TextButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add quick reply'),
+                  onPressed: () async {
+                    final text = await promptText(c, title: 'Quick reply');
+                    if (text != null && text.trim().isNotEmpty) {
+                      _saveQuickReplies([..._quickReplies, text.trim()]);
+                      setSheet(() {});
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Jumps to the first message on or after a chosen calendar date.
+  Future<void> _jumpToDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(2015),
+      lastDate: now,
+    );
+    if (picked == null) return;
+    // _items is newest-first; find the oldest message on/after picked.
+    Message? target;
+    for (final m in _items) {
+      final ts = m.createdAt;
+      if (!ts.isBefore(picked)) {
+        target = m;
+      }
+    }
+    if (target == null) {
+      if (mounted) showInfo(context, 'No messages on or after that date');
+      return;
+    }
+    _jumpTo(target.id);
+  }
+
+  /// Copies the whole conversation as plain text to the clipboard.
+  void _exportChat() {
+    final ordered = [..._items.where((m) => !m.deleted)]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final buf = StringBuffer('Conversation with $_chatTitle\n\n');
+    for (final m in ordered) {
+      final who = _isMine(m) ? 'You' : _senderName(m.senderId);
+      final when = m.createdAt.toLocal().toString().split('.').first;
+      final body = m.text ?? '[${m.type}]';
+      buf.writeln('[$when] $who: $body');
+    }
+    Clipboard.setData(ClipboardData(text: buf.toString()));
+    showInfo(context, 'Conversation copied to clipboard');
+  }
+
+  /// Shows who reacted to [m] (defensive about the reaction payload shape).
+  void _reactionDetails(Message m) {
+    String nameFor(Object? id) {
+      final s = '$id';
+      if (s == currentUserId) return 'You';
+      if (s == widget.conversation.otherUser?.userId) {
+        return widget.conversation.otherUser!.name;
+      }
+      final mem = widget.conversation.members.where((u) => u.userId == s);
+      return mem.isNotEmpty ? mem.first.name : 'Someone';
+    }
+
+    final raw = m.raw['reactions'];
+    final byEmoji = <String, List<String>>{};
+    final counts = <String, int>{};
+    if (raw is List) {
+      for (final r in raw) {
+        if (r is Map) {
+          final e = '${r['emoji'] ?? r['reaction'] ?? ''}';
+          if (e.isEmpty) continue;
+          final uid =
+              r['user_id'] ?? r['user'] ?? r['userId'] ?? r['name'];
+          byEmoji.putIfAbsent(e, () => []).add(uid != null ? nameFor(uid) : '');
+          counts[e] = (counts[e] ?? 0) + 1;
+        }
+      }
+    } else if (raw is Map) {
+      raw.forEach((k, v) {
+        final e = '$k';
+        if (e.isEmpty) return;
+        if (v is List) {
+          byEmoji[e] = [for (final id in v) nameFor(id)];
+          counts[e] = v.length;
+        } else if (v is num) {
+          counts[e] = v.toInt();
+        }
+      });
+    }
+    if (counts.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Reactions',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            for (final e in counts.keys)
+              ListTile(
+                leading: Text(e, style: const TextStyle(fontSize: 24)),
+                title: Text(() {
+                  final names =
+                      (byEmoji[e] ?? const []).where((n) => n.isNotEmpty);
+                  return names.isNotEmpty
+                      ? names.join(', ')
+                      : '${counts[e]} reaction${counts[e] == 1 ? '' : 's'}';
+                }()),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showStarred() {
+    final items = _items
+        .where((m) => _starred.contains(m.id) && !m.deleted)
+        .toList()
+        .reversed
+        .toList();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Starred messages',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            if (items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No starred messages yet.'),
+              ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final m in items)
+                    ListTile(
+                      leading: const Icon(Icons.star, color: Color(0xFFF6C455)),
+                      title: Text(m.text ?? '[${m.type}]',
+                          maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(shortAgo(m.createdAt)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _jumpTo(m.id);
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Updates @mention suggestions from the word at the cursor (group chats).
+  void _updateMentions() {
+    if (!widget.conversation.isGroup) return;
+    final sel = _input.selection.baseOffset;
+    final text = _input.text;
+    if (sel < 0 || sel > text.length) {
+      if (_mentions.isNotEmpty) setState(() => _mentions = const []);
+      return;
+    }
+    final before = text.substring(0, sel);
+    final match = RegExp(r'@(\w*)$').firstMatch(before);
+    if (match == null) {
+      if (_mentions.isNotEmpty) setState(() => _mentions = const []);
+      return;
+    }
+    final q = match.group(1)!.toLowerCase();
+    final hits = widget.conversation.members.where((u) {
+      if (u.userId == currentUserId) return false;
+      final uname = (u.username ?? '').toLowerCase();
+      return q.isEmpty ||
+          uname.contains(q) ||
+          u.name.toLowerCase().contains(q);
+    }).take(5).toList();
+    setState(() => _mentions = hits);
+  }
+
+  void _insertMention(PublicUser u) {
+    final handle = u.username ?? u.name.replaceAll(' ', '');
+    final sel = _input.selection.baseOffset;
+    final text = _input.text;
+    final before = text.substring(0, sel);
+    final start = before.lastIndexOf('@');
+    if (start < 0) return;
+    final newBefore = '${before.substring(0, start)}@$handle ';
+    final after = text.substring(sel);
+    _input.text = newBefore + after;
+    _input.selection =
+        TextSelection.collapsed(offset: newBefore.length);
+    setState(() => _mentions = const []);
+  }
+
+  // Multi-select mode.
+  final Set<String> _selected = {};
+  bool get _selectionMode => _selected.isNotEmpty;
+
+  void _toggleSelect(Message m) {
+    setState(() {
+      if (!_selected.remove(m.id)) _selected.add(m.id);
+    });
+  }
+
+  void _exitSelection() => setState(_selected.clear);
+
+  Future<void> _deleteSelected() async {
+    final ids = _items
+        .where((m) => _selected.contains(m.id) && _isMine(m) && !m.deleted)
+        .map((m) => m.id)
+        .toList();
+    _exitSelection();
+    if (ids.isEmpty) return;
+    for (final id in ids) {
+      try {
+        await api.messaging.deleteMessage(_convId, id);
+      } catch (_) {/* skip */}
+    }
+    await _fetch(silent: true);
+  }
+
+  Future<void> _forwardSelected() async {
+    final msgs = _items
+        .where((m) => _selected.contains(m.id) && (m.text ?? '').isNotEmpty)
+        .toList();
+    if (msgs.isEmpty) {
+      _exitSelection();
+      return;
+    }
+    final target = await pickConversation(context);
+    if (target == null || !mounted) return;
+    _exitSelection();
+    for (final m in msgs) {
+      try {
+        await api.messaging.sendText(target.id, m.text!);
+      } catch (_) {/* skip */}
+    }
+    if (mounted) showInfo(context, 'Forwarded ${msgs.length}');
+  }
+
+  void _copySelected() {
+    final text = _items
+        .where((m) => _selected.contains(m.id) && (m.text ?? '').isNotEmpty)
+        .map((m) => m.text!)
+        .join('\n');
+    _exitSelection();
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
+    showInfo(context, 'Copied');
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(_items.where((m) => !m.deleted).map((m) => m.id));
+    });
   }
 
   /// Broadcasts typing presence to the other participant(s), debounced; sends
@@ -376,6 +908,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 3), _stopTyping);
+    _saveDraft();
+    _updateMentions();
   }
 
   void _stopTyping() {
@@ -403,6 +937,19 @@ class _ChatScreenState extends State<ChatScreen> {
         _loading = false;
         _error = null;
       });
+      // On first load, jump to where the unread messages begin.
+      if (!_scrolledToUnread &&
+          widget.conversation.unreadCount > 0 &&
+          msgs.length > widget.conversation.unreadCount) {
+        _scrolledToUnread = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final ctx = _unreadKey.currentContext;
+          if (ctx != null) {
+            Scrollable.ensureVisible(ctx,
+                duration: const Duration(milliseconds: 300), alignment: 0.3);
+          }
+        });
+      }
     } catch (e) {
       if (!mounted || silent) return;
       setState(() {
@@ -503,18 +1050,28 @@ class _ChatScreenState extends State<ChatScreen> {
         itemBuilder: (context, i) {
           final row = rows[rows.length - 1 - i];
           if (row is DateTime) return _DateSeparator(day: row);
-          if (identical(row, _unreadMarker)) return const _UnreadDivider();
+          if (identical(row, _unreadMarker)) {
+            return KeyedSubtree(key: _unreadKey, child: const _UnreadDivider());
+          }
           final msg = row as Message;
           final mine = _isMine(msg);
           final key = _msgKeys.putIfAbsent(msg.id, GlobalKey.new);
+          final selected = _selected.contains(msg.id);
           final bubble = _MessageBubble(
             message: msg,
             mine: mine,
             highlight: _highlightId == msg.id,
+            selected: selected,
+            starred: _starred.contains(msg.id),
+            expanded: _expanded.contains(msg.id),
+            onToggleExpand: () => setState(() {
+              if (!_expanded.remove(msg.id)) _expanded.add(msg.id);
+            }),
             replyTo: msg.replyToId != null ? byId[msg.replyToId] : null,
             onTapReply: msg.replyToId != null
                 ? () => _jumpTo(msg.replyToId!)
                 : null,
+            onTapReactions: () => _reactionDetails(msg),
             senderName:
                 (isGroup && !mine && !msg.deleted) ? _senderName(msg.senderId) : null,
             receipt: (!isGroup &&
@@ -523,22 +1080,56 @@ class _ChatScreenState extends State<ChatScreen> {
                     widget.conversation.receiptsEnabled)
                 ? _receipt(msg)
                 : null,
-            onLongPress: msg.deleted ? null : () => _messageActions(msg, mine),
-            onDoubleTap: msg.deleted
+            // In selection mode, a tap toggles selection instead of opening.
+            onTap: _selectionMode ? () => _toggleSelect(msg) : null,
+            onLongPress: _selectionMode
+                ? () => _toggleSelect(msg)
+                : (msg.deleted ? null : () => _messageActions(msg, mine)),
+            onDoubleTap: (_selectionMode || msg.deleted)
                 ? null
                 : () => _run(
                     () => api.messaging.reactToMessage(_convId, msg.id, '❤️')),
           );
           if (msg.deleted) return KeyedSubtree(key: key, child: bubble);
-          // Swipe a message to the right to reply to it.
+          // Swipe right to reply; swipe left to delete your own messages.
+          final canDelete = _isMine(msg);
           return KeyedSubtree(
             key: key,
             child: Dismissible(
               key: ValueKey('swipe-${msg.id}'),
-              direction: DismissDirection.startToEnd,
-              dismissThresholds: const {DismissDirection.startToEnd: 0.2},
-              confirmDismiss: (_) async {
-                setState(() => _replyTo = msg);
+              direction: canDelete
+                  ? DismissDirection.horizontal
+                  : DismissDirection.startToEnd,
+              dismissThresholds: const {
+                DismissDirection.startToEnd: 0.2,
+                DismissDirection.endToStart: 0.35,
+              },
+              confirmDismiss: (dir) async {
+                if (dir == DismissDirection.startToEnd) {
+                  setState(() => _replyTo = msg);
+                  return false;
+                }
+                // endToStart → delete own message.
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (c) => AlertDialog(
+                    title: const Text('Delete message?'),
+                    content: const Text(
+                        'This message will be removed for everyone.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(c, false),
+                          child: const Text('Cancel')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(c, true),
+                          child: const Text('Delete')),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  await _run(
+                      () => api.messaging.deleteMessage(_convId, msg.id));
+                }
                 return false;
               },
               background: Padding(
@@ -549,6 +1140,16 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: Theme.of(context).colorScheme.primary),
                 ),
               ),
+              secondaryBackground: canDelete
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Icon(Icons.delete_outline,
+                            color: Theme.of(context).colorScheme.error),
+                      ),
+                    )
+                  : null,
               child: bubble,
             ),
           );
@@ -798,8 +1399,14 @@ class _ChatScreenState extends State<ChatScreen> {
       await api.messaging
           .send(_convId, MessageCreate.text(text, replyTo: replyTo));
       _input.clear();
+      _clearDraft();
       _stopTyping();
-      if (mounted) setState(() => _replyTo = null);
+      if (mounted) {
+        setState(() {
+          _mentions = const [];
+          _replyTo = null;
+        });
+      }
       await _fetch(silent: true);
       _scrollToBottom();
     } catch (e) {
@@ -807,6 +1414,133 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  /// Attachment chooser: photo or location.
+  void _attachMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_outlined),
+              title: const Text('Photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _attachImage();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.place_outlined),
+              title: const Text('Location'),
+              onTap: () {
+                Navigator.pop(context);
+                _attachLocation();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Picks a point on a map and sends it as a location message.
+  Future<void> _attachLocation() async {
+    final picked = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(builder: (_) => const _LocationPickerScreen()),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _sending = true);
+    try {
+      await api.messaging.send(
+        _convId,
+        MessageCreate(
+          type: 'place',
+          placeName: 'Shared location',
+          placeLatitude: picked.latitude,
+          placeLongitude: picked.longitude,
+        ),
+      );
+      await _fetch(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Searches messages in this conversation and jumps to the chosen one.
+  void _searchMessages() {
+    final ctrl = TextEditingController();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: StatefulBuilder(
+          builder: (context, setSheet) {
+            final q = ctrl.text.trim().toLowerCase();
+            final matches = q.isEmpty
+                ? const <Message>[]
+                : _items
+                    .where((m) =>
+                        !m.deleted &&
+                        (m.text ?? '').toLowerCase().contains(q))
+                    .toList()
+                    .reversed
+                    .toList();
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                  child: TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    onChanged: (_) => setSheet(() {}),
+                    decoration: const InputDecoration(
+                      hintText: 'Search this conversation',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                if (q.isNotEmpty && matches.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('No messages found.'),
+                  ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final m in matches)
+                        ListTile(
+                          leading: const Icon(Icons.chat_bubble_outline),
+                          title: Text(m.text ?? '',
+                              maxLines: 2, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(shortAgo(m.createdAt)),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _jumpTo(m.id);
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            );
+          },
+        ),
+      ),
+    ).whenComplete(ctrl.dispose);
   }
 
   /// Picks a photo and sends it as a media message.
@@ -918,6 +1652,23 @@ class _ChatScreenState extends State<ChatScreen> {
                 setState(() => _replyTo = msg);
               },
             ),
+            ListTile(
+              leading: Icon(
+                  _starred.contains(msg.id) ? Icons.star : Icons.star_border),
+              title: Text(_starred.contains(msg.id) ? 'Unstar' : 'Star'),
+              onTap: () {
+                Navigator.pop(context);
+                _toggleStar(msg);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.checklist),
+              title: const Text('Select'),
+              onTap: () {
+                Navigator.pop(context);
+                _toggleSelect(msg);
+              },
+            ),
             if (msg.text != null && msg.text!.isNotEmpty)
               ListTile(
                 leading: const Icon(Icons.forward),
@@ -996,6 +1747,63 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.star_outline),
+              title: const Text('Starred messages'),
+              onTap: () {
+                Navigator.pop(context);
+                _showStarred();
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                  _muted ? Icons.notifications_off : Icons.notifications_none),
+              title: Text(_muted ? 'Unmute notifications' : 'Mute notifications'),
+              onTap: () {
+                Navigator.pop(context);
+                _toggleMute();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_outlined),
+              title: const Text('Jump to date'),
+              onTap: () {
+                Navigator.pop(context);
+                _jumpToDate();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.wallpaper_outlined),
+              title: const Text('Chat wallpaper'),
+              onTap: () {
+                Navigator.pop(context);
+                _chooseWallpaper();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.format_size),
+              title: const Text('Text size'),
+              onTap: () {
+                Navigator.pop(context);
+                _chooseTextSize();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.quickreply_outlined),
+              title: const Text('Quick replies'),
+              onTap: () {
+                Navigator.pop(context);
+                _manageQuickReplies();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.ios_share),
+              title: const Text('Export conversation'),
+              onTap: () {
+                Navigator.pop(context);
+                _exportChat();
+              },
+            ),
             if (widget.conversation.isGroup)
               ListTile(
                 leading: const Icon(Icons.drive_file_rename_outline),
@@ -1083,7 +1891,35 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final other = widget.conversation.otherUser;
     return Scaffold(
-      appBar: OkayAppBar(
+      appBar: _selectionMode
+          ? OkayAppBar(
+              leading: IconButton(
+                  icon: const Icon(Icons.close), onPressed: _exitSelection),
+              title: Text('${_selected.length} selected'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.select_all),
+                  tooltip: 'Select all',
+                  onPressed: _selectAll,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.copy),
+                  tooltip: 'Copy',
+                  onPressed: _copySelected,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.forward),
+                  tooltip: 'Forward',
+                  onPressed: _forwardSelected,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Delete',
+                  onPressed: _deleteSelected,
+                ),
+              ],
+            )
+          : OkayAppBar(
         titleSpacing: 0,
         title: Row(
           children: [
@@ -1097,11 +1933,23 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_chatTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(_chatTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w600)),
+                      ),
+                      if (_muted)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Icon(Icons.notifications_off, size: 14),
+                        ),
+                    ],
+                  ),
                   if (other != null)
                     Text(other.online ? 'Online' : 'Offline',
                         style: TextStyle(
@@ -1120,6 +1968,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search in chat',
+            onPressed: _searchMessages,
+          ),
           if (widget.conversation.isGroup)
             IconButton(
               icon: const Icon(Icons.group_outlined),
@@ -1154,7 +2007,12 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: Stack(
               children: [
-                _buildMessages(),
+                if (_bgTint != null) Positioned.fill(child: ColoredBox(color: _bgTint!)),
+                MediaQuery.withClampedTextScaling(
+                  minScaleFactor: _textScale,
+                  maxScaleFactor: _textScale,
+                  child: _buildMessages(),
+                ),
                 if (_showJump)
                   Positioned(
                     right: 12,
@@ -1178,6 +2036,51 @@ class _ChatScreenState extends State<ChatScreen> {
                   : (_isMine(_replyTo!) ? 'yourself' : widget.title),
               onCancel: () => setState(() => _replyTo = null),
             ),
+          if (_mentions.isNotEmpty)
+            SizedBox(
+              height: 56,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                children: [
+                  for (final u in _mentions)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ActionChip(
+                        avatar:
+                            Avatar(url: u.picture, name: u.name, radius: 10),
+                        label: Text('@${u.username ?? u.name}'),
+                        onPressed: () => _insertMention(u),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (_quickReplies.isNotEmpty && _input.text.trim().isEmpty)
+            SizedBox(
+              height: 48,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                children: [
+                  for (final q in _quickReplies)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ActionChip(
+                        label: Text(q,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        onPressed: () {
+                          setState(() {
+                            _input.text = q;
+                            _input.selection = TextSelection.collapsed(
+                                offset: _input.text.length);
+                          });
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
           SafeArea(
             top: false,
             child: Padding(
@@ -1185,9 +2088,9 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                    tooltip: 'Send photo',
-                    onPressed: _sending ? null : _attachImage,
+                    icon: const Icon(Icons.add_circle_outline),
+                    tooltip: 'Attach',
+                    onPressed: _sending ? null : _attachMenu,
                   ),
                   Expanded(
                     child: TextField(
@@ -1224,9 +2127,15 @@ class _MessageBubble extends StatelessWidget {
       {required this.message,
       this.mine = false,
       this.highlight = false,
+      this.selected = false,
+      this.starred = false,
+      this.expanded = false,
+      this.onToggleExpand,
+      this.onTap,
       this.onLongPress,
       this.onDoubleTap,
       this.onTapReply,
+      this.onTapReactions,
       this.replyTo,
       this.senderName,
       this.receipt});
@@ -1236,11 +2145,25 @@ class _MessageBubble extends StatelessWidget {
 
   /// Briefly true when this message was jumped-to from a reply quote.
   final bool highlight;
+
+  /// True when selected in multi-select mode.
+  final bool selected;
+
+  /// True when locally starred.
+  final bool starred;
+
+  /// Long-message "Read more" expansion state + toggle.
+  final bool expanded;
+  final VoidCallback? onToggleExpand;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDoubleTap;
 
   /// Tapped the reply quote — jumps to the original message.
   final VoidCallback? onTapReply;
+
+  /// Tapped the reaction summary — shows who reacted.
+  final VoidCallback? onTapReactions;
 
   /// The message this one is replying to (resolved), if any.
   final Message? replyTo;
@@ -1273,6 +2196,42 @@ class _MessageBubble extends StatelessWidget {
 
   /// Renders the first attached photo (network url, or base64 before refetch).
   /// Tapping opens a full-screen, zoomable viewer.
+  /// A small non-interactive map preview for a shared location.
+  Widget _placeCard(double lat, double lng) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 220,
+        height: 140,
+        child: IgnorePointer(
+          child: FlutterMap(
+            options: MapOptions(
+              initialCenter: LatLng(lat, lng),
+              initialZoom: 14,
+              interactionOptions:
+                  const InteractionOptions(flags: InteractiveFlag.none),
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'ca.okayspace.app',
+              ),
+              MarkerLayer(markers: [
+                Marker(
+                  point: LatLng(lat, lng),
+                  width: 40,
+                  height: 40,
+                  child: const Icon(Icons.location_pin,
+                      color: Colors.red, size: 36),
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _mediaThumb(BuildContext context) {
     final m = message.media.first;
     ImageProvider? provider;
@@ -1305,6 +2264,12 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hasMedia = message.media.isNotEmpty && !message.deleted;
+    final placeLat = (message.raw['place_latitude'] as num?)?.toDouble();
+    final placeLng = (message.raw['place_longitude'] as num?)?.toDouble();
+    final hasPlace = message.type == 'place' &&
+        !message.deleted &&
+        placeLat != null &&
+        placeLng != null;
     final typeLabel = switch (message.type) {
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
@@ -1316,20 +2281,37 @@ class _MessageBubble extends StatelessWidget {
     };
     final bodyText = message.deleted
         ? 'Message deleted'
-        : (message.text ?? (hasMedia ? '' : typeLabel));
+        : (message.text ?? (hasMedia || hasPlace ? '' : typeLabel));
+    // A short, all-emoji message renders large with no bubble (like WhatsApp).
+    final t = (message.text ?? '').trim();
+    final emojiOnly = !message.deleted &&
+        !hasMedia &&
+        !hasPlace &&
+        message.replyToId == null &&
+        t.isNotEmpty &&
+        t.runes.length <= 8 &&
+        !RegExp(r'[A-Za-z0-9]').hasMatch(t) &&
+        RegExp(r'[^\x00-\x7F]').hasMatch(t);
     // Outgoing bubble = a dark tint of the current accent (teal by default,
     // matching okayspace.ca's WhatsApp-style chat).
-    final bg = mine
-        ? HSLColor.fromColor(scheme.primary).withLightness(0.22).toColor()
-        : scheme.surfaceContainerHighest;
+    final bg = emojiOnly
+        ? Colors.transparent
+        : mine
+            ? HSLColor.fromColor(scheme.primary).withLightness(0.22).toColor()
+            : scheme.surfaceContainerHighest;
     final fg = mine ? OkayColors.textPrimary : scheme.onSurface;
     const radius = Radius.circular(18);
     final reactions = _reactionChips();
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: onLongPress,
-        onDoubleTap: onDoubleTap,
+    return Container(
+      color: selected
+          ? scheme.primary.withValues(alpha: 0.14)
+          : Colors.transparent,
+      child: Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: GestureDetector(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          onDoubleTap: onDoubleTap,
         child: Column(
           crossAxisAlignment:
               mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -1396,16 +2378,74 @@ class _MessageBubble extends StatelessWidget {
                           EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
                       child: _mediaThumb(context),
                     ),
+                  if (hasPlace)
+                    Padding(
+                      padding:
+                          EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
+                      child: _placeCard(placeLat, placeLng),
+                    ),
                   if (bodyText.isNotEmpty)
                     message.deleted
                         ? Text(bodyText,
                             style: TextStyle(
                                 color: fg, fontStyle: FontStyle.italic))
-                        : LinkedText(bodyText, style: TextStyle(color: fg)),
+                        : emojiOnly
+                        ? Text(bodyText,
+                            style: const TextStyle(fontSize: 44))
+                        : (bodyText.length > 600 && !expanded)
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(bodyText,
+                                      maxLines: 12,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(color: fg)),
+                                  GestureDetector(
+                                    onTap: onToggleExpand,
+                                    child: Padding(
+                                      padding:
+                                          const EdgeInsets.only(top: 2),
+                                      child: Text('Read more',
+                                          style: TextStyle(
+                                              color:
+                                                  fg.withValues(alpha: 0.9),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12.5)),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  LinkedText(bodyText,
+                                      style: TextStyle(color: fg)),
+                                  if (bodyText.length > 600)
+                                    GestureDetector(
+                                      onTap: onToggleExpand,
+                                      child: Padding(
+                                        padding:
+                                            const EdgeInsets.only(top: 2),
+                                        child: Text('Show less',
+                                            style: TextStyle(
+                                                color:
+                                                    fg.withValues(alpha: 0.9),
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5)),
+                                      ),
+                                    ),
+                                ],
+                              ),
                   const SizedBox(height: 3),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (starred)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.star,
+                              size: 11, color: fg.withValues(alpha: 0.85)),
+                        ),
                       if (message.pinned)
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
@@ -1443,19 +2483,23 @@ class _MessageBubble extends StatelessWidget {
               ),
             ),
             if (reactions.isNotEmpty)
-              Container(
-                margin: const EdgeInsets.only(top: 2),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: scheme.outlineVariant),
+              GestureDetector(
+                onTap: onTapReactions,
+                child: Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: Text(reactions.join('  '),
+                      style: const TextStyle(fontSize: 12)),
                 ),
-                child: Text(reactions.join('  '),
-                    style: const TextStyle(fontSize: 12)),
               ),
           ],
+          ),
         ),
       ),
     );
@@ -1877,6 +2921,74 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
                       },
                     ),
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Full-screen map to drop a pin and return the chosen [LatLng].
+class _LocationPickerScreen extends StatefulWidget {
+  const _LocationPickerScreen();
+
+  @override
+  State<_LocationPickerScreen> createState() => _LocationPickerScreenState();
+}
+
+class _LocationPickerScreenState extends State<_LocationPickerScreen> {
+  LatLng _point = const LatLng(43.6532, -79.3832); // Toronto default
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: const Text('Pick a location'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, _point),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          FlutterMap(
+            options: MapOptions(
+              initialCenter: _point,
+              initialZoom: 12,
+              onTap: (_, p) => setState(() => _point = p),
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'ca.okayspace.app',
+              ),
+              MarkerLayer(markers: [
+                Marker(
+                  point: _point,
+                  width: 44,
+                  height: 44,
+                  child: const Icon(Icons.location_pin,
+                      color: Colors.red, size: 40),
+                ),
+              ]),
+            ],
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 20,
+            child: Center(
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 8),
+                  child: Text('Tap the map to drop a pin',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ),
+              ),
+            ),
           ),
         ],
       ),
