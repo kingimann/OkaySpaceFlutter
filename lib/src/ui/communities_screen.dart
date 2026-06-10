@@ -492,7 +492,10 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
               }
               final m = items[i - 1];
               final rank = i;
-              final name = '${m['name'] ?? m['username'] ?? 'Member'}';
+              final rawName = '${m['name'] ?? ''}'.trim();
+              final name = rawName.isNotEmpty
+                  ? rawName
+                  : '${m['username'] ?? 'Member'}';
               final karmaV = m['karma'] ?? m['points'] ?? m['score'];
               final karma = karmaV is num ? karmaV.toInt() : 0;
               final userId = '${m['user_id'] ?? m['id'] ?? ''}';
@@ -594,6 +597,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
         child: RefreshIndicator(
         onRefresh: _reload,
         child: ListView(
+          padding: const EdgeInsets.only(bottom: 88),
           children: [
             FutureBuilder<Community>(
               future: _community,
@@ -828,8 +832,10 @@ class _CommunityMembersScreenState extends State<CommunityMembersScreen> {
       String userId, Future<void> Function() op, String ok) async {
     try {
       await op();
-      if (mounted) showInfo(context, ok);
-      _reload();
+      if (mounted) {
+        showInfo(context, ok);
+        _reload();
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -853,7 +859,10 @@ class _CommunityMembersScreenState extends State<CommunityMembersScreen> {
                 final m = items[i];
                 final userId =
                     '${m['user_id'] ?? m['id'] ?? ''}';
-                final name = '${m['name'] ?? m['username'] ?? 'Member'}';
+                final rawName = '${m['name'] ?? ''}'.trim();
+                final name = rawName.isNotEmpty
+                    ? rawName
+                    : '${m['username'] ?? 'Member'}';
                 final role = '${m['role'] ?? ''}';
                 final isMod = role == 'moderator' || role == 'owner' ||
                     m['is_moderator'] == true;
@@ -862,7 +871,9 @@ class _CommunityMembersScreenState extends State<CommunityMembersScreen> {
                       url: '${m['picture'] ?? ''}', name: name),
                   title: Text(name),
                   subtitle: role.isNotEmpty ? Text(role) : null,
-                  trailing: widget.canModerate && userId.isNotEmpty
+                  trailing: widget.canModerate &&
+                          userId.isNotEmpty &&
+                          role != 'owner'
                       ? PopupMenuButton<String>(
                           onSelected: (v) {
                             if (v == 'mod') {

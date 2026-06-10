@@ -514,7 +514,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 builder: (_) => _GroupMembersScreen(
                     groupId: widget.groupId, canManage: g.canManage),
               ));
-              _reload();
+              if (mounted) _reload();
             },
           ),
           FutureBuilder<Group>(
@@ -544,6 +544,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         child: RefreshIndicator(
         onRefresh: _reload,
         child: ListView(
+          padding: const EdgeInsets.only(bottom: 88),
           children: [
             FutureBuilder<Group>(
               future: _group,
@@ -801,8 +802,10 @@ class _GroupMembersScreenState extends State<_GroupMembersScreen> {
   Future<void> _act(String userId, Future<void> Function() op, String ok) async {
     try {
       await op();
-      if (mounted) showInfo(context, ok);
-      setState(_load);
+      if (mounted) {
+        showInfo(context, ok);
+        setState(_load);
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -823,7 +826,10 @@ class _GroupMembersScreenState extends State<_GroupMembersScreen> {
             itemBuilder: (context, i) {
               final m = items[i];
               final id = '${m['user_id'] ?? m['id'] ?? ''}';
-              final name = '${m['name'] ?? m['user_name'] ?? 'Member'}';
+              final rawName = '${m['name'] ?? ''}'.trim();
+              final name = rawName.isNotEmpty
+                  ? rawName
+                  : '${m['username'] ?? m['user_name'] ?? 'Member'}';
               final role = '${m['role'] ?? m['my_role'] ?? ''}';
               final isAdmin = role == 'admin' || role == 'owner';
               return ListTile(
