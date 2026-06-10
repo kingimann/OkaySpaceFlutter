@@ -50,9 +50,21 @@ class OkaySpaceApp extends StatelessWidget {
     );
     final headerColor =
         brightness == Brightness.dark ? OkayColors.surface : scheme.surface;
+    // Force every text style to use the scheme's onSurface color. Without this,
+    // some inherited/default styles can fall back to black, which is unreadable
+    // on the dark theme.
+    final baseText = ThemeData(brightness: brightness, useMaterial3: true)
+        .textTheme
+        .apply(
+          bodyColor: scheme.onSurface,
+          displayColor: scheme.onSurface,
+          decorationColor: scheme.onSurface,
+        );
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
+      brightness: brightness,
+      textTheme: baseText,
       scaffoldBackgroundColor: scheme.surface,
       appBarTheme: AppBarTheme(
         centerTitle: false,
@@ -131,8 +143,13 @@ class OkaySpaceApp extends StatelessWidget {
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         labelStyle: TextStyle(color: scheme.onSurface, fontSize: 13),
       ),
-      listTileTheme: const ListTileThemeData(
-        titleTextStyle: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w500),
+      listTileTheme: ListTileThemeData(
+        titleTextStyle: TextStyle(
+            fontSize: 15.5,
+            fontWeight: FontWeight.w500,
+            color: scheme.onSurface),
+        subtitleTextStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+        iconColor: scheme.onSurfaceVariant,
       ),
       tabBarTheme: TabBarThemeData(
         indicatorColor: accent,
