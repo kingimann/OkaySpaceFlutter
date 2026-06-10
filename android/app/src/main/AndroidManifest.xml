@@ -1,8 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for all networking: API calls, image and video loading.
+         Without this, release builds have no network access at all. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="okayspace"
+        android:label="OkaySpace"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
