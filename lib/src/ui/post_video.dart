@@ -12,6 +12,7 @@ class PostVideo extends StatefulWidget {
     super.key,
     required this.url,
     this.poster,
+    this.resolveOnError,
     this.autoPlay = false,
     this.looping = false,
     this.muted = false,
@@ -22,6 +23,10 @@ class PostVideo extends StatefulWidget {
   /// Optional thumbnail shown while the video loads or if playback fails,
   /// so the surface is never just black.
   final String? poster;
+
+  /// If direct playback of [url] fails, this is called once to obtain an
+  /// alternative (e.g. a signed/resolved) URL, then playback is retried.
+  final Future<String> Function()? resolveOnError;
   final bool autoPlay;
   final bool looping;
   final bool muted;
@@ -34,11 +39,16 @@ class _PostVideoState extends State<PostVideo> {
   VideoPlayerController? _controller;
   bool _ready = false;
   bool _failed = false;
+  bool _triedResolve = false;
 
   @override
   void initState() {
     super.initState();
-    final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _open(widget.url);
+  }
+
+  void _open(String url) {
+    final c = VideoPlayerController.networkUrl(Uri.parse(url));
     _controller = c;
     c.initialize().then((_) {
       if (!mounted) return;
@@ -47,8 +57,26 @@ class _PostVideoState extends State<PostVideo> {
       if (widget.autoPlay) c.play();
       setState(() => _ready = true);
     }).catchError((_) {
-      if (mounted) setState(() => _failed = true);
+      _onError();
     });
+  }
+
+  /// On first failure, try to resolve an alternative URL once; otherwise fail.
+  Future<void> _onError() async {
+    if (!_triedResolve && widget.resolveOnError != null) {
+      _triedResolve = true;
+      try {
+        final resolved = await widget.resolveOnError!();
+        if (!mounted) return;
+        if (resolved.isNotEmpty && resolved != widget.url) {
+          await _controller?.dispose();
+          _controller = null;
+          _open(resolved);
+          return;
+        }
+      } catch (_) {/* fall through to failed state */}
+    }
+    if (mounted) setState(() => _failed = true);
   }
 
   @override
