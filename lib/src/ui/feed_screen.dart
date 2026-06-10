@@ -4,6 +4,7 @@ import '../../okayspace_api.dart';
 import 'app_drawer.dart';
 import 'common.dart';
 import 'compose_screen.dart';
+import 'hashtag_screen.dart';
 import 'map_screen.dart';
 import 'messages_screen.dart';
 import 'notifications_screen.dart';
@@ -23,8 +24,9 @@ class FeedScreen extends StatefulWidget {
 class _FeedScreenState extends State<FeedScreen> {
   late Future<List<Post>> _feed;
   late Future<List<StoryTrayItem>> _stories;
+  late Future<List<Map<String, dynamic>>> _trending;
   int _unread = 0;
-  int _tab = 0; // 0 = Explore, 1 = Following
+  int _tab = 0; // 0 = Explore, 1 = Following, 2 = Popular
   final _scrollController = ScrollController();
 
   @override
@@ -50,8 +52,13 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _load() {
-    _feed = _tab == 0 ? api.feed.exploreFeed() : api.feed.homeFeed();
+    _feed = switch (_tab) {
+      1 => api.feed.homeFeed(),
+      2 => api.feed.popularPosts(),
+      _ => api.feed.exploreFeed(),
+    };
     _stories = api.stories.tray();
+    _trending = api.feed.trendingHashtags();
     api.notifications.unreadCount().then((count) {
       if (mounted) setState(() => _unread = count);
     }).catchError((_) {});
@@ -137,7 +144,9 @@ class _FeedScreenState extends State<FeedScreen> {
                         if (i == 0) {
                           return Column(
                             children: [
+                              _ComposerPrompt(onTap: _compose),
                               _StoryTray(future: _stories, onAdd: _addStory),
+                              _TrendingStrip(future: _trending),
                               if (posts.isEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 100),
@@ -259,6 +268,8 @@ class _FeedScreenState extends State<FeedScreen> {
                   _tabChip('Explore', 0),
                   const SizedBox(width: 8),
                   _tabChip('Following', 1),
+                  const SizedBox(width: 8),
+                  _tabChip('Popular', 2),
                 ],
               ),
             ),
@@ -285,6 +296,100 @@ class _FeedScreenState extends State<FeedScreen> {
               fontWeight: selected ? FontWeight.bold : FontWeight.normal,
             )),
       ),
+    );
+  }
+}
+
+/// A tappable "What's on your mind?" prompt that opens the composer.
+class _ComposerPrompt extends StatelessWidget {
+  const _ComposerPrompt({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                const Avatar(url: null, name: '?', radius: 18),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text("What's on your mind?",
+                      style: TextStyle(color: scheme.outline)),
+                ),
+                Icon(Icons.image_outlined, color: scheme.primary, size: 22),
+                const SizedBox(width: 12),
+                Icon(Icons.poll_outlined, color: scheme.primary, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Horizontal strip of trending hashtags below the composer.
+class _TrendingStrip extends StatelessWidget {
+  const _TrendingStrip({required this.future});
+
+  final Future<List<Map<String, dynamic>>> future;
+
+  String _tagOf(Map<String, dynamic> m) =>
+      '${m['tag'] ?? m['name'] ?? m['hashtag'] ?? ''}'.replaceFirst('#', '');
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        final tags = [
+          for (final m in (snapshot.data ?? const []))
+            if (_tagOf(m).isNotEmpty) _tagOf(m)
+        ];
+        if (tags.isEmpty) return const SizedBox.shrink();
+        return SizedBox(
+          height: 38,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Row(children: [
+                  Icon(Icons.trending_up, size: 16, color: scheme.primary),
+                  const SizedBox(width: 4),
+                  Text('Trending',
+                      style: TextStyle(
+                          color: scheme.outline,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
+                ]),
+              ),
+              for (final t in tags.take(12))
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text('#$t'),
+                    onPressed: () => HashtagScreen.open(context, t),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
