@@ -335,6 +335,8 @@ class PostTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant, width: 1),
         ),
         clipBehavior: Clip.antiAlias,
         child: result,
@@ -542,7 +544,15 @@ class _PostAction extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: color ?? muted),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, anim) =>
+                  ScaleTransition(scale: anim, child: child),
+              child: Icon(icon,
+                  key: ValueKey('$icon-${color != null}'),
+                  size: 18,
+                  color: color ?? muted),
+            ),
             if (count > 0) ...[
               const SizedBox(width: 6),
               Text(formatCount(count),
