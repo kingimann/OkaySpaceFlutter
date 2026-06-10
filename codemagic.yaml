@@ -1,55 +1,87 @@
 # Codemagic CI/CD configuration for OkaySpace (Flutter, Android + iOS).
 # Docs: https://docs.codemagic.io/yaml-quick-start/building-a-flutter-app/
 #
-# Before the iOS workflow can run you must, in the Codemagic UI:
-#   1. Connect an App Store Connect API key under
-#      Teams > Integrations > Developer Portal (or per-app Code signing).
-#   2. Register the bundle id `com.okayspace.okayspace` in your Apple
-#      Developer account / App Store Connect (create the app record).
-#   3. Reference the integration name below in `app_store_connect`.
-# See the chat notes for the full Apple-side checklist.
+# ── Before the iOS workflow can run, in the Codemagic UI ──────────────────
+#   1. Use this codemagic.yaml (App settings > switch from "Workflow Editor"
+#      to "codemagic.yaml"). This avoids the "Scheme 'Runner' not found"
+#      error, which comes from the UI editor's stale scheme cache.
+#   2. Add an App Store Connect API key integration:
+#      Teams > Integrations > Developer Portal. Upload the .p8 + Key ID +
+#      Issuer ID and NAME it to match `app_store_connect:` below.
+#   3. Register bundle id `com.okayspace.okayspace` in App Store Connect and
+#      create the app record, then put its numeric Apple ID in
+#      `APP_STORE_APPLE_ID` below.
+# --------------------------------------------------------------------------
+
+definitions:
+  # Reused environment across workflows.
+  flutter_env: &flutter_env
+    flutter: 3.44.1
+    java: 21
+  ios_signing_env: &ios_signing_env
+    flutter: 3.44.1
+    xcode: latest
+    cocoapods: default
 
 workflows:
-  ios:
-    name: OkaySpace iOS
-    instance_type: mac_mini_m2          # macOS build machine (required for iOS)
-    max_build_duration: 60
+  # ───────────────────────────── iOS ──────────────────────────────────────
+  ios-release:
+    name: OkaySpace iOS (App Store / TestFlight)
+    instance_type: mac_mini_m2          # macOS required for iOS builds
+    max_build_duration: 90
     integrations:
-      app_store_connect: OkaySpace ASC  # <-- name of your App Store Connect API key integration
+      app_store_connect: OkaySpace ASC  # <-- name of your ASC API key integration
     environment:
-      flutter: 3.44.1
-      xcode: latest
-      cocoapods: default
+      <<: *ios_signing_env
       ios_signing:
-        distribution_type: app_store    # use `ad_hoc` for device testing builds
+        distribution_type: app_store    # app_store | ad_hoc | development | enterprise
         bundle_identifier: com.okayspace.okayspace
       vars:
-        APP_STORE_APPLE_ID: 0000000000  # <-- your app's numeric Apple ID from App Store Connect
+        BUNDLE_ID: "com.okayspace.okayspace"
+        XCODE_WORKSPACE: "Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+        APP_STORE_APPLE_ID: 0000000000  # <-- numeric Apple ID of the app record
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
+        - ios/Pods
     scripts:
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
       - name: Get Flutter packages
         script: flutter pub get
-      - name: Install CocoaPods
+      - name: Install CocoaPods dependencies
         script: |
-          cd ios && pod install
+          find . -name "Podfile" -execdir pod install \;
       - name: Flutter analyze
         script: flutter analyze
       - name: Flutter test
         script: flutter test
-      - name: Set up code signing
-        script: xcode-project use-profiles
-      - name: Build IPA
+      - name: Set build number
         script: |
+          # Auto-increment the iOS build number from the latest TestFlight build.
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
           flutter build ipa --release \
+            --build-number=$(($LATEST + 1)) \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - flutter_drive.log
     publishing:
-      # Uncomment to auto-upload to TestFlight once signing works.
-      # app_store_connect:
-      #   auth: integration
-      #   submit_to_testflight: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # submit_to_app_store: false   # set true to push to App Store review
+        # beta_groups:
+        #   - App Store Connect Users
       email:
         recipients:
           - ifakhargomi@gmail.com
@@ -57,13 +89,47 @@ workflows:
           success: true
           failure: true
 
-  android:
+  # iOS build with no signing — fast PR / smoke check (no Apple account needed).
+  ios-debug:
+    name: OkaySpace iOS (unsigned smoke build)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      <<: *ios_signing_env
+      vars:
+        XCODE_WORKSPACE: "Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
+        - ios/Pods
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install CocoaPods dependencies
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: Flutter analyze
+        script: flutter analyze
+      - name: Flutter test
+        script: flutter test
+      - name: Build unsigned iOS app
+        script: flutter build ios --release --no-codesign
+    artifacts:
+      - build/ios/iphoneos/*.app
+      - /tmp/xcodebuild_logs/*.log
+
+  # ───────────────────────────── Android ──────────────────────────────────
+  android-release:
     name: OkaySpace Android
     instance_type: linux_x2
     max_build_duration: 60
     environment:
-      flutter: 3.44.1
-      java: 21
+      <<: *flutter_env
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+        - $HOME/.gradle/caches
     scripts:
       - name: Get Flutter packages
         script: flutter pub get
@@ -71,7 +137,7 @@ workflows:
         script: flutter analyze
       - name: Flutter test
         script: flutter test
-      - name: Build APK (debug — no signing configured yet)
+      - name: Build APK (debug — release signing not configured yet)
         script: flutter build apk --debug
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
