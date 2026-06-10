@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../okayspace_api.dart';
@@ -9,6 +10,30 @@ final OkaySpaceApi api = OkaySpaceApi();
 /// Bumped when the user taps the Feed tab while already on it — the feed
 /// listens and scrolls to top + refreshes.
 final ValueNotifier<int> feedScrollSignal = ValueNotifier<int>(0);
+
+/// Animated progress of the top & bottom bars: 1.0 = fully shown, 0.0 = fully
+/// hidden. The root app animates this toward [barsVisible]; [OkayAppBar] and
+/// [OkayBottomNav] listen and collapse their reserved space accordingly, so the
+/// body reclaims the room as they slide away.
+final ValueNotifier<double> barsT = ValueNotifier<double>(1.0);
+
+/// Target visibility of the bars. Scrolling down requests hide; scrolling up,
+/// reaching the top, or navigating requests show.
+final ValueNotifier<bool> barsVisible = ValueNotifier<bool>(true);
+
+/// Reports a scroll gesture so the bars can hide/show. Only vertical scrolls
+/// count — horizontal carousels (stories, tab swipes) never toggle the bars.
+void reportUserScroll(ScrollDirection direction, Axis axis) {
+  if (axis != Axis.vertical) return;
+  if (direction == ScrollDirection.reverse) {
+    barsVisible.value = false;
+  } else if (direction == ScrollDirection.forward) {
+    barsVisible.value = true;
+  }
+}
+
+/// Forces the bars back into view (on navigation, tab switch, or reaching top).
+void showBars() => barsVisible.value = true;
 
 /// The home destination the shell should show, identified by its id (see
 /// [kAllNavDests]). [OkayBottomNav] sets this from any screen; the shell
@@ -232,7 +257,7 @@ class OkayBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ValueListenableBuilder<List<String>>(
+    final nav = ValueListenableBuilder<List<String>>(
       valueListenable: navController,
       builder: (context, ids, _) => SafeArea(
         child: Container(
@@ -282,6 +307,20 @@ class OkayBottomNav extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    // Collapse downward as the bars hide: the slot shrinks to the measured
+    // height, so the Scaffold body extends down to reclaim the space.
+    return ValueListenableBuilder<double>(
+      valueListenable: barsT,
+      builder: (context, t, child) => ClipRect(
+        child: Align(
+          alignment: Alignment.topCenter,
+          heightFactor: t.clamp(0.0, 1.0),
+          child: child,
+        ),
+      ),
+      child: nav,
     );
   }
 }
@@ -577,7 +616,7 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
               )
             : null);
 
-    return SafeArea(
+    final bar = SafeArea(
       bottom: false,
       child: Container(
         margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
@@ -618,6 +657,20 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
           ],
         ),
       ),
+    );
+
+    // Collapse upward as the bars hide: the slot shrinks to the measured
+    // height, so the Scaffold body slides up to reclaim the space.
+    return ValueListenableBuilder<double>(
+      valueListenable: barsT,
+      builder: (context, t, child) => ClipRect(
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          heightFactor: t.clamp(0.0, 1.0),
+          child: child,
+        ),
+      ),
+      child: bar,
     );
   }
 }

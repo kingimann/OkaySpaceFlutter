@@ -12,13 +12,26 @@ class OkaySpaceApp extends StatefulWidget {
   State<OkaySpaceApp> createState() => _OkaySpaceAppState();
 }
 
-class _OkaySpaceAppState extends State<OkaySpaceApp> {
+class _OkaySpaceAppState extends State<OkaySpaceApp>
+    with SingleTickerProviderStateMixin {
   final _navKey = GlobalKey<NavigatorState>();
+  final _barsNavObserver = _BarsNavObserver();
   bool _resetting = false;
+
+  // Drives the top/bottom bar hide-on-scroll animation (1 = shown, 0 = hidden).
+  late final AnimationController _bars = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+    value: 1.0,
+  )..addListener(() => barsT.value = _bars.value);
 
   @override
   void initState() {
     super.initState();
+    // Animate the bars whenever the requested visibility changes, and snap them
+    // back into view whenever the user switches home tabs.
+    barsVisible.addListener(_animateBars);
+    homeTabSignal.addListener(showBars);
     // When the server rejects our credential, drop back to the gate (login).
     api.client.onUnauthorized = () {
       if (_resetting) return;
@@ -31,6 +44,16 @@ class _OkaySpaceAppState extends State<OkaySpaceApp> {
         );
       });
     };
+  }
+
+  void _animateBars() => barsVisible.value ? _bars.forward() : _bars.reverse();
+
+  @override
+  void dispose() {
+    barsVisible.removeListener(_animateBars);
+    homeTabSignal.removeListener(showBars);
+    _bars.dispose();
+    super.dispose();
   }
 
   /// The okayspace.ca dark color scheme, mapped role-for-role.
@@ -232,14 +255,42 @@ class _OkaySpaceAppState extends State<OkaySpaceApp> {
           title: 'OkaySpace',
           debugShowCheckedModeBanner: false,
           navigatorKey: _navKey,
+          navigatorObservers: [_barsNavObserver],
           theme: _theme(Brightness.light, accent),
           darkTheme: _theme(Brightness.dark, accent),
           themeMode: mode,
+          // App-wide hide-on-scroll: any vertical scroll hides the bars;
+          // scrolling back up or reaching the top reveals them again.
+          builder: (context, child) => NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              if (n is UserScrollNotification) {
+                reportUserScroll(n.direction, n.metrics.axis);
+              } else if (n is ScrollUpdateNotification &&
+                  n.metrics.axis == Axis.vertical &&
+                  n.metrics.pixels <= n.metrics.minScrollExtent + 8) {
+                showBars();
+              }
+              return false;
+            },
+            child: child!,
+          ),
           home: const RootGate(),
         ),
       ),
     );
   }
+}
+
+/// Re-shows the top/bottom bars whenever a route is pushed or popped, so a new
+/// screen never opens with its bars hidden from the previous screen's scroll.
+class _BarsNavObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      showBars();
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      showBars();
 }
 
 /// Shows the app shell when signed in, otherwise the login screen.
