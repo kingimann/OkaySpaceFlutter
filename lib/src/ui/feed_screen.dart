@@ -54,12 +54,22 @@ class _FeedScreenState extends State<FeedScreen> {
 
   void _load() {
     // 0 = Explore, 1 = Following.
-    _feed = _tab == 1 ? api.feed.homeFeed() : api.feed.exploreFeed();
+    final base = _tab == 1 ? api.feed.homeFeed() : api.feed.exploreFeed();
+    _feed = base.then(_orderFeed);
     _stories = api.stories.tray();
     _trending = api.feed.trendingHashtags();
     api.notifications.unreadCount().then((count) {
       if (mounted) setState(() => _unread = count);
     }).catchError((_) {});
+  }
+
+  /// Keeps sponsored posts pinned at the top, then orders the rest newest
+  /// first so the feed always shows the latest posts.
+  List<Post> _orderFeed(List<Post> posts) {
+    final promoted = posts.where((p) => p.promoted).toList();
+    final rest = posts.where((p) => !p.promoted).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return [...promoted, ...rest];
   }
 
   void _setTab(int t) {
@@ -449,15 +459,32 @@ class _StoryTray extends StatelessWidget {
               bottom: BorderSide(color: Theme.of(context).dividerColor),
             ),
           ),
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            // First cell is the "add your story" button.
-            itemCount: items.length + 1,
-            itemBuilder: (context, i) {
-              if (i == 0) return _AddStoryTile(onTap: onAdd);
-              return _StoryTrayTile(item: items[i - 1]);
-            },
+          child: Stack(
+            children: [
+              ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(8, 8, 36, 8),
+                // First cell is the "add your story" button.
+                itemCount: items.length + 1,
+                itemBuilder: (context, i) {
+                  if (i == 0) return _AddStoryTile(onTap: onAdd);
+                  return _StoryTrayTile(item: items[i - 1]);
+                },
+              ),
+              // Lets the user hide the story tray from the feed (persisted;
+              // re-enable from Settings).
+              Positioned(
+                top: 2,
+                right: 2,
+                child: IconButton(
+                  iconSize: 18,
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Hide stories',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => hideStoriesController.set(true),
+                ),
+              ),
+            ],
           ),
         );
       },
