@@ -109,6 +109,106 @@ class NavController extends ValueNotifier<List<String>> {
 
 final NavController navController = NavController();
 
+/// A destination available in the customizable sidebar (drawer).
+class SidebarDest {
+  const SidebarDest(this.id, this.label, this.icon, this.color);
+  final String id;
+  final String label;
+  final IconData icon;
+  final Color color;
+}
+
+/// Every destination the user can place in the sidebar, in default order.
+const List<SidebarDest> kAllSidebarDests = [
+  SidebarDest('feed', 'Feed', Icons.home_rounded, Color(0xFF3B82F6)),
+  SidebarDest('reels', 'Reels', Icons.videocam_rounded, Color(0xFFEC4899)),
+  SidebarDest('map', 'Map', Icons.map_rounded, Color(0xFF10B981)),
+  SidebarDest('guides', 'Places & Guides', Icons.collections_bookmark_rounded,
+      Color(0xFF14B8A6)),
+  SidebarDest('marketplace', 'Marketplace', Icons.storefront_rounded,
+      Color(0xFFF97316)),
+  SidebarDest('communities', 'Communities', Icons.tag_rounded,
+      Color(0xFF06B6D4)),
+  SidebarDest('groups', 'Groups', Icons.groups_rounded, Color(0xFFA855F7)),
+  SidebarDest('profile', 'My profile', Icons.person_rounded, Color(0xFF14B8A6)),
+  SidebarDest('friends', 'Friends', Icons.people_alt_rounded,
+      Color(0xFF6366F1)),
+  SidebarDest('connections', 'Followers & following', Icons.group_add_rounded,
+      Color(0xFF8B5CF6)),
+  SidebarDest('circles', 'Circles', Icons.workspaces_outline,
+      Color(0xFFEC4899)),
+  SidebarDest('bookmarks', 'Bookmarks', Icons.bookmark_rounded,
+      Color(0xFFF59E0B)),
+  SidebarDest('leaderboard', 'Leaderboard', Icons.leaderboard_rounded,
+      Color(0xFFEAB308)),
+  SidebarDest('notifications', 'Notifications', Icons.notifications_rounded,
+      Color(0xFFEAB308)),
+  SidebarDest('wallet', 'Wallet', Icons.account_balance_wallet_rounded,
+      Color(0xFF22C55E)),
+  SidebarDest('search', 'Search', Icons.search_rounded, Color(0xFF14B8A6)),
+  SidebarDest('roadside', 'Roadside assistance', Icons.car_repair_rounded,
+      Color(0xFFF43F5E)),
+  SidebarDest('forms', 'Forms', Icons.assignment_rounded, Color(0xFF8B5CF6)),
+  SidebarDest('advertising', 'Advertising', Icons.campaign_rounded,
+      Color(0xFFF97316)),
+  SidebarDest('apikeys', 'Developer API keys', Icons.vpn_key_rounded,
+      Color(0xFF0EA5E9)),
+  SidebarDest('support', 'Help & support', Icons.support_agent_rounded,
+      Color(0xFF38BDF8)),
+];
+
+SidebarDest sidebarDestById(String id) => kAllSidebarDests.firstWhere(
+    (d) => d.id == id,
+    orElse: () => kAllSidebarDests.first);
+
+/// The user's chosen sidebar destinations (ordered ids), persisted.
+class SidebarController extends ValueNotifier<List<String>> {
+  SidebarController()
+      : super(const [
+          'feed', 'reels', 'map', 'guides', 'marketplace', 'communities',
+          'groups', 'roadside', 'forms', 'advertising', 'apikeys', 'support',
+        ]) {
+    _load();
+  }
+
+  static const _key = 'okayspace.sidebar_items';
+  static const int minItems = 1;
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  Future<void> _load() async {
+    try {
+      final stored = await _storage.read(key: _key);
+      if (stored != null && stored.isNotEmpty) {
+        final ids = stored
+            .split(',')
+            .where((id) => kAllSidebarDests.any((d) => d.id == id))
+            .toList();
+        if (ids.length >= minItems) value = ids;
+      }
+    } catch (_) {/* keep default */}
+  }
+
+  Future<void> set(List<String> ids) async {
+    if (ids.length < minItems) return;
+    value = List.of(ids);
+    try {
+      await _storage.write(key: _key, value: ids.join(','));
+    } catch (_) {/* best effort */}
+  }
+
+  void add(String id) {
+    if (value.contains(id)) return;
+    set([...value, id]);
+  }
+
+  void remove(String id) {
+    if (value.length <= minItems) return;
+    set(value.where((e) => e != id).toList());
+  }
+}
+
+final SidebarController sidebarController = SidebarController();
+
 /// Whether the stories row is hidden on the feed. Persisted locally.
 class HideStoriesController extends ValueNotifier<bool> {
   HideStoriesController() : super(false) {

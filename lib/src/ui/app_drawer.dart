@@ -4,20 +4,29 @@ import '../../okayspace_api.dart';
 import 'ads_screen.dart';
 import 'api_keys_screen.dart';
 import 'app.dart';
+import 'bookmarks_screen.dart';
+import 'circles_screen.dart';
 import 'common.dart';
 import 'communities_screen.dart';
+import 'connections_screen.dart';
 import 'customize_nav_screen.dart';
+import 'customize_sidebar_screen.dart';
 import 'edit_profile_screen.dart';
 import 'forms_screen.dart';
+import 'friends_screen.dart';
 import 'groups_screen.dart';
 import 'guides_screen.dart';
+import 'leaderboard_screen.dart';
 import 'map_screen.dart';
 import 'marketplace_screen.dart';
+import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
 import 'roadside_screen.dart';
+import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'support_screen.dart';
+import 'wallet_screen.dart';
 
 /// Side menu opened from the feed header — styled after okayspace.ca's sidebar.
 ///
@@ -44,6 +53,62 @@ class _AppDrawerState extends State<AppDrawer> {
     if (!mounted) return;
     Navigator.pop(context);
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => builder(u)));
+  }
+
+  /// Builds a sidebar shortcut row for a destination id (see [kAllSidebarDests]).
+  Widget _shortcutFor(String id) {
+    final d = sidebarDestById(id);
+    return _Shortcut(
+      icon: d.icon,
+      color: d.color,
+      label: d.label,
+      onTap: () {
+        switch (id) {
+          case 'feed':
+            Navigator.pop(context);
+          case 'reels':
+            _push(const ReelsScreen());
+          case 'map':
+            _push(const MapScreen());
+          case 'guides':
+            _push(const GuidesScreen());
+          case 'marketplace':
+            _push(const MarketplaceScreen());
+          case 'communities':
+            _push(const CommunitiesScreen());
+          case 'groups':
+            _push(const GroupsScreen());
+          case 'profile':
+            _pushWithUser((u) => ProfileScreen(userId: u.userId));
+          case 'friends':
+            _push(const FriendsScreen());
+          case 'connections':
+            _pushWithUser((u) => ConnectionsScreen(userId: u.userId));
+          case 'circles':
+            _push(const CirclesScreen());
+          case 'bookmarks':
+            _push(const BookmarksScreen());
+          case 'leaderboard':
+            _push(const LeaderboardScreen());
+          case 'notifications':
+            _push(const NotificationsScreen());
+          case 'wallet':
+            _push(const WalletScreen());
+          case 'search':
+            _push(const SearchScreen());
+          case 'roadside':
+            _push(const RoadsideScreen());
+          case 'forms':
+            _push(const FormsScreen());
+          case 'advertising':
+            _push(const AdsScreen());
+          case 'apikeys':
+            _push(const ApiKeysScreen());
+          case 'support':
+            _push(const SupportScreen());
+        }
+      },
+    );
   }
 
   Future<void> _signOut() async {
@@ -110,80 +175,14 @@ class _AppDrawerState extends State<AppDrawer> {
                   _profileCard(scheme),
                   const SizedBox(height: 8),
 
-                  _sectionHeader('DISCOVER'),
-                  _Shortcut(
-                    icon: Icons.home_rounded,
-                    color: const Color(0xFF3B82F6),
-                    label: 'Feed',
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _Shortcut(
-                    icon: Icons.videocam_rounded,
-                    color: const Color(0xFFEC4899),
-                    label: 'Reels',
-                    onTap: () => _push(const ReelsScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.map_rounded,
-                    color: const Color(0xFF10B981),
-                    label: 'Map',
-                    onTap: () => _push(const MapScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.collections_bookmark_rounded,
-                    color: const Color(0xFF14B8A6),
-                    label: 'Places & Guides',
-                    onTap: () => _push(const GuidesScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.storefront_rounded,
-                    color: const Color(0xFFF97316),
-                    label: 'Marketplace',
-                    onTap: () => _push(const MarketplaceScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.tag_rounded,
-                    color: const Color(0xFF06B6D4),
-                    label: 'Communities',
-                    onTap: () => _push(const CommunitiesScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.groups_rounded,
-                    color: const Color(0xFFA855F7),
-                    label: 'Groups',
-                    onTap: () => _push(const GroupsScreen()),
-                  ),
-
-                  _sectionHeader('SERVICES'),
-                  _Shortcut(
-                    icon: Icons.car_repair_rounded,
-                    color: const Color(0xFFF43F5E),
-                    label: 'Roadside assistance',
-                    onTap: () => _push(const RoadsideScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.assignment_rounded,
-                    color: const Color(0xFF8B5CF6),
-                    label: 'Forms',
-                    onTap: () => _push(const FormsScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.campaign_rounded,
-                    color: const Color(0xFFF97316),
-                    label: 'Advertising',
-                    onTap: () => _push(const AdsScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.vpn_key_rounded,
-                    color: const Color(0xFF0EA5E9),
-                    label: 'Developer API keys',
-                    onTap: () => _push(const ApiKeysScreen()),
-                  ),
-                  _Shortcut(
-                    icon: Icons.support_agent_rounded,
-                    color: const Color(0xFF38BDF8),
-                    label: 'Help & support',
-                    onTap: () => _push(const SupportScreen()),
+                  // Customizable shortcut list (see Customize sidebar).
+                  ValueListenableBuilder<List<String>>(
+                    valueListenable: sidebarController,
+                    builder: (context, ids, _) => Column(
+                      children: [
+                        for (final id in ids) _shortcutFor(id),
+                      ],
+                    ),
                   ),
 
                   const Divider(height: 24, indent: 20, endIndent: 20),
@@ -192,6 +191,12 @@ class _AppDrawerState extends State<AppDrawer> {
                     color: const Color(0xFF06B6D4),
                     label: 'Customize navigation',
                     onTap: () => _push(const CustomizeNavScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.view_sidebar_outlined,
+                    color: const Color(0xFFA855F7),
+                    label: 'Customize sidebar',
+                    onTap: () => _push(const CustomizeSidebarScreen()),
                   ),
                   _Shortcut(
                     icon: Icons.settings_rounded,
@@ -307,18 +312,6 @@ class _AppDrawerState extends State<AppDrawer> {
           );
         },
       ),
-    );
-  }
-
-  Widget _sectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-      child: Text(title,
-          style: TextStyle(
-              color: Theme.of(context).colorScheme.outline,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.6)),
     );
   }
 }
