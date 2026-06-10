@@ -1,0 +1,84 @@
+# Codemagic CI/CD configuration for OkaySpace (Flutter, Android + iOS).
+# Docs: https://docs.codemagic.io/yaml-quick-start/building-a-flutter-app/
+#
+# Before the iOS workflow can run you must, in the Codemagic UI:
+#   1. Connect an App Store Connect API key under
+#      Teams > Integrations > Developer Portal (or per-app Code signing).
+#   2. Register the bundle id `com.okayspace.okayspace` in your Apple
+#      Developer account / App Store Connect (create the app record).
+#   3. Reference the integration name below in `app_store_connect`.
+# See the chat notes for the full Apple-side checklist.
+
+workflows:
+  ios:
+    name: OkaySpace iOS
+    instance_type: mac_mini_m2          # macOS build machine (required for iOS)
+    max_build_duration: 60
+    integrations:
+      app_store_connect: OkaySpace ASC  # <-- name of your App Store Connect API key integration
+    environment:
+      flutter: 3.44.1
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store    # use `ad_hoc` for device testing builds
+        bundle_identifier: com.okayspace.okayspace
+      vars:
+        APP_STORE_APPLE_ID: 0000000000  # <-- your app's numeric Apple ID from App Store Connect
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install CocoaPods
+        script: |
+          cd ios && pod install
+      - name: Flutter analyze
+        script: flutter analyze
+      - name: Flutter test
+        script: flutter test
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Build IPA
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      # Uncomment to auto-upload to TestFlight once signing works.
+      # app_store_connect:
+      #   auth: integration
+      #   submit_to_testflight: true
+      email:
+        recipients:
+          - ifakhargomi@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  android:
+    name: OkaySpace Android
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      flutter: 3.44.1
+      java: 21
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Flutter analyze
+        script: flutter analyze
+      - name: Flutter test
+        script: flutter test
+      - name: Build APK (debug — no signing configured yet)
+        script: flutter build apk --debug
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+    publishing:
+      email:
+        recipients:
+          - ifakhargomi@gmail.com
+        notify:
+          success: true
+          failure: true
