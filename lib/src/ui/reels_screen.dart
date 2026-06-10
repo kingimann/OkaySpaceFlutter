@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -73,6 +74,90 @@ class _ReelsScreenState extends State<ReelsScreen> {
     }
   }
 
+  Future<void> _repost(int i) async {
+    try {
+      final updated = await api.feed.toggleRepost(_reels[i].id);
+      if (mounted) setState(() => _reels[i] = updated);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _bookmark(int i) async {
+    try {
+      final updated = await api.feed.toggleBookmark(_reels[i].id);
+      if (mounted) setState(() => _reels[i] = updated);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  void _more(int i) {
+    final post = _reels[i];
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.forward_to_inbox_outlined),
+              title: const Text('Share to a chat'),
+              onTap: () async {
+                Navigator.pop(context);
+                final target = await pickConversation(context);
+                if (target == null || !mounted) return;
+                try {
+                  await api.messaging.send(
+                      target.id, MessageCreate(type: 'post', postId: post.id));
+                  if (mounted) showInfo(context, 'Shared to chat');
+                } catch (e) {
+                  if (mounted) showError(context, e);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Copy link'),
+              onTap: () async {
+                Navigator.pop(context);
+                await Clipboard.setData(ClipboardData(
+                    text: 'https://okayspace.ca/post/${post.id}'));
+                if (mounted) showInfo(context, 'Link copied');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.visibility_off_outlined),
+              title: const Text('Not interested'),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await api.feed.notInterested(post.id);
+                  if (mounted) showInfo(context, "We'll show fewer like this.");
+                } catch (e) {
+                  if (mounted) showError(context, e);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: const Text('Report'),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await api.feed.report(post.id, 'inappropriate');
+                  if (mounted) showInfo(context, 'Reported. Thank you.');
+                } catch (e) {
+                  if (mounted) showError(context, e);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -104,8 +189,13 @@ class _ReelsScreenState extends State<ReelsScreen> {
                   child: PageView.builder(
                     scrollDirection: Axis.vertical,
                     itemCount: _reels.length,
-                    itemBuilder: (context, i) =>
-                        _ReelPage(post: _reels[i], onLike: () => _like(i)),
+                    itemBuilder: (context, i) => _ReelPage(
+                      post: _reels[i],
+                      onLike: () => _like(i),
+                      onRepost: () => _repost(i),
+                      onBookmark: () => _bookmark(i),
+                      onMore: () => _more(i),
+                    ),
                   ),
                 );
               },
@@ -184,38 +274,64 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 }
 
-class _ReelPage extends StatelessWidget {
-  const _ReelPage({required this.post, required this.onLike});
+class _ReelPage extends StatefulWidget {
+  const _ReelPage({
+    required this.post,
+    required this.onLike,
+    required this.onRepost,
+    required this.onBookmark,
+    required this.onMore,
+  });
 
   final Post post;
   final VoidCallback onLike;
+  final VoidCallback onRepost;
+  final VoidCallback onBookmark;
+  final VoidCallback onMore;
+
+  @override
+  State<_ReelPage> createState() => _ReelPageState();
+}
+
+class _ReelPageState extends State<_ReelPage> {
+  bool _showHeart = false;
+
+  void _doubleTapLike() {
+    widget.onLike();
+    setState(() => _showHeart = true);
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => _showHeart = false);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final post = widget.post;
     final media = post.media.isNotEmpty ? post.media.first : null;
     final url = media?.url;
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Media: autoplaying looped video, or a cover image.
-        if (url != null && url.isNotEmpty)
-          (media?.isVideo ?? false)
-              ? PostVideo(
-                  url: url,
-                  poster: media?.thumbnail,
-                  autoPlay: true,
-                  looping: true,
-                  // Browsers only allow muted autoplay; start muted on web so
-                  // reels actually play (tap toggles play/pause).
-                  muted: kIsWeb,
-                  resolveOnError: () => api.feed.resolveVideoUrl(url),
-                )
-              : Image.network(url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      const ColoredBox(color: Colors.black))
-        else
-          const ColoredBox(color: Color(0xFF101820)),
+        // Media: autoplaying looped video, or a cover image. Double-tap = like.
+        GestureDetector(
+          onDoubleTap: _doubleTapLike,
+          child: (url != null && url.isNotEmpty)
+              ? ((media?.isVideo ?? false)
+                  ? PostVideo(
+                      url: url,
+                      poster: media?.thumbnail,
+                      autoPlay: true,
+                      looping: true,
+                      // Browsers only allow muted autoplay; start muted on web.
+                      muted: kIsWeb,
+                      resolveOnError: () => api.feed.resolveVideoUrl(url),
+                    )
+                  : Image.network(url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const ColoredBox(color: Colors.black)))
+              : const ColoredBox(color: Color(0xFF101820)),
+        ),
         // Bottom gradient for legibility.
         const DecoratedBox(
           decoration: BoxDecoration(
@@ -238,6 +354,24 @@ class _ReelPage extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [Colors.black54, Colors.transparent],
+              ),
+            ),
+          ),
+        ),
+        // Double-tap "like" heart pop.
+        IgnorePointer(
+          child: AnimatedOpacity(
+            opacity: _showHeart ? 1 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: AnimatedScale(
+              scale: _showHeart ? 1 : 0.5,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              child: const Center(
+                child: Icon(Icons.favorite,
+                    color: Colors.white,
+                    size: 120,
+                    shadows: [Shadow(color: Colors.black54, blurRadius: 16)]),
               ),
             ),
           ),
@@ -292,7 +426,7 @@ class _ReelPage extends StatelessWidget {
                 icon: post.likedByMe ? Icons.favorite : Icons.favorite_border,
                 color: post.likedByMe ? Colors.red : Colors.white,
                 label: formatCount(post.likesCount),
-                onTap: onLike,
+                onTap: widget.onLike,
               ),
               const SizedBox(height: 18),
               _ReelAction(
@@ -304,8 +438,29 @@ class _ReelPage extends StatelessWidget {
               const SizedBox(height: 18),
               _ReelAction(
                 icon: Icons.repeat,
-                color: Colors.white,
+                color: post.repostedByMe
+                    ? const Color(0xFF22C55E)
+                    : Colors.white,
                 label: formatCount(post.repostsCount),
+                onTap: widget.onRepost,
+              ),
+              const SizedBox(height: 18),
+              _ReelAction(
+                icon: post.bookmarkedByMe
+                    ? Icons.bookmark
+                    : Icons.bookmark_border,
+                color: post.bookmarkedByMe
+                    ? const Color(0xFFF6C455)
+                    : Colors.white,
+                label: formatCount(post.bookmarksCount),
+                onTap: widget.onBookmark,
+              ),
+              const SizedBox(height: 18),
+              _ReelAction(
+                icon: Icons.more_horiz,
+                color: Colors.white,
+                label: '',
+                onTap: widget.onMore,
               ),
             ],
           ),
