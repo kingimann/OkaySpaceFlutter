@@ -13,7 +13,9 @@ import 'customize_sidebar_screen.dart';
 import 'forms_screen.dart';
 import 'friends_screen.dart';
 import 'guides_screen.dart';
+import 'documents_screen.dart';
 import 'leaderboard_screen.dart';
+import 'muted_words_screen.dart';
 import 'roadside_screen.dart';
 import 'support_screen.dart';
 
@@ -634,6 +636,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 api.auth.updateProfile({'hide_stories_row': v}).ignore();
               },
             ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.volume_off_outlined),
+            title: const Text('Muted & priority words'),
+            subtitle: const Text('Hide or boost posts by keyword'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const MutedWordsScreen())),
+          ),
+          ListTile(
+            leading: const Icon(Icons.verified_user_outlined),
+            title: const Text('Verification'),
+            subtitle: const Text('Email, phone & ID verification status'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const DocumentsScreen())),
           ),
         ]),
       ];
