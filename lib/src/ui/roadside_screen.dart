@@ -15,7 +15,34 @@ const _services = <(String, String, IconData)>[
 String _serviceLabel(String key) =>
     _services.firstWhere((s) => s.$1 == key, orElse: () => (key, key, Icons.help_outline)).$2;
 
-/// Roadside assistance: your requests plus a button to request help.
+IconData _serviceIcon(String key) => _services
+    .firstWhere((s) => s.$1 == key, orElse: () => ('', '', Icons.help_outline))
+    .$3;
+
+/// A status pill color for a roadside request.
+Color _statusColor(String status) {
+  switch (status.toLowerCase()) {
+    case 'pending':
+    case 'open':
+      return const Color(0xFFF59E0B);
+    case 'accepted':
+    case 'enroute':
+    case 'en_route':
+    case 'arrived':
+      return const Color(0xFF06B6D4);
+    case 'completed':
+      return const Color(0xFF22C55E);
+    case 'cancelled':
+    case 'canceled':
+    case 'disputed':
+      return const Color(0xFFF43F5E);
+    default:
+      return const Color(0xFF8696A0);
+  }
+}
+
+/// Roadside assistance: tabbed view of your requests, nearby calls to help
+/// with, requests you're helping, and history.
 class RoadsideScreen extends StatefulWidget {
   const RoadsideScreen({super.key});
 
@@ -24,16 +51,29 @@ class RoadsideScreen extends StatefulWidget {
 }
 
 class _RoadsideScreenState extends State<RoadsideScreen> {
+  // Default search origin until device location is available.
+  static const _lat = 43.6532, _lng = -79.3832;
+
   late Future<List<RoadsideRequest>> _mine;
+  late Future<List<RoadsideRequest>> _nearby;
+  late Future<List<RoadsideRequest>> _helping;
+  late Future<List<RoadsideRequest>> _history;
 
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  void _load() {
     _mine = api.roadside.mine();
+    _nearby = api.roadside.nearby(lat: _lat, lng: _lng, radiusKm: 50);
+    _helping = api.roadside.helping();
+    _history = api.roadside.history();
   }
 
   Future<void> _reload() async {
-    setState(() => _mine = api.roadside.mine());
+    setState(_load);
     await _mine;
   }
 
@@ -44,60 +84,362 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
     if (created == true) _reload();
   }
 
-  Future<void> _cancel(RoadsideRequest r) async {
+  Future<void> _open(RoadsideRequest r) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => RoadsideDetailScreen(requestId: r.id),
+    ));
+    _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 4,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Roadside assistance'),
+          bottom: const TabBar(
+            isScrollable: true,
+            tabs: [
+              Tab(text: 'My requests'),
+              Tab(text: 'Nearby'),
+              Tab(text: 'Helping'),
+              Tab(text: 'History'),
+            ],
+          ),
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _request,
+          icon: const Icon(Icons.add_alert),
+          label: const Text('Request help'),
+        ),
+        body: MaxWidth(
+          child: TabBarView(
+            children: [
+              _list(_mine, 'No roadside requests.\nTap “Request help” if you’re stuck.'),
+              _list(_nearby, 'No open requests nearby right now.'),
+              _list(_helping, "You're not helping with any requests."),
+              _list(_history, 'No past requests.'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _list(Future<List<RoadsideRequest>> future, String empty) {
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: AsyncList<RoadsideRequest>(
+        future: future,
+        loading: const ListSkeleton(),
+        emptyMessage: empty,
+        emptyIcon: Icons.car_repair,
+        builder: (context, items) => ListView.separated(
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (context, i) {
+            final r = items[i];
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundColor: _statusColor(r.status).withValues(alpha: 0.18),
+                child: Icon(_serviceIcon(r.service),
+                    color: _statusColor(r.status)),
+              ),
+              title: Text(_serviceLabel(r.service),
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text([
+                if (r.placeName != null) r.placeName!,
+                shortAgo(r.createdAt),
+                if (r.distanceKm != null)
+                  '${r.distanceKm!.toStringAsFixed(1)} km',
+              ].join(' · ')),
+              trailing: _StatusPill(status: r.status),
+              onTap: () => _open(r),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.status});
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(status,
+          style: TextStyle(
+              color: c, fontWeight: FontWeight.bold, fontSize: 12)),
+    );
+  }
+}
+
+/// Full request detail with the lifecycle actions appropriate to the viewer
+/// (requester vs. helper) and the current status.
+class RoadsideDetailScreen extends StatefulWidget {
+  const RoadsideDetailScreen({super.key, required this.requestId});
+
+  final String requestId;
+
+  @override
+  State<RoadsideDetailScreen> createState() => _RoadsideDetailScreenState();
+}
+
+class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
+  late Future<RoadsideRequest> _req;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _req = api.roadside.get(widget.requestId);
+  }
+
+  Future<void> _do(Future<RoadsideRequest> Function() op, String ok) async {
+    setState(() => _busy = true);
     try {
-      await api.roadside.cancel(r.id);
-      await _reload();
+      await op();
+      if (mounted) {
+        showInfo(context, ok);
+        setState(() => _req = api.roadside.get(widget.requestId));
+      }
     } catch (e) {
       if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _review() async {
+    final result = await showDialog<(int, String)>(
+      context: context,
+      builder: (_) => const _ReviewDialog(),
+    );
+    if (result == null) return;
+    _do(() => api.roadside.review(widget.requestId,
+        rating: result.$1, text: result.$2.isEmpty ? null : result.$2),
+        'Thanks for your review');
+  }
+
+  Future<void> _verify() async {
+    final code = await promptText(context,
+        title: 'Enter completion code',
+        hint: '6-digit code from the helper',
+        action: 'Verify');
+    if (code == null) return;
+    _do(() => api.roadside.verify(widget.requestId, code), 'Verified');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Roadside assistance')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _request,
-        icon: const Icon(Icons.add_alert),
-        label: const Text('Request help'),
-      ),
+      appBar: AppBar(title: const Text('Request')),
       body: MaxWidth(
-        child: RefreshIndicator(
-        onRefresh: _reload,
-        child: AsyncList<RoadsideRequest>(
-          future: _mine,
-          loading: const ListSkeleton(),
-          emptyMessage: 'No roadside requests.\nTap “Request help” if you’re stuck.',
-          emptyIcon: Icons.car_repair,
-          builder: (context, items) => ListView.separated(
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, i) {
-              final r = items[i];
-              return ListTile(
-                leading: CircleAvatar(
-                  child: Icon(_services
-                      .firstWhere((s) => s.$1 == r.service,
-                          orElse: () => ('', '', Icons.help_outline))
-                      .$3),
+        child: FutureBuilder<RoadsideRequest>(
+          future: _req,
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final r = snap.data!;
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 26,
+                      backgroundColor:
+                          _statusColor(r.status).withValues(alpha: 0.18),
+                      child: Icon(_serviceIcon(r.service),
+                          color: _statusColor(r.status), size: 26),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_serviceLabel(r.service),
+                              style: Theme.of(context).textTheme.titleLarge),
+                          if (r.callNumber != null)
+                            Text('Call #${r.callNumber}',
+                                style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                    _StatusPill(status: r.status),
+                  ],
                 ),
-                title: Text(_serviceLabel(r.service)),
-                subtitle: Text(
-                    '${r.status}${r.placeName != null ? ' · ${r.placeName}' : ''} · ${shortAgo(r.createdAt)}'),
-                trailing: r.isActive
-                    ? TextButton(
-                        onPressed: () => _cancel(r),
-                        child: const Text('Cancel'))
-                    : Text(r.total > 0
-                        ? '\$${r.total.toStringAsFixed(2)}'
-                        : ''),
-              );
-            },
-          ),
+                const SizedBox(height: 16),
+                _row(Icons.place_outlined, r.placeName ?? 'Location set'),
+                if (r.vehicleMake != null || r.vehicleModel != null)
+                  _row(Icons.directions_car_outlined,
+                      [r.vehicleColor, r.vehicleMake, r.vehicleModel]
+                          .where((e) => e != null && e.isNotEmpty)
+                          .join(' ')),
+                if (r.note != null && r.note!.isNotEmpty)
+                  _row(Icons.notes, r.note!),
+                if (r.total > 0)
+                  _row(Icons.attach_money,
+                      'Total \$${r.total.toStringAsFixed(2)}'),
+                if (r.distanceKm != null)
+                  _row(Icons.straighten,
+                      '${r.distanceKm!.toStringAsFixed(1)} km away'),
+                const SizedBox(height: 24),
+                ..._actions(r),
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+
+  Widget _row(IconData icon, String text) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: Theme.of(context).colorScheme.outline),
+            const SizedBox(width: 12),
+            Expanded(child: Text(text)),
+          ],
+        ),
+      );
+
+  /// Lifecycle buttons depend on whether the request is mine, I'm helping,
+  /// and the status.
+  List<Widget> _actions(RoadsideRequest r) {
+    final status = r.status.toLowerCase();
+    final btns = <Widget>[];
+
+    FilledButton big(String label, IconData icon, VoidCallback onTap,
+            {Color? color}) =>
+        FilledButton.icon(
+          onPressed: _busy ? null : onTap,
+          icon: Icon(icon),
+          label: Text(label),
+          style: color != null
+              ? FilledButton.styleFrom(backgroundColor: color)
+              : null,
+        );
+
+    if (r.mine) {
+      if (r.isActive) {
+        btns.add(big('Cancel request', Icons.cancel_outlined,
+            () => _do(() => api.roadside.cancel(r.id), 'Cancelled'),
+            color: Theme.of(context).colorScheme.error));
+        btns.add(const SizedBox(height: 10));
+        btns.add(OutlinedButton.icon(
+          onPressed: _busy ? null : _verify,
+          icon: const Icon(Icons.verified_outlined),
+          label: const Text('Enter completion code'),
+        ));
+      }
+      if (status == 'completed' && (r.canReview ?? false)) {
+        btns.add(big('Leave a review', Icons.star_outline, _review));
+      }
+      if (r.canDispute ?? false) {
+        btns.add(const SizedBox(height: 10));
+        btns.add(OutlinedButton.icon(
+          onPressed: _busy
+              ? null
+              : () => _do(() => api.roadside.dispute(r.id), 'Dispute opened'),
+          icon: const Icon(Icons.gavel_outlined),
+          label: const Text('Open a dispute'),
+        ));
+      }
+    } else {
+      // Helper view.
+      if (r.helping) {
+        if (!r.enRoute) {
+          btns.add(big("I'm on my way", Icons.directions_car,
+              () => _do(() => api.roadside.enroute(r.id), 'Marked en route')));
+        } else if (!r.arrived) {
+          btns.add(big("I've arrived", Icons.flag,
+              () => _do(() => api.roadside.arrived(r.id), 'Marked arrived')));
+        } else {
+          btns.add(const Text('Waiting for the requester to confirm…'));
+        }
+      } else if (status == 'pending' || status == 'open') {
+        btns.add(big('Accept & help', Icons.volunteer_activism,
+            () => _do(() => api.roadside.accept(r.id), 'You accepted'),
+            color: const Color(0xFF22C55E)));
+      }
+    }
+
+    if (btns.isEmpty) {
+      btns.add(Center(
+        child: Text('No actions available.',
+            style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+      ));
+    }
+    return btns;
+  }
+}
+
+/// A 1–5 star review with optional text.
+class _ReviewDialog extends StatefulWidget {
+  const _ReviewDialog();
+
+  @override
+  State<_ReviewDialog> createState() => _ReviewDialogState();
+}
+
+class _ReviewDialogState extends State<_ReviewDialog> {
+  int _rating = 5;
+  final _text = TextEditingController();
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Leave a review'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 1; i <= 5; i++)
+                IconButton(
+                  onPressed: () => setState(() => _rating = i),
+                  icon: Icon(i <= _rating ? Icons.star : Icons.star_border,
+                      color: const Color(0xFFF59E0B)),
+                ),
+            ],
+          ),
+          TextField(
+            controller: _text,
+            maxLines: 3,
+            decoration: const InputDecoration(
+                labelText: 'Comments (optional)',
+                border: OutlineInputBorder()),
+          ),
+        ],
       ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: () => Navigator.pop(context, (_rating, _text.text.trim())),
+            child: const Text('Submit')),
+      ],
     );
   }
 }
