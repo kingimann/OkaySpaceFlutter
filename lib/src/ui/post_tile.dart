@@ -53,6 +53,41 @@ Future<void> _showPostMenu(BuildContext context, Post post) async {
   }
 }
 
+/// Long-press the like button to pick an emoji reaction.
+Future<void> _reactToPost(BuildContext context, Post post) async {
+  const emojis = ['❤️', '😂', '😮', '😢', '😡', '👍', '🔥'];
+  final emoji = await showModalBottomSheet<String>(
+    context: context,
+    builder: (_) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          children: [
+            for (final e in emojis)
+              InkWell(
+                onTap: () => Navigator.pop(context, e),
+                borderRadius: BorderRadius.circular(24),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(e, style: const TextStyle(fontSize: 30)),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (emoji == null || !context.mounted) return;
+  try {
+    await api.feed.react(post.id, emoji);
+    if (context.mounted) showInfo(context, 'Reacted $emoji');
+  } catch (e) {
+    if (context.mounted) showError(context, e);
+  }
+}
+
 Future<void> _reportPost(BuildContext context, Post post) async {
   final controller = TextEditingController();
   final reason = await showDialog<String>(
@@ -224,6 +259,7 @@ class PostTile extends StatelessWidget {
                 count: post.likesCount,
                 color: post.likedByMe ? Colors.red : null,
                 onTap: onLike,
+                onLongPress: () => _reactToPost(context, post),
               ),
               _PostAction(
                   icon: Icons.mode_comment_outlined, count: post.repliesCount),
@@ -443,18 +479,21 @@ class _PostAction extends StatelessWidget {
     required this.count,
     this.color,
     this.onTap,
+    this.onLongPress,
   });
 
   final IconData icon;
   final int count;
   final Color? color;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final muted = Theme.of(context).colorScheme.outline;
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

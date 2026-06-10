@@ -36,14 +36,50 @@ class _WalletScreenState extends State<WalletScreen> {
     if (sent == true) _reload();
   }
 
+  Future<void> _request() async {
+    final done = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => const RequestMoneyScreen(),
+    ));
+    if (done == true) _reload();
+  }
+
+  void _sendOrRequest() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.send),
+              title: const Text('Send money'),
+              onTap: () {
+                Navigator.pop(context);
+                _send();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.request_page_outlined),
+              title: const Text('Request money'),
+              onTap: () {
+                Navigator.pop(context);
+                _request();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Wallet')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _send,
-        icon: const Icon(Icons.send),
-        label: const Text('Send'),
+        onPressed: _sendOrRequest,
+        icon: const Icon(Icons.swap_horiz),
+        label: const Text('Transfer'),
       ),
       body: RefreshIndicator(
         onRefresh: _reload,
@@ -336,6 +372,153 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.send),
               label: const Text('Send'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Request money: search a recipient, then enter amount and an optional note.
+class RequestMoneyScreen extends StatefulWidget {
+  const RequestMoneyScreen({super.key});
+
+  @override
+  State<RequestMoneyScreen> createState() => _RequestMoneyScreenState();
+}
+
+class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
+  final _search = TextEditingController();
+  final _amount = TextEditingController();
+  final _note = TextEditingController();
+  Future<List<PublicUser>>? _results;
+  PublicUser? _from;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    _amount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  void _runSearch() {
+    final q = _search.text.trim();
+    if (q.isEmpty) return;
+    setState(() => _results = api.users.search(q));
+  }
+
+  Future<void> _request() async {
+    final amount = num.tryParse(_amount.text.trim());
+    if (_from == null || amount == null || amount <= 0) {
+      showInfo(context, 'Pick someone and a valid amount.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await api.wallet.requestMoney(
+        toUserId: _from!.userId,
+        amount: amount,
+        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+      );
+      if (mounted) {
+        showInfo(context, 'Requested ${_amount.text} from ${_from!.name}');
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Request money')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (_from == null) ...[
+            TextField(
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _runSearch(),
+              decoration: InputDecoration(
+                labelText: 'Request from',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                    icon: const Icon(Icons.arrow_forward),
+                    onPressed: _runSearch),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_results != null)
+              FutureBuilder<List<PublicUser>>(
+                future: _results,
+                builder: (context, snapshot) {
+                  final users = snapshot.data ?? const [];
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()));
+                  }
+                  if (users.isEmpty) {
+                    return const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: Text('No matches.')));
+                  }
+                  return Column(children: [
+                    for (final u in users)
+                      ListTile(
+                        leading: Avatar(url: u.picture, name: u.name),
+                        title: Text(u.name),
+                        subtitle: u.username != null ? Text(u.handle) : null,
+                        onTap: () => setState(() => _from = u),
+                      ),
+                  ]);
+                },
+              ),
+          ] else ...[
+            Card(
+              child: ListTile(
+                leading: Avatar(url: _from!.picture, name: _from!.name),
+                title: Text(_from!.name),
+                subtitle: _from!.username != null ? Text(_from!.handle) : null,
+                trailing: TextButton(
+                    onPressed: () => setState(() => _from = null),
+                    child: const Text('Change')),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _amount,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Amount',
+                  prefixIcon: Icon(Icons.attach_money),
+                  border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _note,
+              decoration: const InputDecoration(
+                  labelText: 'Note (optional)', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _busy ? null : _request,
+              icon: _busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.request_page_outlined),
+              label: const Text('Request'),
             ),
           ],
         ],

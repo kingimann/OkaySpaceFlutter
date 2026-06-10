@@ -15,11 +15,21 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   late Future<List<AppNotification>> _notifications;
+  late Future<List<Map<String, dynamic>>> _activity;
 
   @override
   void initState() {
     super.initState();
     _notifications = api.notifications.list();
+    _activity = api.notifications.activity().then((d) {
+      if (d is List) {
+        return d
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return <Map<String, dynamic>>[];
+    });
   }
 
   Future<void> _reload() async {
@@ -68,17 +78,51 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notifications'),
-        actions: [
-          TextButton(
-            onPressed: _markAllRead,
-            child: const Text('Mark all read'),
-          ),
-        ],
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Notifications'),
+          actions: [
+            TextButton(
+              onPressed: _markAllRead,
+              child: const Text('Mark all read'),
+            ),
+          ],
+          bottom: const TabBar(tabs: [Tab(text: 'All'), Tab(text: 'Activity')]),
+        ),
+        body: TabBarView(
+          children: [_buildNotifications(), _buildActivity()],
+        ),
       ),
-      body: RefreshIndicator(
+    );
+  }
+
+  Widget _buildActivity() {
+    return AsyncList<Map<String, dynamic>>(
+      future: _activity,
+      emptyMessage: 'No recent activity.',
+      emptyIcon: Icons.bolt_outlined,
+      builder: (context, items) => ListView.separated(
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, i) {
+          final a = items[i];
+          final text = '${a['message'] ?? a['text'] ?? a['type'] ?? 'Activity'}';
+          final actor = '${a['actor_name'] ?? a['user_name'] ?? ''}';
+          return ListTile(
+            leading: Avatar(
+                url: '${a['actor_picture'] ?? a['picture'] ?? ''}',
+                name: actor.isEmpty ? '?' : actor),
+            title: Text(actor.isEmpty ? text : '$actor $text'),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildNotifications() {
+    return RefreshIndicator(
         onRefresh: _reload,
         child: AsyncList<AppNotification>(
           future: _notifications,
@@ -131,7 +175,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             },
           ),
         ),
-      ),
-    );
+      );
   }
 }
