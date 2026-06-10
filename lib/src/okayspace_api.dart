@@ -4,6 +4,7 @@ import 'core/token_store.dart';
 import 'services/admin_service.dart';
 import 'services/ads_service.dart';
 import 'services/auth_service.dart';
+import 'services/circles_service.dart';
 import 'services/communities_service.dart';
 import 'services/feed_service.dart';
 import 'services/forms_service.dart';
@@ -54,6 +55,7 @@ class OkaySpaceApi {
     forms = FormsService(this.client);
     stories = StoriesService(this.client);
     messaging = MessagingService(this.client);
+    circles = CirclesService(this.client);
     communities = CommunitiesService(this.client);
     groups = GroupsService(this.client);
     guides = GuidesService(this.client);
@@ -88,6 +90,9 @@ class OkaySpaceApi {
 
   /// `/conversations`, `/presence`, `/calls` — messaging.
   late final MessagingService messaging;
+
+  /// `/circles` — private audience circles for post targeting.
+  late final CirclesService circles;
 
   /// `/communities` — topic hubs, membership and moderation.
   late final CommunitiesService communities;

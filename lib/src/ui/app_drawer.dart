@@ -5,6 +5,7 @@ import 'ads_screen.dart';
 import 'api_keys_screen.dart';
 import 'app.dart';
 import 'bookmarks_screen.dart';
+import 'circles_screen.dart';
 import 'common.dart';
 import 'communities_screen.dart';
 import 'compose_screen.dart';
@@ -184,6 +185,12 @@ class _AppDrawerState extends State<AppDrawer> {
                     label: 'Followers & following',
                     onTap: () => _pushWithUser(
                         (u) => ConnectionsScreen(userId: u.userId)),
+                  ),
+                  _Shortcut(
+                    icon: Icons.workspaces_outline,
+                    color: const Color(0xFFEC4899),
+                    label: 'Circles',
+                    onTap: () => _push(const CirclesScreen()),
                   ),
                   _Shortcut(
                     icon: Icons.bookmark_rounded,

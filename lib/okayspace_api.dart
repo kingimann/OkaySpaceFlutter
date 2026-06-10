@@ -16,6 +16,7 @@ export 'src/core/token_store.dart';
 export 'src/services/admin_service.dart';
 export 'src/services/ads_service.dart';
 export 'src/services/auth_service.dart';
+export 'src/services/circles_service.dart';
 export 'src/services/communities_service.dart';
 export 'src/services/feed_service.dart';
 export 'src/services/forms_service.dart';
