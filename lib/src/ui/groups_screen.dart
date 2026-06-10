@@ -592,37 +592,26 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Text(g.name,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(
-                                            fontWeight: FontWeight.bold)),
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton.tonal(
-                                onPressed: (_working || g.membershipPending)
-                                    ? null
-                                    : () => _toggleMembership(g),
-                                child: Text(_membershipLabel(g)),
-                              ),
-                            ],
-                          ),
+                          Text(g.name,
+                              softWrap: true,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 10),
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
                               _statChip(context, Icons.people_outline,
                                   '${formatCount(g.memberCount)} members'),
-                              const SizedBox(width: 8),
                               _statChip(
                                   context,
-                                  g.isPrivate ? Icons.lock_outline : Icons.public,
+                                  g.isPrivate
+                                      ? Icons.lock_outline
+                                      : Icons.public,
                                   g.isPrivate ? 'Private' : 'Public'),
                             ],
                           ),
@@ -631,6 +620,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             const SizedBox(height: 12),
                             Text(g.description!),
                           ],
+                          const SizedBox(height: 14),
+                          FilledButton.tonal(
+                            onPressed: (_working || g.membershipPending)
+                                ? null
+                                : () => _toggleMembership(g),
+                            child: Text(_membershipLabel(g)),
+                          ),
                         ],
                       ),
                     ),
