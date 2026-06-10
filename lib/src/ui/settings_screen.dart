@@ -15,7 +15,9 @@ import 'friends_screen.dart';
 import 'guides_screen.dart';
 import 'connected_apps_screen.dart';
 import 'documents_screen.dart';
+import 'games_screen.dart';
 import 'leaderboard_screen.dart';
+import 'monetize_screen.dart';
 import 'muted_words_screen.dart';
 import 'roadside_screen.dart';
 import 'support_screen.dart';
@@ -698,8 +700,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _shortcut(Icons.assignment_outlined, 'Forms',
               () => const FormsScreen()),
           const Divider(height: 1, indent: 56),
+          _shortcut(Icons.sports_esports_outlined, 'Games',
+              () => const GamesScreen()),
+          const Divider(height: 1, indent: 56),
           _shortcut(Icons.campaign_outlined, 'Advertising',
               () => const AdsScreen()),
+          const Divider(height: 1, indent: 56),
+          _shortcut(Icons.monetization_on_outlined, 'Monetize',
+              () => const MonetizeScreen()),
           const Divider(height: 1, indent: 56),
           _shortcut(Icons.leaderboard_outlined, 'Leaderboard',
               () => const LeaderboardScreen()),

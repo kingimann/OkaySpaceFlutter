@@ -548,9 +548,13 @@ class _ConversationTile extends StatelessWidget {
       'media' => '📷 Photo',
       'voice' => '🎤 Voice message',
       'gif' => 'GIF',
-      'post' => 'Shared a post',
+      'post' => '📄 Shared a post',
       'place' => '📍 Location',
-      'money' => '💸 Payment',
+      'money' || 'tip' => '💸 Payment',
+      'poll' => '📊 Poll',
+      'file' => '📎 File',
+      'contact' => '👤 Contact',
+      'form' => '📋 Form',
       _ => 'New message',
     };
   }
@@ -730,8 +734,10 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _compact = false;
   // Emoji used by double-tap-to-react (shared, local).
   String _defaultReaction = '❤️';
-  // Hide your own read receipts locally (per conversation).
-  bool _hideReceipts = false;
+  // Server-side read-receipts setting (whether others see your reads).
+  late bool _receiptsEnabled = widget.conversation.receiptsEnabled;
+  // Server chat theme (one of the 8 Messenger themes).
+  late String _chatTheme = widget.conversation.theme ?? 'default';
   // Index of the currently highlighted in-chat search match.
   final List<String> _searchHits = [];
   int _searchPos = 0;
@@ -746,7 +752,6 @@ class _ChatScreenState extends State<ChatScreen> {
   String get _scaleKey => 'okayspace.chat_scale.$_convId';
   String get _tsKey => 'okayspace.chat_ts.$_convId';
   String get _bubbleKey => 'okayspace.chat_bubble.$_convId';
-  String get _receiptKey => 'okayspace.chat_hidereceipts.$_convId';
   static const _quickKey = 'okayspace.chat_quickreplies';
   static const _enterKey = 'okayspace.chat_sendonenter';
   static const _fontKey = 'okayspace.chat_font';
@@ -848,11 +853,14 @@ class _ChatScreenState extends State<ChatScreen> {
       final square = await _storage.read(key: _cornerKey);
       final compact = await _storage.read(key: _densityKey);
       final react = await _storage.read(key: _reactKey);
-      final hideR = await _storage.read(key: _receiptKey);
       if (!mounted) return;
       setState(() {
+        // Start from the server chat theme, then let any local override win.
+        final themeColors = _chatThemes[_chatTheme] ?? (null, null);
+        _bgTint = themeColors.$1;
+        _bubbleColor = themeColors.$2;
         final argb = int.tryParse(bg ?? '');
-        _bgTint = (argb != null && argb != 0) ? Color(argb) : null;
+        if (argb != null && argb != 0) _bgTint = Color(argb);
         _muted = muted == '1';
         _textScale = double.tryParse(scale ?? '') ?? 1.0;
         if (quick != null && quick.isNotEmpty) {
@@ -860,13 +868,12 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         _showTimestamps = ts == '1';
         final bargb = int.tryParse(bubble ?? '');
-        _bubbleColor = (bargb != null && bargb != 0) ? Color(bargb) : null;
+        if (bargb != null && bargb != 0) _bubbleColor = Color(bargb);
         _sendOnEnter = enter != '0';
         _fontFamily = (font == 'serif' || font == 'mono') ? font! : 'default';
         _squareBubbles = square == '1';
         _compact = compact == '1';
         if (react != null && react.isNotEmpty) _defaultReaction = react;
-        _hideReceipts = hideR == '1';
       });
     } catch (_) {/* ignore */}
   }
@@ -909,9 +916,150 @@ class _ChatScreenState extends State<ChatScreen> {
         _sendOnEnter ? 'Enter now sends' : 'Enter now adds a new line');
   }
 
-  void _toggleReceipts() {
-    setState(() => _hideReceipts = !_hideReceipts);
-    _storage.write(key: _receiptKey, value: _hideReceipts ? '1' : '0').ignore();
+  Future<void> _toggleReadReceipts(bool enabled) async {
+    setState(() => _receiptsEnabled = enabled);
+    try {
+      await api.messaging.setReadReceipts(_convId, enabled);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _receiptsEnabled = !enabled);
+        showError(context, e);
+      }
+    }
+  }
+
+  /// The 8 Messenger-style chat themes → (background tint, own-bubble colour).
+  static const _chatThemes = <String, (Color?, Color?)>{
+    'default': (null, null),
+    'ocean': (Color(0xFFE3F2FD), Color(0xFF2563EB)),
+    'sunset': (Color(0xFFFFF1E6), Color(0xFFF97316)),
+    'forest': (Color(0xFFE8F5E9), Color(0xFF16A34A)),
+    'grape': (Color(0xFFF3E8FF), Color(0xFF7C3AED)),
+    'rose': (Color(0xFFFFE4EC), Color(0xFFE11D48)),
+    'midnight': (Color(0xFF1E293B), Color(0xFF6366F1)),
+    'mono': (Color(0xFFECEFF1), Color(0xFF374151)),
+  };
+
+  void _chooseChatTheme() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Chat theme',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final e in _chatThemes.entries)
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        _applyChatTheme(e.key);
+                      },
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: e.value.$2 ??
+                                  Theme.of(context).colorScheme.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _chatTheme == e.key
+                                    ? Theme.of(context).colorScheme.onSurface
+                                    : Colors.transparent,
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(e.key, style: const TextStyle(fontSize: 10)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _applyChatTheme(String theme) {
+    final colors = _chatThemes[theme] ?? (null, null);
+    setState(() {
+      _chatTheme = theme;
+      _bgTint = colors.$1;
+      _bubbleColor = colors.$2;
+    });
+    api.messaging.setTheme(_convId, theme).ignore();
+  }
+
+  /// Assembles a transcript from loaded messages and shows an AI summary.
+  Future<void> _summarizeChat() async {
+    final lines = <String>[];
+    for (final m in _items) {
+      if (m.deleted || m.text == null || m.text!.isEmpty) continue;
+      final who = _isMine(m) ? 'You' : _senderName(m.senderId);
+      lines.add('$who: ${m.text}');
+    }
+    if (lines.isEmpty) {
+      showInfo(context, 'Nothing to summarize yet');
+      return;
+    }
+    final transcript = lines.length > 150
+        ? lines.sublist(lines.length - 150).join('\n')
+        : lines.join('\n');
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final summary = await api.messaging.summarize(_convId, transcript);
+      if (!mounted) return;
+      Navigator.pop(context); // close spinner
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.auto_awesome,
+                      color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  const Text('Chat summary',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ]),
+                const SizedBox(height: 12),
+                Text(summary.isEmpty ? 'No summary available.' : summary),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        showError(context, e);
+      }
+    }
   }
 
   /// Bundled appearance options: font, bubble shape, density, default reaction.
@@ -1936,9 +2084,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 (isGroup && !mine && !msg.deleted) ? _senderName(msg.senderId) : null,
             receipt: (!isGroup &&
                     mine &&
-                    !_hideReceipts &&
-                    msg.id == lastMineId &&
-                    widget.conversation.receiptsEnabled)
+                    _receiptsEnabled &&
+                    msg.id == lastMineId)
                 ? _receipt(msg)
                 : null,
             // In selection mode, a tap toggles selection instead of opening.
@@ -2333,10 +2480,63 @@ class _ChatScreenState extends State<ChatScreen> {
                 _attachLocation();
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.poll_outlined),
+              title: const Text('Poll'),
+              onTap: () {
+                Navigator.pop(context);
+                _attachPoll();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_money),
+              title: const Text('Send a tip'),
+              onTap: () {
+                Navigator.pop(context);
+                _attachTip();
+              },
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// Composes and sends a poll message (question + 2–6 options).
+  Future<void> _attachPoll() async {
+    final result = await showDialog<(String, List<String>)>(
+      context: context,
+      builder: (_) => const _PollComposer(),
+    );
+    if (result == null || !mounted) return;
+    final (question, options) = result;
+    try {
+      await api.messaging.send(
+          _convId,
+          MessageCreate(
+              type: 'poll', pollQuestion: question, pollOptions: options));
+      await _fetch(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Sends a tip (money) inside the conversation.
+  Future<void> _attachTip() async {
+    final amountText = await promptText(context,
+        title: 'Send a tip', hint: 'Amount', action: 'Send');
+    final amount = num.tryParse(amountText ?? '');
+    if (amount == null || amount <= 0) return;
+    try {
+      await api.messaging
+          .send(_convId, MessageCreate(type: 'tip', amount: amount));
+      await _fetch(silent: true);
+      _scrollToBottom();
+      if (mounted) showInfo(context, 'Tip sent 🎉');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   /// Picks a point on a map and sends it as a location message.
@@ -2832,6 +3032,14 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('Chat theme'),
+              onTap: () {
+                Navigator.pop(context);
+                _chooseChatTheme();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.tune),
               title: const Text('Appearance'),
               onTap: () {
@@ -2839,16 +3047,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 _appearanceSheet();
               },
             ),
-            if (!widget.conversation.isGroup)
-              SwitchListTile(
-                secondary: const Icon(Icons.done_all),
-                title: const Text('Hide read receipts'),
-                value: _hideReceipts,
-                onChanged: (_) {
-                  Navigator.pop(context);
-                  _toggleReceipts();
-                },
-              ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('Summarize chat (AI)'),
+              onTap: () {
+                Navigator.pop(context);
+                _summarizeChat();
+              },
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.done_all),
+              title: const Text('Read receipts'),
+              subtitle: const Text('Let others see when you’ve read'),
+              value: _receiptsEnabled,
+              onChanged: (v) {
+                Navigator.pop(context);
+                _toggleReadReceipts(v);
+              },
+            ),
             SwitchListTile(
               secondary: const Icon(Icons.schedule_outlined),
               title: const Text('Show timestamps'),
@@ -3417,6 +3633,37 @@ class _MessageBubble extends StatelessWidget {
   /// Renders the first attached photo (network url, or base64 before refetch).
   /// Tapping opens a full-screen, zoomable viewer.
   /// A small non-interactive map preview for a shared location.
+  /// A poll bubble: the question + its options (read-only preview).
+  Widget _pollCard(Color fg) {
+    final question = '${message.raw['poll_question'] ?? 'Poll'}';
+    final opts = message.raw['poll_options'];
+    final options = opts is List ? opts.map((e) => '$e').toList() : <String>[];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.poll_outlined, size: 18, color: fg),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(question,
+                style: TextStyle(color: fg, fontWeight: FontWeight.bold)),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        for (final o in options)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: fg.withValues(alpha: 0.4)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(o, style: TextStyle(color: fg)),
+          ),
+      ],
+    );
+  }
+
   Widget _placeCard(double lat, double lng) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
@@ -3490,18 +3737,25 @@ class _MessageBubble extends StatelessWidget {
         !message.deleted &&
         placeLat != null &&
         placeLng != null;
+    final isPoll = message.type == 'poll' && !message.deleted;
+    final isTip = (message.type == 'tip' || message.type == 'money') &&
+        !message.deleted;
+    final tipAmount = (message.raw['amount'] as num?);
     final typeLabel = switch (message.type) {
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
-      'money' => '💸 Payment',
+      'money' || 'tip' => '💸 Payment',
       'gif' => 'GIF',
       'voice' => '🎤 Voice message',
       'contact' => '👤 Contact',
+      'file' => '📎 ${message.raw['file_name'] ?? 'File'}',
+      'form' => '📋 Form',
       _ => '[${message.type}]',
     };
     final bodyText = message.deleted
         ? 'Message deleted'
-        : (message.text ?? (hasMedia || hasPlace ? '' : typeLabel));
+        : (message.text ??
+            (hasMedia || hasPlace || isPoll || isTip ? '' : typeLabel));
     // A short, all-emoji message renders large with no bubble (like WhatsApp).
     final t = (message.text ?? '').trim();
     final emojiOnly = !message.deleted &&
@@ -3612,6 +3866,18 @@ class _MessageBubble extends StatelessWidget {
                           EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
                       child: _placeCard(placeLat, placeLng),
                     ),
+                  if (isTip)
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.volunteer_activism, color: fg, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                          tipAmount != null
+                              ? 'Tip · ${tipAmount.toStringAsFixed(2)}'
+                              : 'Sent a tip',
+                          style: TextStyle(
+                              color: fg, fontWeight: FontWeight.bold)),
+                    ]),
+                  if (isPoll) _pollCard(fg),
                   if (bodyText.isNotEmpty)
                     message.deleted
                         ? Text(bodyText,
@@ -4230,6 +4496,89 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A small composer for a poll message: a question and 2–6 options.
+class _PollComposer extends StatefulWidget {
+  const _PollComposer();
+
+  @override
+  State<_PollComposer> createState() => _PollComposerState();
+}
+
+class _PollComposerState extends State<_PollComposer> {
+  final _question = TextEditingController();
+  final List<TextEditingController> _options = [
+    TextEditingController(),
+    TextEditingController(),
+  ];
+
+  @override
+  void dispose() {
+    _question.dispose();
+    for (final c in _options) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _submit() {
+    final q = _question.text.trim();
+    final opts =
+        _options.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
+    if (q.isEmpty || opts.length < 2) {
+      showInfo(context, 'Add a question and at least 2 options');
+      return;
+    }
+    Navigator.pop(context, (q, opts));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create a poll'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _question,
+              decoration: const InputDecoration(
+                  labelText: 'Question', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < _options.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: _options[i],
+                  decoration: InputDecoration(
+                      labelText: 'Option ${i + 1}',
+                      border: const OutlineInputBorder(),
+                      isDense: true),
+                ),
+              ),
+            if (_options.length < 6)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add option'),
+                  onPressed: () =>
+                      setState(() => _options.add(TextEditingController())),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Send')),
+      ],
     );
   }
 }
