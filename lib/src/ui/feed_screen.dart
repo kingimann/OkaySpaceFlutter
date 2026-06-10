@@ -134,7 +134,6 @@ class _FeedScreenState extends State<FeedScreen> {
                         if (i == 0) {
                           return Column(
                             children: [
-                              _ComposerPrompt(onTap: _compose),
                               ValueListenableBuilder<bool>(
                                 valueListenable: hideStoriesController,
                                 builder: (context, hidden, _) => hidden
@@ -284,44 +283,6 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 }
 
-/// A tappable "What's on your mind?" prompt that opens the composer.
-class _ComposerPrompt extends StatelessWidget {
-  const _ComposerPrompt({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Material(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                const Avatar(url: null, name: '?', radius: 18),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text("What's on your mind?",
-                      style: TextStyle(color: scheme.outline)),
-                ),
-                Icon(Icons.image_outlined, color: scheme.primary, size: 22),
-                const SizedBox(width: 12),
-                Icon(Icons.poll_outlined, color: scheme.primary, size: 22),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// Horizontal strip of trending hashtags below the composer.
 class _TrendingStrip extends StatelessWidget {
