@@ -9,6 +9,7 @@ import 'communities_screen.dart';
 import 'compose_screen.dart';
 import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
+import 'forms_screen.dart';
 import 'friends_screen.dart';
 import 'groups_screen.dart';
 import 'guides_screen.dart';
@@ -214,6 +215,12 @@ class _AppDrawerState extends State<AppDrawer> {
                     color: const Color(0xFFF43F5E),
                     label: 'Roadside assistance',
                     onTap: () => _push(const RoadsideScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.assignment_rounded,
+                    color: const Color(0xFF8B5CF6),
+                    label: 'Forms',
+                    onTap: () => _push(const FormsScreen()),
                   ),
                   _Shortcut(
                     icon: Icons.vpn_key_rounded,

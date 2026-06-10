@@ -6,6 +6,7 @@ import 'services/ads_service.dart';
 import 'services/auth_service.dart';
 import 'services/communities_service.dart';
 import 'services/feed_service.dart';
+import 'services/forms_service.dart';
 import 'services/friends_service.dart';
 import 'services/groups_service.dart';
 import 'services/guides_service.dart';
@@ -50,6 +51,7 @@ class OkaySpaceApi {
   }) : client = client ?? ApiClient(config: config, tokenStore: tokenStore) {
     auth = AuthService(this.client);
     feed = FeedService(this.client);
+    forms = FormsService(this.client);
     stories = StoriesService(this.client);
     messaging = MessagingService(this.client);
     communities = CommunitiesService(this.client);
@@ -77,6 +79,9 @@ class OkaySpaceApi {
 
   /// `/feed`, `/posts`, `/hashtags` — the social feed.
   late final FeedService feed;
+
+  /// `/forms` — custom form builder and submissions.
+  late final FormsService forms;
 
   /// `/stories` — the stories tray, viewing, posting and replies.
   late final StoriesService stories;

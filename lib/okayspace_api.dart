@@ -18,6 +18,7 @@ export 'src/services/ads_service.dart';
 export 'src/services/auth_service.dart';
 export 'src/services/communities_service.dart';
 export 'src/services/feed_service.dart';
+export 'src/services/forms_service.dart';
 export 'src/services/friends_service.dart';
 export 'src/services/groups_service.dart';
 export 'src/services/guides_service.dart';
