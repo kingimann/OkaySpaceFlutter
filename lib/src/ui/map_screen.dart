@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,26 +11,53 @@ import '../../okayspace_api.dart';
 import 'common.dart';
 import 'marketplace_screen.dart';
 
-/// Free, no-API-key tile styles available on the map.
+/// Mapbox public access token, injected at build time via
+/// `--dart-define=MAPBOX_TOKEN=pk...`. When empty the map falls back to
+/// free OpenStreetMap/Carto tiles so it still works without a token.
+const _mapboxToken = String.fromEnvironment('MAPBOX_TOKEN');
+bool get _hasMapbox => _mapboxToken.isNotEmpty;
+
+/// A selectable basemap. [mapboxStyle] is set for Mapbox styles; otherwise
+/// [url] is a plain raster XYZ template.
 class _TileStyle {
-  const _TileStyle(this.id, this.label, this.url, {this.dark = false});
+  const _TileStyle(this.id, this.label,
+      {this.url = '', this.mapboxStyle = '', this.dark = false});
   final String id;
   final String label;
   final String url;
+  final String mapboxStyle;
   final bool dark;
+
+  bool get isMapbox => mapboxStyle.isNotEmpty;
+
+  /// Resolved tile URL template (Mapbox raster tiles when configured).
+  String get tileUrl => isMapbox
+      ? 'https://api.mapbox.com/styles/v1/mapbox/$mapboxStyle/tiles/512/{z}/{x}/{y}@2x?access_token=$_mapboxToken'
+      : url;
 }
 
-const _tileStyles = <_TileStyle>[
+const _mapboxStyles = <_TileStyle>[
+  _TileStyle('streets', 'Streets', mapboxStyle: 'streets-v12'),
+  _TileStyle('outdoors', 'Outdoors', mapboxStyle: 'outdoors-v12'),
+  _TileStyle('satellite', 'Satellite',
+      mapboxStyle: 'satellite-streets-v12', dark: true),
+  _TileStyle('light', 'Light', mapboxStyle: 'light-v11'),
+  _TileStyle('dark', 'Dark', mapboxStyle: 'dark-v11', dark: true),
+];
+
+const _osmStyles = <_TileStyle>[
   _TileStyle('standard', 'Standard',
-      'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
   _TileStyle('light', 'Light',
-      'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'),
+      url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'),
   _TileStyle('dark', 'Dark',
-      'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
       dark: true),
   _TileStyle('topo', 'Terrain',
-      'https://tile.opentopomap.org/{z}/{x}/{y}.png'),
+      url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png'),
 ];
+
+List<_TileStyle> get _tileStyles => _hasMapbox ? _mapboxStyles : _osmStyles;
 
 /// An interactive map with switchable layers — marketplace listings, open
 /// roadside requests and nearby transit — plus location search and an
@@ -67,11 +95,32 @@ class _MapScreenState extends State<MapScreen> {
   bool _showCrosshair = false;
   bool _cluster = false;
   bool _searchAsIMove = false;
+  bool _showGrid = false; // lat/lng graticule
+  bool _showLabels = false; // marker title labels
+  bool _rotationLocked = false;
+  bool _fullscreen = false;
+  double _pinSize = 38;
+  String _units = 'km'; // 'km' | 'mi'
 
   // Filters.
   double _maxPrice = 0; // 0 = no max
+  double _minPrice = 0;
+  bool _withPhotosOnly = false;
   String _roadsideStatus = 'all';
   String _savedCategory = 'all';
+  String _nearestSort = 'distance'; // 'distance' | 'price' | 'name'
+
+  // Live centre coordinate readout.
+  LatLng _liveCenter = _fallback;
+
+  // Multi-stop route (waypoints) + straight-line directions target.
+  bool _routing = false;
+  final List<LatLng> _route = [];
+  LatLng? _directionsTo;
+
+  // Polygon area-measure mode.
+  bool _areaMode = false;
+  final List<LatLng> _areaPoints = [];
 
   // Search suggestions + recents (persisted).
   List<Map<String, dynamic>> _suggestions = const [];
@@ -104,6 +153,9 @@ class _MapScreenState extends State<MapScreen> {
   static const _recentKey = 'okayspace.map.recent';
   static const _bookmarksKey = 'okayspace.map.bookmarks';
   static const _myLocKey = 'okayspace.map.mylocation';
+
+  // Zoom to restore once the map is ready (from the last saved view).
+  double? _restoreZoom;
 
   @override
   void initState() {
@@ -138,6 +190,18 @@ class _MapScreenState extends State<MapScreen> {
           _showRadiusCircle = d['radiusCircle'] as bool? ?? true;
           _showCrosshair = d['crosshair'] as bool? ?? false;
           _cluster = d['cluster'] as bool? ?? false;
+          _showGrid = d['grid'] as bool? ?? false;
+          _showLabels = d['labels'] as bool? ?? false;
+          _rotationLocked = d['rotLock'] as bool? ?? false;
+          _pinSize = (d['pinSize'] as num?)?.toDouble() ?? 38;
+          _units = d['units'] as String? ?? 'km';
+          final lat = (d['lastLat'] as num?)?.toDouble();
+          final lng = (d['lastLng'] as num?)?.toDouble();
+          if (lat != null && lng != null) {
+            _center = LatLng(lat, lng);
+            _liveCenter = _center;
+            _restoreZoom = (d['lastZoom'] as num?)?.toDouble();
+          }
         }
         if (r != null && r.isNotEmpty) {
           _recent = r.split('\n').where((s) => s.isNotEmpty).toList();
@@ -152,10 +216,16 @@ class _MapScreenState extends State<MapScreen> {
         }
       });
       if (_showSaved) _loadSaved();
+      if (_restoreZoom != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _controller.move(_center, _restoreZoom!);
+        });
+      }
     } catch (_) {/* ignore */}
   }
 
   void _savePrefs() {
+    final cam = _controller.camera;
     _storage
         .write(
             key: _prefsKey,
@@ -169,6 +239,14 @@ class _MapScreenState extends State<MapScreen> {
               'radiusCircle': _showRadiusCircle,
               'crosshair': _showCrosshair,
               'cluster': _cluster,
+              'grid': _showGrid,
+              'labels': _showLabels,
+              'rotLock': _rotationLocked,
+              'pinSize': _pinSize,
+              'units': _units,
+              'lastLat': cam.center.latitude,
+              'lastLng': cam.center.longitude,
+              'lastZoom': cam.zoom,
             }))
         .ignore();
   }
@@ -387,9 +465,17 @@ class _MapScreenState extends State<MapScreen> {
 
   static const _distance = Distance();
 
-  String _fmtDistance(double metres) => metres >= 1000
-      ? '${(metres / 1000).toStringAsFixed(1)} km'
-      : '${metres.round()} m';
+  String _fmtDistance(double metres) {
+    if (_units == 'mi') {
+      final miles = metres / 1609.344;
+      return miles >= 0.1
+          ? '${miles.toStringAsFixed(1)} mi'
+          : '${(metres / 0.3048).round()} ft';
+    }
+    return metres >= 1000
+        ? '${(metres / 1000).toStringAsFixed(1)} km'
+        : '${metres.round()} m';
+  }
 
   // --- Zoom / rotation / recenter -----------------------------------------
 
@@ -404,6 +490,173 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _recenter() => _controller.move(_center, _controller.camera.zoom);
+
+  void _zoomPreset(double zoom) => _controller.move(_controller.camera.center, zoom);
+
+  void _goToMyLocation() {
+    if (_myLocation == null) {
+      showInfo(context, 'No location pin set — long-press the map to set one');
+      return;
+    }
+    _controller.move(_myLocation!, 14);
+  }
+
+  /// Fits the camera to all currently shown markers.
+  void _fitAll() {
+    final pts = <LatLng>[
+      for (final l in _listings)
+        if (l.latitude != null && l.longitude != null)
+          LatLng(l.latitude!, l.longitude!),
+      for (final r in _roadside) LatLng(r.latitude, r.longitude),
+      for (final pl in _saved)
+        if (pl.latitude != null && pl.longitude != null)
+          LatLng(pl.latitude!, pl.longitude!),
+    ];
+    if (pts.isEmpty) {
+      showInfo(context, 'Nothing to fit yet');
+      return;
+    }
+    _controller.fitCamera(CameraFit.coordinates(
+        coordinates: pts, padding: const EdgeInsets.all(60)));
+  }
+
+  void _copyCenter() {
+    final c = _controller.camera.center;
+    Clipboard.setData(
+        ClipboardData(text: '${c.latitude}, ${c.longitude}'));
+    showInfo(context, 'Centre coordinates copied');
+  }
+
+  Future<void> _savePlaceAtCenter() => _savePlaceAt(_controller.camera.center);
+
+  void _resetAll() {
+    setState(() {
+      _showListings = true;
+      _showRoadside = false;
+      _showTransit = false;
+      _showSaved = false;
+      _maxPrice = 0;
+      _minPrice = 0;
+      _withPhotosOnly = false;
+      _roadsideStatus = 'all';
+      _savedCategory = 'all';
+      _radiusKm = 25;
+    });
+    _savePrefs();
+    _loadAll();
+    showInfo(context, 'Filters and layers reset');
+  }
+
+  // --- Directions / routing -----------------------------------------------
+
+  /// Sets a straight-line directions target from the user's location pin.
+  void _directionsToPoint(LatLng to) {
+    if (_myLocation == null) {
+      showInfo(context, 'Set your location pin first (long-press the map)');
+      return;
+    }
+    setState(() => _directionsTo = to);
+    final m = _distance(_myLocation!, to);
+    final bearing = _distance.bearing(_myLocation!, to);
+    showInfo(context,
+        '${_fmtDistance(m)} · ${_compassPoint(bearing)} (${bearing.round()}°)');
+  }
+
+  String _compassPoint(double bearing) {
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    final b = (bearing % 360 + 360) % 360;
+    return dirs[((b + 22.5) ~/ 45) % 8];
+  }
+
+  void _toggleRouting() {
+    setState(() {
+      _routing = !_routing;
+      _route.clear();
+      if (_routing) {
+        _measuring = false;
+        _areaMode = false;
+      }
+    });
+    if (_routing) showInfo(context, 'Tap stops to build a route');
+  }
+
+  double get _routeTotal {
+    var t = 0.0;
+    for (var i = 1; i < _route.length; i++) {
+      t += _distance(_route[i - 1], _route[i]);
+    }
+    return t;
+  }
+
+  // --- Area measure --------------------------------------------------------
+
+  void _toggleArea() {
+    setState(() {
+      _areaMode = !_areaMode;
+      _areaPoints.clear();
+      if (_areaMode) {
+        _measuring = false;
+        _routing = false;
+      }
+    });
+    if (_areaMode) showInfo(context, 'Tap 3+ points to measure an area');
+  }
+
+  /// Shoelace area (m²) for the tapped polygon, using an equirectangular
+  /// projection around the polygon's mean latitude — fine for small areas.
+  double get _areaValue {
+    if (_areaPoints.length < 3) return 0;
+    const r = 6378137.0; // earth radius (m)
+    final meanLat = _areaPoints
+            .map((p) => p.latitude)
+            .reduce((a, b) => a + b) /
+        _areaPoints.length;
+    final cosLat = math.cos(meanLat * math.pi / 180);
+    double sum = 0;
+    for (var i = 0; i < _areaPoints.length; i++) {
+      final a = _areaPoints[i];
+      final b = _areaPoints[(i + 1) % _areaPoints.length];
+      final ax = a.longitude * math.pi / 180 * r * cosLat;
+      final ay = a.latitude * math.pi / 180 * r;
+      final bx = b.longitude * math.pi / 180 * r * cosLat;
+      final by = b.latitude * math.pi / 180 * r;
+      sum += (ax * by - bx * ay);
+    }
+    return sum.abs() / 2;
+  }
+
+  String _fmtArea(double m2) {
+    if (_units == 'mi') {
+      final acres = m2 / 4046.86;
+      return acres >= 1
+          ? '${acres.toStringAsFixed(2)} acres'
+          : '${(m2 * 10.7639).round()} ft²';
+    }
+    return m2 >= 10000
+        ? '${(m2 / 1e6).toStringAsFixed(2)} km²'
+        : '${m2.round()} m²';
+  }
+
+  // --- Nearby category quick-search ---------------------------------------
+
+  Future<void> _searchNearby(String category) async {
+    setState(() => _searching = true);
+    try {
+      final c = _controller.camera.center;
+      final results = await api.roadside
+          .geocode('$category near ${c.latitude},${c.longitude}');
+      if (!mounted) return;
+      if (results.isEmpty) {
+        showInfo(context, 'No "$category" found nearby');
+        return;
+      }
+      setState(() => _suggestions = results.cast<Map<String, dynamic>>());
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
 
   // --- Bookmarks -----------------------------------------------------------
 
@@ -588,6 +841,10 @@ class _MapScreenState extends State<MapScreen> {
   void _onTap(LatLng p) {
     if (_measuring) {
       setState(() => _measurePoints.add(p));
+    } else if (_routing) {
+      setState(() => _route.add(p));
+    } else if (_areaMode) {
+      setState(() => _areaPoints.add(p));
     }
   }
 
@@ -611,48 +868,77 @@ class _MapScreenState extends State<MapScreen> {
   // --- Nearest list --------------------------------------------------------
 
   void _nearestSheet() {
-    final items = <(double, String, String, LatLng)>[];
+    // (distance, title, subtitle, point, price)
+    final items = <(double, String, String, LatLng, double)>[];
     for (final l in _listings) {
       if (l.latitude != null && l.longitude != null) {
         final pt = LatLng(l.latitude!, l.longitude!);
         items.add((_distance(_center, pt), l.title,
-            '${l.currency} ${l.price.toStringAsFixed(0)}', pt));
+            '${l.currency} ${l.price.toStringAsFixed(0)}', pt,
+            l.price.toDouble()));
       }
     }
     for (final r in _roadside) {
       final pt = LatLng(r.latitude, r.longitude);
-      items.add((_distance(_center, pt), r.service, r.status, pt));
+      items.add((_distance(_center, pt), r.service, r.status, pt, -1.0));
     }
-    items.sort((a, b) => a.$1.compareTo(b.$1));
+    void sortItems() {
+      switch (_nearestSort) {
+        case 'price':
+          items.sort((a, b) => a.$5.compareTo(b.$5));
+        case 'name':
+          items.sort((a, b) => a.$2.toLowerCase().compareTo(b.$2.toLowerCase()));
+        default:
+          items.sort((a, b) => a.$1.compareTo(b.$1));
+      }
+    }
+
+    sortItems();
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.5,
-        builder: (_, ctrl) => ListView(
-          controller: ctrl,
-          children: [
-            const ListTile(
-                title: Text('Nearest to centre',
-                    style: TextStyle(fontWeight: FontWeight.bold))),
-            if (items.isEmpty)
-              const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text('Nothing on the map yet.')),
-            for (final it in items)
+      builder: (_) => StatefulBuilder(
+        builder: (c, setSheet) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          builder: (_, ctrl) => ListView(
+            controller: ctrl,
+            children: [
               ListTile(
-                leading: const Icon(Icons.place_outlined),
-                title: Text(it.$2),
-                subtitle: Text(it.$3),
-                trailing: Text(_fmtDistance(it.$1)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _controller.move(it.$4, 14);
-                },
+                title: const Text('Nearest to centre',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                trailing: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'distance', icon: Icon(Icons.straighten, size: 16)),
+                    ButtonSegment(value: 'price', icon: Icon(Icons.sell_outlined, size: 16)),
+                    ButtonSegment(value: 'name', icon: Icon(Icons.sort_by_alpha, size: 16)),
+                  ],
+                  selected: {_nearestSort},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (s) {
+                    setState(() => _nearestSort = s.first);
+                    setSheet(sortItems);
+                  },
+                ),
               ),
-          ],
+              if (items.isEmpty)
+                const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('Nothing on the map yet.')),
+              for (final it in items)
+                ListTile(
+                  leading: const Icon(Icons.place_outlined),
+                  title: Text(it.$2),
+                  subtitle: Text(it.$3),
+                  trailing: Text(_fmtDistance(it.$1)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _controller.move(it.$4, 14);
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -739,11 +1025,65 @@ class _MapScreenState extends State<MapScreen> {
                   onChanged: (v) => apply(() => _cluster = v),
                 ),
                 SwitchListTile(
+                  title: const Text('Lat/long grid'),
+                  value: _showGrid,
+                  onChanged: (v) => apply(() => _showGrid = v),
+                ),
+                SwitchListTile(
+                  title: const Text('Marker labels'),
+                  value: _showLabels,
+                  onChanged: (v) => apply(() => _showLabels = v),
+                ),
+                SwitchListTile(
+                  title: const Text('Lock rotation (north up)'),
+                  value: _rotationLocked,
+                  onChanged: (v) => apply(() {
+                    _rotationLocked = v;
+                    if (v) _resetNorth();
+                  }),
+                ),
+                SwitchListTile(
                   title: const Text('Search as I move the map'),
                   value: _searchAsIMove,
                   onChanged: (v) => setSheet(() {
                     setState(() => _searchAsIMove = v);
                   }),
+                ),
+                ListTile(
+                  title: const Text('Units'),
+                  trailing: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'km', label: Text('km')),
+                      ButtonSegment(value: 'mi', label: Text('mi')),
+                    ],
+                    selected: {_units},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => apply(() => _units = s.first),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      const Text('Pin size'),
+                      Expanded(
+                        child: Slider(
+                          value: _pinSize,
+                          min: 28,
+                          max: 52,
+                          onChanged: (v) => apply(() => _pinSize = v),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.restart_alt),
+                  title: const Text('Reset layers & filters'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _resetAll();
+                  },
                 ),
               ],
             ),
@@ -771,6 +1111,20 @@ class _MapScreenState extends State<MapScreen> {
                 const Text('Filters',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 8),
+                Text(_minPrice == 0
+                    ? 'Min listing price: any'
+                    : 'Min listing price: \$${_minPrice.round()}'),
+                Slider(
+                  value: _minPrice,
+                  min: 0,
+                  max: 5000,
+                  divisions: 50,
+                  label: _minPrice == 0 ? 'Any' : '\$${_minPrice.round()}',
+                  onChanged: (v) {
+                    setSheet(() {});
+                    setState(() => _minPrice = v);
+                  },
+                ),
                 Text(_maxPrice == 0
                     ? 'Max listing price: any'
                     : 'Max listing price: \$${_maxPrice.round()}'),
@@ -783,6 +1137,15 @@ class _MapScreenState extends State<MapScreen> {
                   onChanged: (v) {
                     setSheet(() {});
                     setState(() => _maxPrice = v);
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Listings with photos only'),
+                  value: _withPhotosOnly,
+                  onChanged: (v) {
+                    setSheet(() {});
+                    setState(() => _withPhotosOnly = v);
                   },
                 ),
                 const SizedBox(height: 8),
@@ -887,15 +1250,19 @@ class _MapScreenState extends State<MapScreen> {
         for (final l in _listings)
           if (l.latitude != null &&
               l.longitude != null &&
-              (_maxPrice == 0 || l.price <= _maxPrice))
+              (_maxPrice == 0 || l.price <= _maxPrice) &&
+              l.price >= _minPrice &&
+              (!_withPhotosOnly || l.photos.isNotEmpty))
             _marker(LatLng(l.latitude!, l.longitude!), Icons.location_on,
-                scheme.primary, () => _showListing(l)),
+                scheme.primary, () => _showListing(l),
+                label: l.title),
       if (_showRoadside)
         for (final r in _roadside)
           if (_roadsideStatus == 'all' ||
               r.status.toLowerCase() == _roadsideStatus)
             _marker(LatLng(r.latitude, r.longitude), Icons.car_repair,
-                const Color(0xFFF59E0B), () => _showRoadsideReq(r)),
+                const Color(0xFFF59E0B), () => _showRoadsideReq(r),
+                label: r.service),
       if (_showTransit)
         for (final t in _transit)
           if (_num(t['lat'] ?? t['latitude']) != null &&
@@ -905,14 +1272,16 @@ class _MapScreenState extends State<MapScreen> {
                     _num(t['lon'] ?? t['lng'] ?? t['longitude'])!),
                 Icons.directions_transit,
                 const Color(0xFF6366F1),
-                () => _showTransitStop(t)),
+                () => _showTransitStop(t),
+                label: '${t['name'] ?? t['stop_name'] ?? ''}'),
       if (_showSaved)
         for (final pl in _saved)
           if (pl.latitude != null &&
               pl.longitude != null &&
               (_savedCategory == 'all' || pl.category == _savedCategory))
             _marker(LatLng(pl.latitude!, pl.longitude!), Icons.bookmark,
-                const Color(0xFF10B981), () => _showSavedPlace(pl)),
+                const Color(0xFF10B981), () => _showSavedPlace(pl),
+                label: pl.title),
     ];
 
     final shownMarkers = _clusterMarkers(markers);
@@ -921,7 +1290,9 @@ class _MapScreenState extends State<MapScreen> {
     return Scaffold(
       extendBody: !widget.embedded,
       bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
-      appBar: OkayAppBar(
+      appBar: _fullscreen
+          ? null
+          : OkayAppBar(
         title: const Text('Map'),
         actions: [
           IconButton(
@@ -931,11 +1302,41 @@ class _MapScreenState extends State<MapScreen> {
             tooltip: _etaShareId != null ? 'Sharing ETA…' : 'Share my ETA',
             onPressed: _etaShareId != null ? _stopEta : _shareEta,
           ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.architecture,
+                color: (_measuring || _routing || _areaMode)
+                    ? scheme.primary
+                    : null),
+            tooltip: 'Tools',
+            onSelected: (v) {
+              switch (v) {
+                case 'measure':
+                  _toggleMeasure();
+                case 'route':
+                  _toggleRouting();
+                case 'area':
+                  _toggleArea();
+              }
+            },
+            itemBuilder: (_) => [
+              CheckedPopupMenuItem(
+                  value: 'measure',
+                  checked: _measuring,
+                  child: const Text('Measure distance')),
+              CheckedPopupMenuItem(
+                  value: 'route',
+                  checked: _routing,
+                  child: const Text('Build a route')),
+              CheckedPopupMenuItem(
+                  value: 'area',
+                  checked: _areaMode,
+                  child: const Text('Measure area')),
+            ],
+          ),
           IconButton(
-            icon: Icon(Icons.straighten,
-                color: _measuring ? scheme.primary : null),
-            tooltip: 'Measure distance',
-            onPressed: _toggleMeasure,
+            icon: const Icon(Icons.fullscreen),
+            tooltip: 'Fullscreen',
+            onPressed: () => setState(() => _fullscreen = true),
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
@@ -955,16 +1356,29 @@ class _MapScreenState extends State<MapScreen> {
                   _legendSheet();
                 case 'share':
                   _shareThisLocation();
+                case 'savecentre':
+                  _savePlaceAtCenter();
+                case 'copycentre':
+                  _copyCenter();
+                case 'fit':
+                  _fitAll();
+                case 'reset':
+                  _resetAll();
               }
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'radius', child: Text('Search radius')),
               PopupMenuItem(value: 'filters', child: Text('Filters')),
               PopupMenuItem(value: 'nearest', child: Text('Nearest to centre')),
+              PopupMenuItem(value: 'fit', child: Text('Fit all markers')),
               PopupMenuItem(value: 'bookmarks', child: Text('Saved views')),
+              PopupMenuItem(
+                  value: 'savecentre', child: Text('Save centre as place')),
+              PopupMenuItem(value: 'copycentre', child: Text('Copy centre coords')),
               PopupMenuItem(value: 'settings', child: Text('Map settings')),
               PopupMenuItem(value: 'legend', child: Text('Legend')),
               PopupMenuItem(value: 'share', child: Text('Share this location')),
+              PopupMenuItem(value: 'reset', child: Text('Reset all')),
             ],
           ),
         ],
@@ -976,21 +1390,36 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: _center,
               initialZoom: 11,
+              interactionOptions: InteractionOptions(
+                flags: _rotationLocked
+                    ? InteractiveFlag.all & ~InteractiveFlag.rotate
+                    : InteractiveFlag.all,
+              ),
               onTap: (_, point) => _onTap(point),
               onLongPress: (_, point) => _onLongPress(point),
               onPositionChanged: (camera, hasGesture) {
                 _center = camera.center;
-                if (camera.rotation != _rotation) {
-                  setState(() => _rotation = camera.rotation);
+                if (camera.rotation != _rotation ||
+                    camera.center != _liveCenter) {
+                  setState(() {
+                    _rotation = camera.rotation;
+                    _liveCenter = camera.center;
+                  });
                 }
                 if (hasGesture && _searchAsIMove) _loadAll();
               },
             ),
             children: [
               TileLayer(
-                urlTemplate: _style.url,
+                urlTemplate: _style.tileUrl,
                 userAgentPackageName: 'ca.okayspace.app',
+                tileSize: _style.isMapbox ? 512 : 256,
+                zoomOffset: _style.isMapbox ? -1 : 0,
+                additionalOptions: _style.isMapbox
+                    ? const {'token': _mapboxToken}
+                    : const {},
               ),
+              if (_showGrid) PolylineLayer(polylines: _graticule()),
               if (_showRadiusCircle)
                 CircleLayer(circles: [
                   CircleMarker(
@@ -1002,12 +1431,37 @@ class _MapScreenState extends State<MapScreen> {
                     borderStrokeWidth: 1.5,
                   ),
                 ]),
+              if (_areaMode && _areaPoints.length >= 3)
+                PolygonLayer(polygons: [
+                  Polygon(
+                    points: _areaPoints,
+                    color: scheme.tertiary.withValues(alpha: 0.2),
+                    borderColor: scheme.tertiary,
+                    borderStrokeWidth: 2,
+                  ),
+                ]),
               if (_measuring && _measurePoints.length >= 2)
                 PolylineLayer(polylines: [
                   Polyline(
                     points: _measurePoints,
                     strokeWidth: 3,
                     color: scheme.tertiary,
+                  ),
+                ]),
+              if (_routing && _route.length >= 2)
+                PolylineLayer(polylines: [
+                  Polyline(
+                    points: _route,
+                    strokeWidth: 4,
+                    color: scheme.primary,
+                  ),
+                ]),
+              if (_directionsTo != null && _myLocation != null)
+                PolylineLayer(polylines: [
+                  Polyline(
+                    points: [_myLocation!, _directionsTo!],
+                    strokeWidth: 3,
+                    color: const Color(0xFF2563EB),
                   ),
                 ]),
               MarkerLayer(markers: [
@@ -1019,19 +1473,15 @@ class _MapScreenState extends State<MapScreen> {
                   _marker(_identify!, Icons.place, const Color(0xFFEF4444),
                       () => _identifyAt(_identify!)),
                 for (final p in _measurePoints)
-                  Marker(
-                      point: p,
-                      width: 16,
-                      height: 16,
-                      child: Container(
-                          decoration: BoxDecoration(
-                              color: scheme.tertiary,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2)))),
+                  _dot(p, scheme.tertiary),
+                for (final p in _route) _dot(p, scheme.primary),
+                for (final p in _areaPoints) _dot(p, scheme.tertiary),
               ]),
-              const RichAttributionWidget(
+              RichAttributionWidget(
                 attributions: [
-                  TextSourceAttribution('© OpenStreetMap contributors'),
+                  TextSourceAttribution(_style.isMapbox
+                      ? '© Mapbox © OpenStreetMap'
+                      : '© OpenStreetMap contributors'),
                 ],
               ),
             ],
@@ -1043,6 +1493,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: Icon(Icons.add, size: 30, color: Colors.black54))),
 
           // Search bar + layer chips.
+          if (!_fullscreen)
           Positioned(
             top: 8,
             left: 8,
@@ -1152,6 +1603,29 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 6),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final cat in const [
+                        ('Cafés', 'cafe'),
+                        ('Gas', 'gas station'),
+                        ('Parking', 'parking'),
+                        ('Food', 'restaurant'),
+                        ('Hospitals', 'hospital'),
+                        ('Parks', 'park'),
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ActionChip(
+                            label: Text(cat.$1),
+                            onPressed: () => _searchNearby(cat.$2),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -1238,15 +1712,72 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
+          // Route banner.
+          if (_routing)
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 110,
+              child: _toolBanner(
+                  Icons.route,
+                  _route.length < 2
+                      ? 'Tap stops to build a route'
+                      : '${_route.length} stops · ${_fmtDistance(_routeTotal)}',
+                  onClear: _route.isEmpty ? null : () => setState(_route.clear)),
+            ),
+          // Area banner.
+          if (_areaMode)
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 110,
+              child: _toolBanner(
+                  Icons.crop_square,
+                  _areaPoints.length < 3
+                      ? 'Tap 3+ points to measure area'
+                      : 'Area: ${_fmtArea(_areaValue)}',
+                  onClear: _areaPoints.isEmpty
+                      ? null
+                      : () => setState(_areaPoints.clear)),
+            ),
+
+          // Live centre coordinate readout.
+          if (!_fullscreen)
+            Positioned(
+              top: _measuring || _routing || _areaMode ? 160 : 110,
+              right: 12,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: scheme.surface.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                    'z${_controller.camera.zoom.toStringAsFixed(1)} · ${_liveCenter.latitude.toStringAsFixed(3)}, ${_liveCenter.longitude.toStringAsFixed(3)}',
+                    style: const TextStyle(fontSize: 11)),
+              ),
+            ),
+
           // Zoom / compass / recenter controls.
           Positioned(
             right: 12,
             bottom: 76,
             child: Column(
               children: [
+                if (_fullscreen)
+                  _mapBtn('exitFs', Icons.fullscreen_exit,
+                      () => setState(() => _fullscreen = false)),
+                if (_fullscreen) const SizedBox(height: 8),
                 if (_rotation != 0)
                   _mapBtn('compass', Icons.explore, _resetNorth),
-                _mapBtn('zoomIn', Icons.add, () => _zoomBy(1)),
+                if (_myLocation != null)
+                  _mapBtn('myloc', Icons.my_location, _goToMyLocation),
+                if (_myLocation != null) const SizedBox(height: 8),
+                _mapBtn('fit', Icons.fit_screen, _fitAll),
+                const SizedBox(height: 8),
+                _mapBtn('zoomIn', Icons.add, () => _zoomBy(1),
+                    onLongPress: _zoomPresetSheet),
                 const SizedBox(height: 8),
                 _mapBtn('zoomOut', Icons.remove, () => _zoomBy(-1)),
                 const SizedBox(height: 8),
@@ -1290,12 +1821,71 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _mapBtn(String tag, IconData icon, VoidCallback onTap) =>
-      FloatingActionButton.small(
-        heroTag: 'map_$tag',
-        onPressed: onTap,
-        child: Icon(icon),
+  Widget _mapBtn(String tag, IconData icon, VoidCallback onTap,
+          {VoidCallback? onLongPress}) =>
+      GestureDetector(
+        onLongPress: onLongPress,
+        child: FloatingActionButton.small(
+          heroTag: 'map_$tag',
+          onPressed: onTap,
+          child: Icon(icon),
+        ),
       );
+
+  void _zoomPresetSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Zoom to',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            for (final z in const [
+              ('Street', 16.0),
+              ('Neighbourhood', 14.0),
+              ('City', 11.0),
+              ('Region', 8.0),
+              ('Country', 5.0),
+            ])
+              ListTile(
+                title: Text(z.$1),
+                onTap: () {
+                  Navigator.pop(context);
+                  _zoomPreset(z.$2);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _toolBanner(IconData icon, String text, {VoidCallback? onClear}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.tertiaryContainer,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, color: scheme.onTertiaryContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(text,
+                  style: TextStyle(
+                      color: scheme.onTertiaryContainer,
+                      fontWeight: FontWeight.w600)),
+            ),
+            if (onClear != null)
+              TextButton(onPressed: onClear, child: const Text('Clear')),
+          ],
+        ),
+      ),
+    );
+  }
 
   /// A short breakdown of what's on the map, by active layer.
   String _countLabel(int total) {
@@ -1324,31 +1914,111 @@ class _MapScreenState extends State<MapScreen> {
             if (pl.latitude != null && pl.longitude != null)
               '${_fmtDistance(_distance(_center, LatLng(pl.latitude!, pl.longitude!)))} from centre',
           ].join(' · ')),
-          trailing: IconButton(
-            icon: const Icon(Icons.directions_outlined),
-            tooltip: 'Open in Maps',
-            onPressed: pl.latitude != null && pl.longitude != null
-                ? () {
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (pl.latitude != null && pl.longitude != null)
+                IconButton(
+                  icon: const Icon(Icons.near_me_outlined),
+                  tooltip: 'Directions from my pin',
+                  onPressed: () {
                     Navigator.pop(context);
-                    _openExternal(LatLng(pl.latitude!, pl.longitude!));
-                  }
-                : null,
+                    _directionsToPoint(LatLng(pl.latitude!, pl.longitude!));
+                  },
+                ),
+              IconButton(
+                icon: const Icon(Icons.directions_outlined),
+                tooltip: 'Open in Maps',
+                onPressed: pl.latitude != null && pl.longitude != null
+                    ? () {
+                        Navigator.pop(context);
+                        _openExternal(LatLng(pl.latitude!, pl.longitude!));
+                      }
+                    : null,
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Marker _marker(LatLng point, IconData icon, Color color, VoidCallback onTap) {
+  Marker _dot(LatLng p, Color color) => Marker(
+        point: p,
+        width: 16,
+        height: 16,
+        child: Container(
+            decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2))),
+      );
+
+  /// Builds a lat/long graticule across the current visible bounds.
+  List<Polyline> _graticule() {
+    final cam = _controller.camera;
+    final b = cam.visibleBounds;
+    // Choose a spacing that yields a handful of lines for the current span.
+    final span = (b.north - b.south).abs();
+    double step = 1;
+    for (final s in const [10.0, 5.0, 2.0, 1.0, 0.5, 0.25, 0.1, 0.05, 0.01]) {
+      if (span / s >= 4) {
+        step = s;
+        break;
+      }
+      step = s;
+    }
+    final lines = <Polyline>[];
+    final color = (_style.dark ? Colors.white : Colors.black).withValues(alpha: 0.18);
+    for (var lat = (b.south / step).ceil() * step;
+        lat <= b.north;
+        lat += step) {
+      lines.add(Polyline(
+          points: [LatLng(lat, b.west), LatLng(lat, b.east)],
+          strokeWidth: 0.5,
+          color: color));
+    }
+    for (var lng = (b.west / step).ceil() * step;
+        lng <= b.east;
+        lng += step) {
+      lines.add(Polyline(
+          points: [LatLng(b.south, lng), LatLng(b.north, lng)],
+          strokeWidth: 0.5,
+          color: color));
+    }
+    return lines;
+  }
+
+  Marker _marker(LatLng point, IconData icon, Color color, VoidCallback onTap,
+      {String? label}) {
+    final showLabel = _showLabels && label != null && label.isNotEmpty;
     return Marker(
       point: point,
-      width: 44,
-      height: 44,
+      width: showLabel ? 120 : _pinSize + 6,
+      height: _pinSize + (showLabel ? 18 : 6),
+      alignment: Alignment.topCenter,
       child: GestureDetector(
         onTap: onTap,
-        child: Icon(icon, color: color, size: 38, shadows: const [
-          Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1)),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: _pinSize, shadows: const [
+              Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1)),
+            ]),
+            if (showLabel)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+              ),
+          ],
+        ),
       ),
     );
   }
