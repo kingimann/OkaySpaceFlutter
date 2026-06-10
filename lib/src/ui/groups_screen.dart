@@ -164,6 +164,27 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       appBar: AppBar(
         title: const Text('Group'),
         actions: [
+          FutureBuilder<Group>(
+            future: _group,
+            builder: (context, snap) {
+              final g = snap.data;
+              if (g == null || !g.canManage) return const SizedBox.shrink();
+              return IconButton(
+                tooltip: 'Join requests',
+                icon: Badge(
+                  isLabelVisible: g.pendingRequestCount > 0,
+                  label: Text('${g.pendingRequestCount}'),
+                  child: const Icon(Icons.how_to_reg_outlined),
+                ),
+                onPressed: () async {
+                  await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => _GroupRequestsScreen(groupId: widget.groupId),
+                  ));
+                  _reload();
+                },
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.event_outlined),
             tooltip: 'Events',
@@ -349,6 +370,89 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
               : const Text('Create'),
         ),
       ],
+    );
+  }
+}
+
+/// Pending join requests for a group (manager view): approve or reject.
+class _GroupRequestsScreen extends StatefulWidget {
+  const _GroupRequestsScreen({required this.groupId});
+
+  final String groupId;
+
+  @override
+  State<_GroupRequestsScreen> createState() => _GroupRequestsScreenState();
+}
+
+class _GroupRequestsScreenState extends State<_GroupRequestsScreen> {
+  late Future<List<Map<String, dynamic>>> _requests;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    _requests = api.groups.joinRequests(widget.groupId).then((d) {
+      final list = d is Map ? (d['requests'] ?? d['items'] ?? d['users']) : d;
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      return <Map<String, dynamic>>[];
+    });
+  }
+
+  Future<void> _act(String userId, bool approve) async {
+    try {
+      if (approve) {
+        await api.groups.approveRequest(widget.groupId, userId);
+      } else {
+        await api.groups.rejectRequest(widget.groupId, userId);
+      }
+      setState(_load);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Join requests')),
+      body: AsyncList<Map<String, dynamic>>(
+        future: _requests,
+        emptyMessage: 'No pending requests.',
+        emptyIcon: Icons.how_to_reg_outlined,
+        builder: (context, items) => ListView.separated(
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (context, i) {
+            final r = items[i];
+            final id = '${r['user_id'] ?? r['id'] ?? ''}';
+            final name = '${r['name'] ?? r['user_name'] ?? 'User'}';
+            return ListTile(
+              leading: Avatar(
+                  url: '${r['picture'] ?? r['user_picture'] ?? ''}', name: name),
+              title: Text(name),
+              subtitle: r['username'] != null ? Text('@${r['username']}') : null,
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  icon: const Icon(Icons.check_circle, color: Colors.green),
+                  onPressed: id.isEmpty ? null : () => _act(id, true),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.cancel_outlined),
+                  onPressed: id.isEmpty ? null : () => _act(id, false),
+                ),
+              ]),
+            );
+          },
+        ),
+      ),
     );
   }
 }

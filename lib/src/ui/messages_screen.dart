@@ -25,6 +25,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
     await _conversations;
   }
 
+  Future<void> _newChat() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const _NewChatScreen()));
+    _reload();
+  }
+
   String _title(ConversationView c) {
     if (c.name != null && c.name!.isNotEmpty) return c.name!;
     if (c.otherUser != null) return c.otherUser!.name;
@@ -36,6 +42,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _newChat,
+        child: const Icon(Icons.edit_square),
+      ),
       body: MaxWidth(
         child: RefreshIndicator(
         onRefresh: _reload,
@@ -388,6 +398,79 @@ class _MessageBubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Search a user and start (or open) a direct conversation with them.
+class _NewChatScreen extends StatefulWidget {
+  const _NewChatScreen();
+
+  @override
+  State<_NewChatScreen> createState() => _NewChatScreenState();
+}
+
+class _NewChatScreenState extends State<_NewChatScreen> {
+  final _search = TextEditingController();
+  Future<List<PublicUser>>? _results;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _run() {
+    final q = _search.text.trim();
+    if (q.isEmpty) return;
+    setState(() => _results = api.users.search(q));
+  }
+
+  Future<void> _start(PublicUser u) async {
+    try {
+      final conv = await api.messaging.startDirect(u.userId);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => ChatScreen(conversation: conv, title: u.name),
+      ));
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: TextField(
+          controller: _search,
+          autofocus: true,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) => _run(),
+          decoration: const InputDecoration(
+              hintText: 'Search people', border: InputBorder.none),
+        ),
+        actions: [IconButton(icon: const Icon(Icons.search), onPressed: _run)],
+      ),
+      body: _results == null
+          ? const CenteredMessage(
+              message: 'Search for someone to message.', icon: Icons.search)
+          : AsyncList<PublicUser>(
+              future: _results!,
+              emptyMessage: 'No people found.',
+              builder: (context, items) => ListView.builder(
+                itemCount: items.length,
+                itemBuilder: (context, i) {
+                  final u = items[i];
+                  return ListTile(
+                    leading: Avatar(url: u.picture, name: u.name),
+                    title: Text(u.name),
+                    subtitle: u.username != null ? Text(u.handle) : null,
+                    onTap: () => _start(u),
+                  );
+                },
+              ),
+            ),
     );
   }
 }
