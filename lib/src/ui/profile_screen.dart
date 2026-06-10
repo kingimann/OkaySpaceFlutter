@@ -169,6 +169,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true,
       bottomNavigationBar: const OkayBottomNav(),
       appBar: OkayAppBar(
         title: const Text('Profile'),

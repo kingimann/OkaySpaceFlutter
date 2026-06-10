@@ -105,6 +105,8 @@ class _HomeShellState extends State<HomeShell> {
     final ids = navController.value;
     final index = ids.indexOf(_currentId).clamp(0, ids.length - 1);
     return Scaffold(
+      // Let the body show behind the floating nav pill instead of a dark strip.
+      extendBody: true,
       body: IndexedStack(
         index: index,
         children: [
