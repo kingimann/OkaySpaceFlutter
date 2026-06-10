@@ -763,6 +763,7 @@ class _NewChatScreenState extends State<_NewChatScreen> {
           : AsyncList<PublicUser>(
               future: _results!,
               emptyMessage: 'No people found.',
+              emptyIcon: Icons.person_search_outlined,
               builder: (context, items) => ListView.builder(
                 itemCount: items.length,
                 itemBuilder: (context, i) {

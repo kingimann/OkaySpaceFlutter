@@ -141,6 +141,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: AsyncList<AppNotification>(
           future: _notifications,
           emptyMessage: "You're all caught up.",
+          emptyIcon: Icons.check_circle_outline,
           builder: (context, items) => ListView.separated(
             itemCount: items.length,
             separatorBuilder: (_, __) => const Divider(height: 1),

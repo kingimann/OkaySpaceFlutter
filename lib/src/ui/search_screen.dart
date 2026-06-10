@@ -68,6 +68,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   AsyncList<PublicUser>(
                     future: _people!,
                     emptyMessage: 'No people found.',
+                    emptyIcon: Icons.person_search_outlined,
                     builder: (context, items) => ListView.builder(
                       itemCount: items.length,
                       itemBuilder: (context, i) {
@@ -94,6 +95,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   AsyncList<Post>(
                     future: _tagged!,
                     emptyMessage: 'No posts for #$_query.',
+                    emptyIcon: Icons.tag,
                     builder: (context, items) => ListView.builder(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       itemCount: items.length,
