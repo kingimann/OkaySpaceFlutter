@@ -78,6 +78,10 @@ class PostTile extends StatelessWidget {
             Text(post.text),
           ],
           if (post.media.isNotEmpty) _MediaPreview(media: post.media.first),
+          if (post.quotedPost != null) ...[
+            const SizedBox(height: 8),
+            _QuotedPost(quoted: post.quotedPost!),
+          ],
           const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -122,6 +126,74 @@ class PostTile extends StatelessWidget {
       );
     }
     return result;
+  }
+}
+
+/// A compact embedded card for a quoted post.
+class _QuotedPost extends StatelessWidget {
+  const _QuotedPost({required this.quoted});
+
+  final Post quoted;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Avatar(
+                  url: quoted.author.picture,
+                  name: quoted.author.name,
+                  radius: 11),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  quoted.author.username != null
+                      ? '${quoted.author.name} · @${quoted.author.username}'
+                      : quoted.author.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          if (quoted.text.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(quoted.text,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13)),
+          ],
+          if (quoted.media.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  Icon(
+                      quoted.media.first.isVideo
+                          ? Icons.videocam_outlined
+                          : Icons.image_outlined,
+                      size: 14,
+                      color: scheme.outline),
+                  const SizedBox(width: 4),
+                  Text(quoted.media.first.isVideo ? 'Video' : 'Photo',
+                      style: TextStyle(fontSize: 12, color: scheme.outline)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
