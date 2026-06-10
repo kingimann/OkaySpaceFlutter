@@ -41,16 +41,20 @@ class _AppDrawerState extends State<AppDrawer> {
   late Future<User> _me = api.auth.me();
 
   void _push(Widget screen) {
-    Navigator.pop(context);
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+    // Capture the navigator before popping: when the drawer is shown as a
+    // modal (on pushed routes), the pop deactivates this context.
+    final nav = Navigator.of(context);
+    nav.pop();
+    nav.push(MaterialPageRoute(builder: (_) => screen));
   }
 
   /// Pushes a screen that needs the loaded [User]; waits for it first.
   Future<void> _pushWithUser(Widget Function(User) builder) async {
     final u = await _me;
     if (!mounted) return;
-    Navigator.pop(context);
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => builder(u)));
+    final nav = Navigator.of(context);
+    nav.pop();
+    nav.push(MaterialPageRoute(builder: (_) => builder(u)));
   }
 
   /// Builds a sidebar shortcut row for a destination id (see [kAllSidebarDests]).
@@ -63,10 +67,11 @@ class _AppDrawerState extends State<AppDrawer> {
       onTap: () {
         switch (id) {
           case 'feed':
-            // Close the drawer, return to the shell, and select the feed tab
-            // (re-tapping while already on it scrolls to top).
-            Navigator.pop(context);
-            Navigator.of(context).popUntil((r) => r.isFirst);
+            // Close the drawer/modal, return to the shell, and select the feed
+            // tab (re-tapping while already on it scrolls to top).
+            final nav = Navigator.of(context);
+            nav.pop();
+            nav.popUntil((r) => r.isFirst);
             if (homeTabSignal.value == 'feed') feedScrollSignal.value++;
             homeTabSignal.select('feed');
           case 'reels':

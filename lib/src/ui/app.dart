@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_drawer.dart';
 import 'common.dart';
 import 'home_shell.dart';
 import 'register_screen.dart';
@@ -28,6 +29,8 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
   @override
   void initState() {
     super.initState();
+    // Lets openSidebar() present the drawer as a modal on pushed routes.
+    sidebarModalBuilder = (_) => const AppDrawer();
     // Animate the bars whenever the requested visibility changes, and snap them
     // back into view whenever the user switches home tabs.
     barsVisible.addListener(_animateBars);

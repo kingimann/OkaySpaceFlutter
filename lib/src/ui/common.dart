@@ -43,15 +43,42 @@ const double kBottomNavInset = 96;
 /// its own inner Scaffold) can open the shared navigation drawer (sidebar).
 final GlobalKey<ScaffoldState> homeScaffoldKey = GlobalKey<ScaffoldState>();
 
-/// Opens the navigation drawer: the screen's own drawer if it has one, else
-/// the shared home-shell drawer.
+/// Builds the sidebar widget for the modal fallback. Registered by the app so
+/// this file doesn't need to import the drawer (which imports back here).
+WidgetBuilder? sidebarModalBuilder;
+
+/// Opens the navigation sidebar from anywhere:
+/// - the screen's own drawer if it has one (feed, profile, home tabs),
+/// - else, on a pushed route, a left slide-in modal (the home-shell drawer
+///   would be hidden behind the current route),
+/// - else the shared home-shell drawer.
 void openSidebar(BuildContext context) {
   final local = Scaffold.maybeOf(context);
   if (local != null && local.hasDrawer) {
     local.openDrawer();
-  } else {
-    homeScaffoldKey.currentState?.openDrawer();
+    return;
   }
+  if (Navigator.of(context).canPop() && sidebarModalBuilder != null) {
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Menu',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (ctx, _, __) => Align(
+        alignment: Alignment.centerLeft,
+        child: sidebarModalBuilder!(ctx),
+      ),
+      transitionBuilder: (ctx, anim, _, child) => SlideTransition(
+        position:
+            Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
+                .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+        child: child,
+      ),
+    );
+    return;
+  }
+  homeScaffoldKey.currentState?.openDrawer();
 }
 
 /// The home destination the shell should show, identified by its id (see
@@ -676,7 +703,15 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
                     ),
                   ),
                   if (actions != null) ...actions!,
-                  if (actions == null || actions!.isEmpty)
+                  // On pushed screens (which show a back button) add a menu
+                  // button so the sidebar is reachable everywhere, like the feed.
+                  if (canPop && automaticallyImplyLeading)
+                    IconButton(
+                      icon: const Icon(Icons.menu),
+                      tooltip: 'Menu',
+                      onPressed: () => openSidebar(context),
+                    )
+                  else if (actions == null || actions!.isEmpty)
                     const SizedBox(width: 8),
                 ],
               ),
