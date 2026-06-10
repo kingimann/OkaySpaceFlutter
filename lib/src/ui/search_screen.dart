@@ -80,7 +80,7 @@ class _SearchScreenState extends State<SearchScreen> {
                               if (u.verified) ...[
                                 const SizedBox(width: 4),
                                 const Icon(Icons.verified,
-                                    size: 14, color: Colors.blue),
+                                    size: 14, color: Color(0xFF3B82F6)),
                               ],
                             ],
                           ),
