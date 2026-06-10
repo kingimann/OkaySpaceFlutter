@@ -27,6 +27,25 @@ class FeedService {
   Future<List<Post>> reelsFeed({Map<String, dynamic>? query}) async =>
       _posts(await _client.getJson('/feed/reels', query: query));
 
+  /// Popular reels — a good fallback when the personalized reels feed is empty.
+  Future<List<Post>> popularReels({int limit = 30}) async =>
+      _posts(await _client.getJson('/reels/popular', query: {'limit': limit}));
+
+  /// Resolves a stored/opaque video [url] into a directly-playable URL.
+  /// Returns the original url if the backend gives nothing usable.
+  Future<String> resolveVideoUrl(String url) async {
+    try {
+      final data =
+          await _client.postJson('/media/resolve-video', body: {'url': url});
+      final map = asMapOrNull(data);
+      final resolved = map?['url'] ?? map?['resolved_url'] ?? map?['src'];
+      if (resolved is String && resolved.isNotEmpty) return resolved;
+    } catch (_) {
+      // Fall through to the original URL.
+    }
+    return url;
+  }
+
   /// Currently popular posts.
   Future<List<Post>> popularPosts({Map<String, dynamic>? query}) async =>
       _posts(await _client.getJson('/posts/popular', query: query));

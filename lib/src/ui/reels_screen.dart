@@ -29,7 +29,14 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 
   Future<List<Post>> _load() async {
-    final reels = await api.feed.reelsFeed();
+    var reels = await api.feed.reelsFeed();
+    // The personalized reels feed can be empty for new accounts; fall back to
+    // popular reels so the screen still has content.
+    if (reels.isEmpty) {
+      try {
+        reels = await api.feed.popularReels();
+      } catch (_) {/* keep the empty list */}
+    }
     _reels = reels;
     return reels;
   }
@@ -96,7 +103,7 @@ class _ReelPage extends StatelessWidget {
         // Media: autoplaying looped video, or a cover image.
         if (url != null && url.isNotEmpty)
           (media?.isVideo ?? false)
-              ? PostVideo(url: url, autoPlay: true, looping: true)
+              ? _ReelVideo(url: url, poster: media?.thumbnail)
               : Image.network(url,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) =>
@@ -198,6 +205,54 @@ class _ReelPage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Resolves a reel's (possibly opaque) video URL to a playable one before
+/// handing it to the player, showing the poster thumbnail meanwhile.
+class _ReelVideo extends StatefulWidget {
+  const _ReelVideo({required this.url, this.poster});
+
+  final String url;
+  final String? poster;
+
+  @override
+  State<_ReelVideo> createState() => _ReelVideoState();
+}
+
+class _ReelVideoState extends State<_ReelVideo> {
+  late Future<String> _resolved;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolved = api.feed.resolveVideoUrl(widget.url);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String>(
+      future: _resolved,
+      builder: (context, snapshot) {
+        final url = snapshot.data ?? widget.url;
+        if (snapshot.connectionState != ConnectionState.done) {
+          // Show the poster while resolving so it's never blank.
+          if (widget.poster != null && widget.poster!.isNotEmpty) {
+            return Image.network(widget.poster!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    const ColoredBox(color: Colors.black));
+          }
+          return const ColoredBox(color: Colors.black);
+        }
+        return PostVideo(
+          url: url,
+          poster: widget.poster,
+          autoPlay: true,
+          looping: true,
+        );
+      },
     );
   }
 }

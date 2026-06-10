@@ -11,12 +11,17 @@ class PostVideo extends StatefulWidget {
   const PostVideo({
     super.key,
     required this.url,
+    this.poster,
     this.autoPlay = false,
     this.looping = false,
     this.muted = false,
   });
 
   final String url;
+
+  /// Optional thumbnail shown while the video loads or if playback fails,
+  /// so the surface is never just black.
+  final String? poster;
   final bool autoPlay;
   final bool looping;
   final bool muted;
@@ -58,24 +63,41 @@ class _PostVideoState extends State<PostVideo> {
     setState(() => c.value.isPlaying ? c.pause() : c.play());
   }
 
+  /// The poster thumbnail, or a plain black fill if none is available.
+  Widget _posterOrBlack() {
+    final poster = widget.poster;
+    if (poster != null && poster.isNotEmpty) {
+      return Image.network(poster,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black));
+    }
+    return const ColoredBox(color: Colors.black);
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = _controller;
     if (_failed) {
-      return const ColoredBox(
-        color: Colors.black,
-        child: Center(
-            child: Icon(Icons.videocam_off_outlined, color: Colors.white54)),
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _posterOrBlack(),
+          const Center(
+              child: Icon(Icons.videocam_off_outlined, color: Colors.white54)),
+        ],
       );
     }
     if (c == null || !_ready) {
-      return const ColoredBox(
-        color: Colors.black,
-        child: Center(
-            child: SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(strokeWidth: 2))),
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _posterOrBlack(),
+          const Center(
+              child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 2))),
+        ],
       );
     }
     return GestureDetector(
