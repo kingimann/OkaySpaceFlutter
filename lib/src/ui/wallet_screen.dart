@@ -32,6 +32,24 @@ List<Map<String, dynamic>> _mapList(dynamic data, [String? key]) {
   return const [];
 }
 
+/// Money requests/transfers come back as `{incoming: [...], outgoing: [...]}`.
+/// Merge them into one list, tagging each with `_incoming` so the UI can show
+/// the right actions regardless of payload field names.
+List<Map<String, dynamic>> _moneyList(dynamic data) {
+  if (data is Map && (data['incoming'] != null || data['outgoing'] != null)) {
+    Map<String, dynamic> tag(dynamic e, bool incoming) =>
+        {...Map<String, dynamic>.from(e as Map), '_incoming': incoming};
+    final incoming = (data['incoming'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => tag(e, true));
+    final outgoing = (data['outgoing'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => tag(e, false));
+    return [...incoming, ...outgoing];
+  }
+  return _mapList(data);
+}
+
 /// Wallet: balance, earnings, transactions, money requests and transfers.
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -53,9 +71,8 @@ class _WalletScreenState extends State<WalletScreen> {
 
   void _load() {
     _summary = api.wallet.summary();
-    _requests = api.wallet.moneyRequests().then((d) => _mapList(d, 'requests'));
-    _transfers =
-        api.wallet.transfers().then((d) => _mapList(d, 'transfers'));
+    _requests = api.wallet.moneyRequests().then(_moneyList);
+    _transfers = api.wallet.transfers().then(_moneyList);
   }
 
   Future<void> _reload() async {
@@ -348,7 +365,8 @@ class _TransferTile extends StatelessWidget {
     final currency = _pick(transfer, ['currency'], 'USD');
     final status = _pick(transfer, ['status'], 'pending');
     final toUserId = _pick(transfer, ['to_user_id', 'recipient_id']);
-    final incoming = currentUserId != null && toUserId == currentUserId;
+    final incoming = transfer['_incoming'] as bool? ??
+        (currentUserId != null && toUserId == currentUserId);
     final who = _pick(transfer, [
       incoming ? 'from_name' : 'to_name',
       'counterparty_name',
@@ -424,7 +442,8 @@ class _RequestTile extends StatelessWidget {
     final note = _pick(request, ['note', 'message']);
     final toUserId = _pick(request, ['to_user_id', 'payer_id']);
     // Incoming = I'm being asked to pay (I'm the payer/to_user).
-    final incoming = currentUserId != null && toUserId == currentUserId;
+    final incoming = request['_incoming'] as bool? ??
+        (currentUserId != null && toUserId == currentUserId);
     final who = _pick(request, [
       incoming ? 'from_name' : 'to_name',
       'requester_name',
