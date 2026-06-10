@@ -146,7 +146,8 @@ class _FeedScreenState extends State<FeedScreen> {
                         return PostTile(
                             post: post,
                             card: true,
-                            onLike: () => _toggleLike(post));
+                            onLike: () => _toggleLike(post),
+                            onChanged: _reload);
                       },
                     );
                   },

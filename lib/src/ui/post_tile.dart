@@ -8,8 +8,11 @@ import 'post_detail_screen.dart';
 import 'post_video.dart';
 import 'profile_screen.dart';
 
-/// Opens the post overflow menu (report / not interested / copy link).
-Future<void> _showPostMenu(BuildContext context, Post post) async {
+/// Opens the post overflow menu. Own posts get edit/pin/delete; [onChanged]
+/// is invoked after a mutating action so the host can refresh.
+Future<void> _showPostMenu(BuildContext context, Post post,
+    [VoidCallback? onChanged]) async {
+  final mine = currentUserId != null && post.author.userId == currentUserId;
   final action = await showModalBottomSheet<String>(
     context: context,
     builder: (_) => SafeArea(
@@ -21,35 +24,69 @@ Future<void> _showPostMenu(BuildContext context, Post post) async {
             title: const Text('Copy link'),
             onTap: () => Navigator.pop(context, 'copy'),
           ),
-          ListTile(
-            leading: const Icon(Icons.not_interested),
-            title: const Text('Not interested'),
-            onTap: () => Navigator.pop(context, 'not_interested'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.flag_outlined),
-            title: const Text('Report'),
-            onTap: () => Navigator.pop(context, 'report'),
-          ),
+          if (mine) ...[
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit'),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
+              leading: Icon(post.pinned ? Icons.push_pin : Icons.push_pin_outlined),
+              title: Text(post.pinned ? 'Unpin' : 'Pin'),
+              onTap: () => Navigator.pop(context, 'pin'),
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error),
+              title: Text('Delete',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+          ] else ...[
+            ListTile(
+              leading: const Icon(Icons.not_interested),
+              title: const Text('Not interested'),
+              onTap: () => Navigator.pop(context, 'not_interested'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: const Text('Report'),
+              onTap: () => Navigator.pop(context, 'report'),
+            ),
+          ],
         ],
       ),
     ),
   );
   if (action == null || !context.mounted) return;
-  switch (action) {
-    case 'copy':
-      await Clipboard.setData(
-          ClipboardData(text: 'https://okayspace.ca/post/${post.id}'));
-      if (context.mounted) showInfo(context, 'Link copied');
-    case 'not_interested':
-      try {
+  try {
+    switch (action) {
+      case 'copy':
+        await Clipboard.setData(
+            ClipboardData(text: 'https://okayspace.ca/post/${post.id}'));
+        if (context.mounted) showInfo(context, 'Link copied');
+      case 'not_interested':
         await api.feed.notInterested(post.id);
         if (context.mounted) showInfo(context, "We'll show less like this");
-      } catch (e) {
-        if (context.mounted) showError(context, e);
-      }
-    case 'report':
-      if (context.mounted) await _reportPost(context, post);
+      case 'report':
+        if (context.mounted) await _reportPost(context, post);
+      case 'pin':
+        await api.feed.togglePin(post.id);
+        onChanged?.call();
+      case 'delete':
+        await api.feed.deletePost(post.id);
+        if (context.mounted) showInfo(context, 'Deleted');
+        onChanged?.call();
+      case 'edit':
+        if (!context.mounted) return;
+        final text = await promptText(context,
+            title: 'Edit post', hint: 'Update your post', action: 'Save');
+        if (text == null) return;
+        await api.feed.editPost(post.id, {'text': text});
+        onChanged?.call();
+    }
+  } catch (e) {
+    if (context.mounted) showError(context, e);
   }
 }
 
@@ -131,11 +168,15 @@ class PostTile extends StatelessWidget {
       {super.key,
       required this.post,
       this.onLike,
+      this.onChanged,
       this.tappable = true,
       this.card = false});
 
   final Post post;
   final VoidCallback? onLike;
+
+  /// Called after the post is edited/pinned/deleted via the ⋯ menu.
+  final VoidCallback? onChanged;
   final bool tappable;
 
   /// When true, render as a rounded surface card with margin (feed style).
@@ -227,7 +268,7 @@ class PostTile extends StatelessWidget {
                 icon: Icon(Icons.more_horiz,
                     color: Theme.of(context).colorScheme.outline),
                 visualDensity: VisualDensity.compact,
-                onPressed: () => _showPostMenu(context, post),
+                onPressed: () => _showPostMenu(context, post, onChanged),
               ),
             ],
           ),

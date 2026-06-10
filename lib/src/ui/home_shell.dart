@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'common.dart';
 import 'feed_screen.dart';
 import 'marketplace_screen.dart';
 import 'messages_screen.dart';
@@ -18,6 +19,12 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    loadCurrentUserId();
+  }
 
   static const _items = <(IconData, IconData)>[
     (Icons.home_outlined, Icons.home),

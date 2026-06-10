@@ -6,6 +6,17 @@ import '../../okayspace_api.dart';
 /// A single API instance shared across the demo app.
 final OkaySpaceApi api = OkaySpaceApi();
 
+/// The signed-in user's id, cached after sign-in so widgets can tell which
+/// content is the current user's (e.g. own-post actions). Null until loaded.
+String? currentUserId;
+
+/// Fetches and caches [currentUserId] from /auth/me (best effort).
+Future<void> loadCurrentUserId() async {
+  try {
+    currentUserId = (await api.auth.me()).userId;
+  } catch (_) {/* ignore */}
+}
+
 /// Exact design tokens pulled from the okayspace.ca web app (WhatsApp-style
 /// dark theme with a teal accent).
 abstract final class OkayColors {
