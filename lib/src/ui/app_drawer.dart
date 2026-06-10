@@ -2,11 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'app.dart';
+import 'bookmarks_screen.dart';
 import 'common.dart';
+import 'communities_screen.dart';
+import 'friends_screen.dart';
 import 'groups_screen.dart';
+import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
+import 'roadside_screen.dart';
+import 'search_screen.dart';
 import 'settings_screen.dart';
+import 'support_screen.dart';
 import 'wallet_screen.dart';
 
 /// Side menu opened from the feed header — styled after okayspace.ca's sidebar.
@@ -18,7 +25,7 @@ class AppDrawer extends StatefulWidget {
 }
 
 class _AppDrawerState extends State<AppDrawer> {
-  late final Future<User> _me = api.auth.me();
+  late Future<User> _me = api.auth.me();
 
   void _push(Widget screen) {
     Navigator.pop(context);
@@ -150,16 +157,40 @@ class _AppDrawerState extends State<AppDrawer> {
                     onTap: () => _push(const ReelsScreen()),
                   ),
                   _Shortcut(
+                    icon: Icons.tag_rounded,
+                    color: const Color(0xFF06B6D4),
+                    label: 'Communities',
+                    onTap: () => _push(const CommunitiesScreen()),
+                  ),
+                  _Shortcut(
                     icon: Icons.groups_rounded,
                     color: const Color(0xFFA855F7),
                     label: 'Groups',
                     onTap: () => _push(const GroupsScreen()),
                   ),
                   _Shortcut(
-                    icon: Icons.settings_rounded,
-                    color: const Color(0xFF8696A0),
-                    label: 'Settings',
-                    onTap: _openSettings,
+                    icon: Icons.people_alt_rounded,
+                    color: const Color(0xFF6366F1),
+                    label: 'Friends',
+                    onTap: () => _push(const FriendsScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.search_rounded,
+                    color: const Color(0xFF14B8A6),
+                    label: 'Search',
+                    onTap: () => _push(const SearchScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.notifications_rounded,
+                    color: const Color(0xFFF59E0B),
+                    label: 'Notifications',
+                    onTap: () => _push(const NotificationsScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.bookmark_rounded,
+                    color: const Color(0xFFF97316),
+                    label: 'Bookmarks',
+                    onTap: () => _push(const BookmarksScreen()),
                   ),
                   _Shortcut(
                     icon: Icons.account_balance_wallet_rounded,
@@ -167,14 +198,33 @@ class _AppDrawerState extends State<AppDrawer> {
                     label: 'Wallet',
                     onTap: () => _push(const WalletScreen()),
                   ),
+                  _Shortcut(
+                    icon: Icons.car_repair_rounded,
+                    color: const Color(0xFFEAB308),
+                    label: 'Roadside',
+                    onTap: () => _push(const RoadsideScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.support_agent_rounded,
+                    color: const Color(0xFF0EA5E9),
+                    label: 'Support',
+                    onTap: () => _push(const SupportScreen()),
+                  ),
+                  _Shortcut(
+                    icon: Icons.settings_rounded,
+                    color: const Color(0xFF8696A0),
+                    label: 'Settings',
+                    onTap: _openSettings,
+                  ),
                   const Divider(height: 24, indent: 20, endIndent: 20),
                   _Shortcut(
                     icon: Icons.refresh_rounded,
                     color: scheme.primary,
                     label: 'Refresh / get latest update',
                     onTap: () {
-                      Navigator.pop(context);
-                      showInfo(context, 'Up to date');
+                      setState(() => _me = api.auth.me());
+                      loadCurrentUserId();
+                      showInfo(context, 'Refreshed');
                     },
                   ),
                   _Shortcut(
