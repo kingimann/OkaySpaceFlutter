@@ -55,30 +55,36 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _loadAll() async {
     setState(() => _loading = true);
     final lat = _center.latitude, lng = _center.longitude;
-    try {
-      final results = await Future.wait([
-        _showListings
-            ? api.marketplace
-                .listings(lat: lat, lng: lng, radiusKm: _radiusKm)
-            : Future.value(const <Listing>[]),
-        _showRoadside
-            ? api.roadside.nearby(lat: lat, lng: lng, radiusKm: _radiusKm)
-            : Future.value(const <RoadsideRequest>[]),
-        _showTransit
-            ? api.roadside.transitNearby(lat: lat, lng: lng, radius: _radiusKm)
-            : Future.value(const <Map<String, dynamic>>[]),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _listings = results[0] as List<Listing>;
-        _roadside = results[1] as List<RoadsideRequest>;
-        _transit = results[2] as List<Map<String, dynamic>>;
-      });
-    } catch (e) {
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    // Each layer loads independently so one failing (e.g. transit) doesn't
+    // wipe out the others.
+    final results = await Future.wait([
+      _showListings
+          ? api.marketplace
+              .listings(lat: lat, lng: lng, radiusKm: _radiusKm)
+              .catchError((_) => <Listing>[])
+          : Future.value(const <Listing>[]),
+      _showRoadside
+          ? api.roadside
+              .nearby(lat: lat, lng: lng, radiusKm: _radiusKm)
+              .catchError((_) => <RoadsideRequest>[])
+          : Future.value(const <RoadsideRequest>[]),
+      _showTransit
+          // Transit radius is in metres and the API caps it at 100–2000.
+          ? api.roadside
+              .transitNearby(
+                  lat: lat,
+                  lng: lng,
+                  radius: (_radiusKm * 1000).clamp(100, 2000).toDouble())
+              .catchError((_) => <Map<String, dynamic>>[])
+          : Future.value(const <Map<String, dynamic>>[]),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _listings = results[0] as List<Listing>;
+      _roadside = results[1] as List<RoadsideRequest>;
+      _transit = results[2] as List<Map<String, dynamic>>;
+      _loading = false;
+    });
   }
 
   Future<void> _search() async {
