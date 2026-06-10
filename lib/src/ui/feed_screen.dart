@@ -51,11 +51,8 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _load() {
-    _feed = switch (_tab) {
-      1 => api.feed.homeFeed(),
-      2 => api.feed.popularPosts(),
-      _ => api.feed.exploreFeed(),
-    };
+    // 0 = Explore, 1 = Following.
+    _feed = _tab == 1 ? api.feed.homeFeed() : api.feed.exploreFeed();
     _stories = api.stories.tray();
     _trending = api.feed.trendingHashtags();
     api.notifications.unreadCount().then((count) {

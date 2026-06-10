@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -199,7 +201,10 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  late Future<List<Message>> _messages;
+  List<Message> _items = const [];
+  bool _loading = true;
+  Object? _error;
+  Timer? _poll;
   final _input = TextEditingController();
   bool _sending = false;
 
@@ -208,19 +213,78 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _messages = api.messaging.messages(_convId);
+    _fetch();
     api.messaging.markRead(_convId).ignore();
+    // Light polling so new incoming messages appear while the chat is open.
+    _poll = Timer.periodic(const Duration(seconds: 6), (_) {
+      _fetch(silent: true);
+      api.messaging.pingPresence().ignore();
+    });
   }
 
   @override
   void dispose() {
+    _poll?.cancel();
     _input.dispose();
     super.dispose();
   }
 
-  Future<void> _reload() async {
-    setState(() => _messages = api.messaging.messages(_convId));
-    await _messages;
+  /// Loads messages. [silent] updates in place without showing the spinner
+  /// and ignores errors (used by the poll).
+  Future<void> _fetch({bool silent = false}) async {
+    if (!silent) setState(() => _loading = true);
+    try {
+      final msgs = await api.messaging.messages(_convId);
+      if (!mounted) return;
+      setState(() {
+        _items = msgs;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted || silent) return;
+      setState(() {
+        _loading = false;
+        _error = e;
+      });
+    }
+  }
+
+  Future<void> _reload() => _fetch();
+
+  Widget _buildMessages() {
+    if (_loading && _items.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _items.isEmpty) {
+      return CenteredMessage(
+          message: messageFor(_error), icon: Icons.error_outline);
+    }
+    if (_items.isEmpty) {
+      return const CenteredMessage(
+          message: 'Say hello 👋', icon: Icons.waving_hand_outlined);
+    }
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: ListView.builder(
+        reverse: true,
+        padding: const EdgeInsets.all(12),
+        itemCount: _items.length,
+        itemBuilder: (context, i) {
+          // Newest first when reversed.
+          final msg = _items[_items.length - 1 - i];
+          // In a direct chat, anything not sent by the other person is ours.
+          // Group chats fall back to left-aligned.
+          final otherId = widget.conversation.otherUser?.userId;
+          final mine = otherId != null && msg.senderId != otherId;
+          return _MessageBubble(
+            message: msg,
+            mine: mine,
+            onLongPress: msg.deleted ? null : () => _messageActions(msg, mine),
+          );
+        },
+      ),
+    );
   }
 
   void _call({bool video = false}) {
@@ -241,7 +305,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await api.messaging.sendText(_convId, text);
       _input.clear();
-      await _reload();
+      await _fetch(silent: true);
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -253,7 +317,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await op();
       if (ok != null && mounted) showInfo(context, ok);
-      await _reload();
+      await _fetch(silent: true);
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -472,32 +536,7 @@ class _ChatScreenState extends State<ChatScreen> {
       body: MaxWidth(
         child: Column(
         children: [
-          Expanded(
-            child: AsyncList<Message>(
-              future: _messages,
-              emptyMessage: 'Say hello 👋',
-              emptyIcon: Icons.waving_hand_outlined,
-              builder: (context, items) => ListView.builder(
-                reverse: true,
-                padding: const EdgeInsets.all(12),
-                itemCount: items.length,
-                itemBuilder: (context, i) {
-                  // Newest first when reversed.
-                  final msg = items[items.length - 1 - i];
-                  // In a direct chat, anything not sent by the other person is
-                  // ours. Group chats fall back to left-aligned.
-                  final otherId = widget.conversation.otherUser?.userId;
-                  final mine = otherId != null && msg.senderId != otherId;
-                  return _MessageBubble(
-                    message: msg,
-                    mine: mine,
-                    onLongPress:
-                        msg.deleted ? null : () => _messageActions(msg, mine),
-                  );
-                },
-              ),
-            ),
-          ),
+          Expanded(child: _buildMessages()),
           SafeArea(
             top: false,
             child: Padding(
