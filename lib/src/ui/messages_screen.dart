@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
+import 'call_screen.dart';
 import 'common.dart';
 
 /// List of the current user's conversations.
@@ -222,13 +223,15 @@ class _ChatScreenState extends State<ChatScreen> {
     await _messages;
   }
 
-  Future<void> _call() async {
-    try {
-      await api.messaging.ringCall(_convId);
-      if (mounted) showInfo(context, 'Calling…');
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
+  void _call({bool video = false}) {
+    CallScreen.open(
+      context,
+      conversationId: _convId,
+      title: widget.title,
+      avatarUrl: widget.conversation.avatar ??
+          widget.conversation.otherUser?.picture,
+      video: video,
+    );
   }
 
   Future<void> _send() async {
@@ -450,9 +453,14 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.videocam_outlined),
+            tooltip: 'Video call',
+            onPressed: () => _call(video: true),
+          ),
+          IconButton(
             icon: const Icon(Icons.call_outlined),
-            tooltip: 'Call',
-            onPressed: _call,
+            tooltip: 'Voice call',
+            onPressed: () => _call(),
           ),
           IconButton(
             icon: const Icon(Icons.more_vert),
