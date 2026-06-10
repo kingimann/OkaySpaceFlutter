@@ -198,6 +198,7 @@ class _TrendingHashtags extends StatefulWidget {
 
 class _TrendingHashtagsState extends State<_TrendingHashtags> {
   late Future<List<Map<String, dynamic>>> _trending;
+  late final Future<List<Post>> _popular = api.feed.popularPosts();
 
   @override
   void initState() {
@@ -262,6 +263,37 @@ class _TrendingHashtagsState extends State<_TrendingHashtags> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => HashtagScreen.open(context, _tagOf(tags[i])),
               ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+              child: Row(
+                children: [
+                  Icon(Icons.local_fire_department,
+                      color: Theme.of(context).colorScheme.primary, size: 22),
+                  const SizedBox(width: 8),
+                  const Text('Popular',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                ],
+              ),
+            ),
+            FutureBuilder<List<Post>>(
+              future: _popular,
+              builder: (context, snap) {
+                final posts = snap.data ?? const <Post>[];
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                return Column(
+                  children: [
+                    for (final p in posts.take(10))
+                      PostTile(post: p, card: true),
+                  ],
+                );
+              },
+            ),
           ],
         );
       },

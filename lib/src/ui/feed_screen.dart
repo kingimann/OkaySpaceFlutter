@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
@@ -29,19 +31,48 @@ class _FeedScreenState extends State<FeedScreen> {
   final _scrollController = ScrollController();
   // Measured height of the floating header, used to inset the list beneath it.
   double _headerHeight = 124;
+  // Live new-post polling + the floating "new posts" pill.
+  Timer? _poll;
+  String? _topPostId;
+  bool _hasNewPosts = false;
 
   @override
   void initState() {
     super.initState();
     _load();
     feedScrollSignal.addListener(_onScrollToTop);
+    // Poll for newer posts so a "new posts" pill can appear.
+    _poll = Timer.periodic(const Duration(seconds: 45), (_) => _checkNew());
   }
 
   @override
   void dispose() {
+    _poll?.cancel();
     feedScrollSignal.removeListener(_onScrollToTop);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Silently checks whether newer posts exist than the top of the list.
+  Future<void> _checkNew() async {
+    if (_hasNewPosts) return;
+    try {
+      final base = _tab == 1 ? api.feed.homeFeed() : api.feed.exploreFeed();
+      final fresh = _orderFeed(await base);
+      final newest = fresh.isEmpty ? null : fresh.first.id;
+      if (mounted && newest != null && newest != _topPostId) {
+        setState(() => _hasNewPosts = true);
+      }
+    } catch (_) {/* ignore poll errors */}
+  }
+
+  void _loadNewPosts() {
+    setState(() => _hasNewPosts = false);
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
+    _reload();
   }
 
   void _onScrollToTop() {
@@ -54,13 +85,38 @@ class _FeedScreenState extends State<FeedScreen> {
 
   void _load() {
     // 0 = Explore, 1 = Following.
+    _hasNewPosts = false;
     final base = _tab == 1 ? api.feed.homeFeed() : api.feed.exploreFeed();
-    _feed = base.then(_orderFeed);
+    _feed = base.then(_orderFeed).then((list) async {
+      _topPostId = list.isEmpty ? null : list.first.id;
+      return _interleaveAd(list);
+    });
     _stories = api.stories.tray();
     _trending = api.feed.trendingHashtags();
     api.notifications.unreadCount().then((count) {
       if (mounted) setState(() => _unread = count);
     }).catchError((_) {});
+  }
+
+  /// Fetches one sponsored post and weaves it into the feed (§3 AdSlot),
+  /// recording an impression. Silently skips if no ad is available.
+  Future<List<Post>> _interleaveAd(List<Post> list) async {
+    if (list.length < 3) return list;
+    try {
+      final data = await api.ads.next(placement: 'feed');
+      final raw = data['post'] is Map
+          ? Map<String, dynamic>.from(data['post'] as Map)
+          : data;
+      if (raw.isEmpty) return list;
+      final ad = Post.fromJson(raw);
+      if (ad.id.isEmpty || list.any((p) => p.id == ad.id)) return list;
+      api.ads.postEvent(ad.id, 'impression').ignore();
+      final out = [...list];
+      out.insert(out.length >= 4 ? 4 : out.length, ad);
+      return out;
+    } catch (_) {
+      return list;
+    }
   }
 
   /// Keeps sponsored posts pinned at the top, then orders the rest newest
@@ -244,6 +300,40 @@ class _FeedScreenState extends State<FeedScreen> {
                 ),
               ),
             ),
+            // Floating "new posts" pill, shown when polling finds newer posts.
+            if (_hasNewPosts)
+              Positioned(
+                top: _headerHeight + 4,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Material(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.circular(20),
+                    elevation: 3,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: _loadNewPosts,
+                      child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.arrow_upward,
+                                size: 16, color: Colors.white),
+                            SizedBox(width: 6),
+                            Text('New posts',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

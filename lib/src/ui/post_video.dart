@@ -16,6 +16,7 @@ class PostVideo extends StatefulWidget {
     this.autoPlay = false,
     this.looping = false,
     this.muted = false,
+    this.speed = 1.0,
   });
 
   final String url;
@@ -30,6 +31,9 @@ class PostVideo extends StatefulWidget {
   final bool autoPlay;
   final bool looping;
   final bool muted;
+
+  /// Playback speed (1.0 = normal). Applied live via [didUpdateWidget].
+  final double speed;
 
   @override
   State<PostVideo> createState() => _PostVideoState();
@@ -47,6 +51,18 @@ class _PostVideoState extends State<PostVideo> {
     _open(widget.url);
   }
 
+  @override
+  void didUpdateWidget(PostVideo oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Apply mute changes live (e.g. the reels mute toggle).
+    if (oldWidget.muted != widget.muted) {
+      _controller?.setVolume(widget.muted ? 0 : 1);
+    }
+    if (oldWidget.speed != widget.speed) {
+      _controller?.setPlaybackSpeed(widget.speed);
+    }
+  }
+
   void _open(String url) {
     final c = VideoPlayerController.networkUrl(Uri.parse(url));
     _controller = c;
@@ -54,6 +70,7 @@ class _PostVideoState extends State<PostVideo> {
       if (!mounted) return;
       c.setLooping(widget.looping);
       if (widget.muted) c.setVolume(0);
+      if (widget.speed != 1.0) c.setPlaybackSpeed(widget.speed);
       if (widget.autoPlay) c.play();
       setState(() => _ready = true);
     }).catchError((_) {

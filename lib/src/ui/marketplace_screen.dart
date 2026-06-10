@@ -35,6 +35,18 @@ const _kConditions = <(String, String?)>[
   ('Fair', 'fair'),
 ];
 
+const _kCategories = <(String, String?)>[
+  ('All categories', null),
+  ('Electronics', 'electronics'),
+  ('Vehicles', 'vehicles'),
+  ('Home', 'home'),
+  ('Fashion', 'fashion'),
+  ('Toys & games', 'toys'),
+  ('Sports', 'sports'),
+  ('Books', 'books'),
+  ('Other', 'other'),
+];
+
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   late Future<List<Listing>> _listings;
   final _search = TextEditingController();
@@ -42,9 +54,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   num? _minPrice;
   num? _maxPrice;
   String? _condition;
+  String? _category;
 
   bool get _hasFilters =>
-      _minPrice != null || _maxPrice != null || _condition != null;
+      _minPrice != null ||
+      _maxPrice != null ||
+      _condition != null ||
+      _category != null;
 
   @override
   void initState() {
@@ -66,6 +82,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       minPrice: _minPrice,
       maxPrice: _maxPrice,
       condition: _condition,
+      category: _category,
     );
   }
 
@@ -75,6 +92,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     final maxCtrl =
         TextEditingController(text: _maxPrice?.toString() ?? '');
     var condition = _condition;
+    var category = _category;
     final applied = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -111,8 +129,26 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 ],
               ),
               const SizedBox(height: 14),
+              const Text('Category'),
+              const SizedBox(height: 6),
               Wrap(
                 spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final c in _kCategories)
+                    ChoiceChip(
+                      label: Text(c.$1),
+                      selected: category == c.$2,
+                      onSelected: (_) => setSheet(() => category = c.$2),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text('Condition'),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   for (final c in _kConditions)
                     ChoiceChip(
@@ -147,10 +183,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         _minPrice = num.tryParse(minCtrl.text.trim());
         _maxPrice = num.tryParse(maxCtrl.text.trim());
         _condition = condition;
+        _category = category;
       } else {
         _minPrice = null;
         _maxPrice = null;
         _condition = null;
+        _category = null;
       }
       _query();
     });

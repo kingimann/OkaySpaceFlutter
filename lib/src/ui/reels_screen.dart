@@ -27,6 +27,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
   late Future<List<Post>> _future;
   List<Post> _reels = const [];
   int _tab = 0; // 0 = Explore (popular), 1 = Following (personalized)
+  // Browsers only allow muted autoplay, so start muted on web.
+  bool _muted = kIsWeb;
 
   @override
   void initState() {
@@ -191,6 +193,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
                     itemCount: _reels.length,
                     itemBuilder: (context, i) => _ReelPage(
                       post: _reels[i],
+                      muted: _muted,
+                      onToggleMute: () => setState(() => _muted = !_muted),
                       onLike: () => _like(i),
                       onRepost: () => _repost(i),
                       onBookmark: () => _bookmark(i),
@@ -277,6 +281,8 @@ class _ReelsScreenState extends State<ReelsScreen> {
 class _ReelPage extends StatefulWidget {
   const _ReelPage({
     required this.post,
+    required this.muted,
+    required this.onToggleMute,
     required this.onLike,
     required this.onRepost,
     required this.onBookmark,
@@ -284,6 +290,8 @@ class _ReelPage extends StatefulWidget {
   });
 
   final Post post;
+  final bool muted;
+  final VoidCallback onToggleMute;
   final VoidCallback onLike;
   final VoidCallback onRepost;
   final VoidCallback onBookmark;
@@ -295,6 +303,7 @@ class _ReelPage extends StatefulWidget {
 
 class _ReelPageState extends State<_ReelPage> {
   bool _showHeart = false;
+  double _speed = 1.0;
 
   void _doubleTapLike() {
     widget.onLike();
@@ -315,6 +324,9 @@ class _ReelPageState extends State<_ReelPage> {
         // Media: autoplaying looped video, or a cover image. Double-tap = like.
         GestureDetector(
           onDoubleTap: _doubleTapLike,
+          onLongPress: (media?.isVideo ?? false)
+              ? () => setState(() => _speed = _speed == 1.0 ? 2.0 : 1.0)
+              : null,
           child: (url != null && url.isNotEmpty)
               ? ((media?.isVideo ?? false)
                   ? PostVideo(
@@ -322,8 +334,8 @@ class _ReelPageState extends State<_ReelPage> {
                       poster: media?.thumbnail,
                       autoPlay: true,
                       looping: true,
-                      // Browsers only allow muted autoplay; start muted on web.
-                      muted: kIsWeb,
+                      muted: widget.muted,
+                      speed: _speed,
                       resolveOnError: () => api.feed.resolveVideoUrl(url),
                     )
                   : Image.network(url,
@@ -342,6 +354,42 @@ class _ReelPageState extends State<_ReelPage> {
             ),
           ),
         ),
+        // Mute / unmute toggle.
+        if (media?.isVideo ?? false)
+          Positioned(
+            top: 50,
+            right: 12,
+            child: GestureDetector(
+              onTap: widget.onToggleMute,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: Colors.black38,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(widget.muted ? Icons.volume_off : Icons.volume_up,
+                    color: Colors.white, size: 20),
+              ),
+            ),
+          ),
+        // Speed badge (long-press the video to toggle 1x/2x).
+        if ((media?.isVideo ?? false) && _speed != 1.0)
+          Positioned(
+            top: 50,
+            right: 56,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black38,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text('${_speed.toStringAsFixed(_speed % 1 == 0 ? 0 : 1)}x',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13)),
+            ),
+          ),
         // Top scrim for status-bar legibility.
         const Positioned(
           top: 0,
