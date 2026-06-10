@@ -1305,9 +1305,18 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hasMedia = message.media.isNotEmpty && !message.deleted;
+    final typeLabel = switch (message.type) {
+      'post' => '📄 Shared a post',
+      'place' => '📍 Location',
+      'money' => '💸 Payment',
+      'gif' => 'GIF',
+      'voice' => '🎤 Voice message',
+      'contact' => '👤 Contact',
+      _ => '[${message.type}]',
+    };
     final bodyText = message.deleted
         ? 'Message deleted'
-        : (message.text ?? (hasMedia ? '' : '[${message.type}]'));
+        : (message.text ?? (hasMedia ? '' : typeLabel));
     // Outgoing bubble = a dark tint of the current accent (teal by default,
     // matching okayspace.ca's WhatsApp-style chat).
     final bg = mine
