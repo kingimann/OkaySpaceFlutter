@@ -93,10 +93,11 @@ class _SearchScreenState extends State<SearchScreen> {
                   AsyncList<Post>(
                     future: _tagged!,
                     emptyMessage: 'No posts for #$_query.',
-                    builder: (context, items) => ListView.separated(
+                    builder: (context, items) => ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
                       itemCount: items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, i) => PostTile(post: items[i]),
+                      itemBuilder: (context, i) =>
+                          PostTile(post: items[i], card: true),
                     ),
                   ),
                 ],

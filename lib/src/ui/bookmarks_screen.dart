@@ -36,10 +36,10 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
           future: _bookmarks,
           emptyMessage: 'No bookmarks yet.\nTap the bookmark icon on a post.',
           emptyIcon: Icons.bookmark_border,
-          builder: (context, items) => ListView.separated(
+          builder: (context, items) => ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 4),
             itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, i) => PostTile(post: items[i]),
+            itemBuilder: (context, i) => PostTile(post: items[i], card: true),
           ),
         ),
       ),

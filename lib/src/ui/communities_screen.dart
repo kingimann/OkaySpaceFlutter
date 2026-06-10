@@ -244,10 +244,7 @@ class _CommunityDetailScreenState extends State<CommunityDetailScreen> {
                 }
                 return Column(
                   children: [
-                    for (final p in posts) ...[
-                      PostTile(post: p),
-                      const Divider(height: 1),
-                    ],
+                    for (final p in posts) PostTile(post: p, card: true),
                   ],
                 );
               },

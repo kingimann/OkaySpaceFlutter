@@ -200,10 +200,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 }
                 return Column(
                   children: [
-                    for (final p in posts) ...[
-                      PostTile(post: p),
-                      const Divider(height: 1),
-                    ],
+                    for (final p in posts) PostTile(post: p, card: true),
                   ],
                 );
               },
