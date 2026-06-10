@@ -28,11 +28,19 @@ class GuidesScreen extends StatefulWidget {
 class _GuidesScreenState extends State<GuidesScreen> {
   late Future<List<Place>> _places;
   late Future<List<Guide>> _guides;
+  final _placeSearch = TextEditingController();
+  String _placeQuery = '';
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _placeSearch.dispose();
+    super.dispose();
   }
 
   void _load() {
@@ -116,20 +124,59 @@ class _GuidesScreenState extends State<GuidesScreen> {
   }
 
   Widget _placesTab() {
-    return RefreshIndicator(
-      onRefresh: _reload,
-      child: AsyncList<Place>(
-        future: _places,
-        loading: const ListSkeleton(),
-        emptyMessage: 'No saved places yet.\nTap “New” to save somewhere.',
-        emptyIcon: Icons.place_outlined,
-        builder: (context, items) => ListView.separated(
-          padding: const EdgeInsets.only(bottom: 88),
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
-          itemBuilder: (context, i) {
-            final p = items[i];
-            return Dismissible(
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _placeSearch,
+            onChanged: (v) => setState(() => _placeQuery = v.trim().toLowerCase()),
+            decoration: InputDecoration(
+              hintText: 'Search saved places',
+              isDense: true,
+              prefixIcon: const Icon(Icons.search),
+              border: const OutlineInputBorder(),
+              suffixIcon: _placeQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        _placeSearch.clear();
+                        setState(() => _placeQuery = '');
+                      },
+                    ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _reload,
+            child: AsyncList<Place>(
+              future: _places,
+              loading: const ListSkeleton(),
+              emptyMessage: 'No saved places yet.\nTap “New” to save somewhere.',
+              emptyIcon: Icons.place_outlined,
+              builder: (context, all) {
+                final items = _placeQuery.isEmpty
+                    ? all
+                    : all.where((p) {
+                        final hay =
+                            '${p.title} ${p.address ?? ''} ${p.category ?? ''} ${p.notes ?? ''}'
+                                .toLowerCase();
+                        return hay.contains(_placeQuery);
+                      }).toList();
+                if (items.isEmpty) {
+                  return const CenteredMessage(
+                      message: 'No matching places.', icon: Icons.search_off);
+                }
+                return ListView.separated(
+                  padding: const EdgeInsets.only(bottom: 88),
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, indent: 64),
+                  itemBuilder: (context, i) {
+                    final p = items[i];
+                    return Dismissible(
               key: ValueKey(p.id),
               direction: DismissDirection.endToStart,
               background: Container(
@@ -166,8 +213,12 @@ class _GuidesScreenState extends State<GuidesScreen> {
               ),
             );
           },
+                );
+              },
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 

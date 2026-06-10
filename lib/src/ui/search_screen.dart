@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -20,6 +21,44 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<List<Post>>? _tagged;
   String _query = '';
 
+  static const _recentsKey = 'okayspace.recent_searches';
+  final _storage = const FlutterSecureStorage();
+  List<String> _recents = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecents();
+  }
+
+  Future<void> _loadRecents() async {
+    try {
+      final raw = await _storage.read(key: _recentsKey);
+      if (raw != null && raw.isNotEmpty && mounted) {
+        setState(() => _recents = raw.split('\n').where((s) => s.isNotEmpty).toList());
+      }
+    } catch (_) {/* ignore */}
+  }
+
+  void _persistRecents() {
+    _storage.write(key: _recentsKey, value: _recents.join('\n')).ignore();
+  }
+
+  void _addRecent(String q) {
+    _recents = [q, ..._recents.where((r) => r != q)].take(10).toList();
+    _persistRecents();
+  }
+
+  void _removeRecent(String q) {
+    setState(() => _recents = _recents.where((r) => r != q).toList());
+    _persistRecents();
+  }
+
+  void _clearRecents() {
+    setState(() => _recents = const []);
+    _storage.delete(key: _recentsKey).ignore();
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -35,6 +74,41 @@ class _SearchScreenState extends State<SearchScreen> {
       // Hashtag search uses the tag without a leading '#'.
       _tagged = api.feed.hashtagPosts(q.replaceFirst(RegExp(r'^#'), ''));
     });
+    _addRecent(q);
+  }
+
+  Widget _recentsBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('Recent',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              const Spacer(),
+              TextButton(onPressed: _clearRecents, child: const Text('Clear')),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final r in _recents)
+                InputChip(
+                  label: Text(r),
+                  onPressed: () {
+                    _controller.text = r;
+                    _run();
+                  },
+                  onDeleted: () => _removeRecent(r),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -62,7 +136,12 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
         body: MaxWidth(
           child: _query.isEmpty
-            ? _TrendingHashtags()
+            ? Column(
+                children: [
+                  if (_recents.isNotEmpty) _recentsBar(),
+                  Expanded(child: _TrendingHashtags()),
+                ],
+              )
             : TabBarView(
                 children: [
                   AsyncList<PublicUser>(

@@ -52,39 +52,97 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
   }
 }
 
-class _UserList extends StatelessWidget {
+class _UserList extends StatefulWidget {
   const _UserList({required this.future, required this.empty});
 
   final Future<List<PublicUser>> future;
   final String empty;
 
   @override
+  State<_UserList> createState() => _UserListState();
+}
+
+class _UserListState extends State<_UserList> {
+  final _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AsyncList<PublicUser>(
-      future: future,
-      emptyMessage: empty,
-      emptyIcon: Icons.people_outline,
-      builder: (context, items) => ListView.separated(
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, i) {
-          final u = items[i];
-          return ListTile(
-            leading: Avatar(url: u.picture, name: u.name),
-            title: Row(
-              children: [
-                Flexible(child: Text(u.name, overflow: TextOverflow.ellipsis)),
-                if (u.verified) ...[
-                  const SizedBox(width: 4),
-                  const Icon(Icons.verified, size: 14, color: Color(0xFF3B82F6)),
-                ],
-              ],
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _search,
+            onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+            decoration: InputDecoration(
+              hintText: 'Search',
+              isDense: true,
+              prefixIcon: const Icon(Icons.search),
+              border: const OutlineInputBorder(),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        _search.clear();
+                        setState(() => _query = '');
+                      },
+                    ),
             ),
-            subtitle: u.username != null ? Text(u.handle) : null,
-            onTap: () => ProfileScreen.open(context, u.userId),
-          );
-        },
-      ),
+          ),
+        ),
+        Expanded(
+          child: AsyncList<PublicUser>(
+            future: widget.future,
+            emptyMessage: widget.empty,
+            emptyIcon: Icons.people_outline,
+            builder: (context, all) {
+              final items = _query.isEmpty
+                  ? all
+                  : all
+                      .where((u) =>
+                          u.name.toLowerCase().contains(_query) ||
+                          (u.username ?? '').toLowerCase().contains(_query))
+                      .toList();
+              if (items.isEmpty) {
+                return const CenteredMessage(
+                    message: 'No matches.', icon: Icons.search_off);
+              }
+              return ListView.separated(
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, i) {
+                  final u = items[i];
+                  return ListTile(
+                    leading: Avatar(url: u.picture, name: u.name),
+                    title: Row(
+                      children: [
+                        Flexible(
+                            child:
+                                Text(u.name, overflow: TextOverflow.ellipsis)),
+                        if (u.verified) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.verified,
+                              size: 14, color: Color(0xFF3B82F6)),
+                        ],
+                      ],
+                    ),
+                    subtitle: u.username != null ? Text(u.handle) : null,
+                    onTap: () => ProfileScreen.open(context, u.userId),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

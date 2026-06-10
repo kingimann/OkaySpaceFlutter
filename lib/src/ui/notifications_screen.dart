@@ -16,6 +16,7 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   late Future<List<AppNotification>> _notifications;
   late Future<List<Map<String, dynamic>>> _activity;
+  bool _unreadOnly = false;
 
   @override
   void initState() {
@@ -136,17 +137,49 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _buildNotifications() {
-    return RefreshIndicator(
-        onRefresh: _reload,
-        child: AsyncList<AppNotification>(
-          future: _notifications,
-          emptyMessage: "You're all caught up.",
-          emptyIcon: Icons.check_circle_outline,
-          builder: (context, items) => ListView.separated(
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, i) {
-              final n = items[i];
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('All'),
+                  selected: !_unreadOnly,
+                  onSelected: (_) => setState(() => _unreadOnly = false),
+                ),
+                ChoiceChip(
+                  label: const Text('Unread'),
+                  selected: _unreadOnly,
+                  onSelected: (_) => setState(() => _unreadOnly = true),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _reload,
+            child: AsyncList<AppNotification>(
+              future: _notifications,
+              emptyMessage: "You're all caught up.",
+              emptyIcon: Icons.check_circle_outline,
+              builder: (context, all) {
+                final items =
+                    _unreadOnly ? all.where((n) => !n.read).toList() : all;
+                if (items.isEmpty) {
+                  return const CenteredMessage(
+                      message: 'No unread notifications.',
+                      icon: Icons.done_all);
+                }
+                return ListView.separated(
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final n = items[i];
               final text = n.message ??
                   '${n.actorName ?? 'Someone'} ${n.type.replaceAll('_', ' ')}';
               final badge = _colorFor(n.type, context);
@@ -203,9 +236,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   onTap: () => _open(n),
                 ),
               );
-            },
+                  },
+                );
+              },
+            ),
           ),
         ),
-      );
+      ],
+    );
   }
 }

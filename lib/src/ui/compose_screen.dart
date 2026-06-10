@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../okayspace_api.dart';
@@ -21,6 +23,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
   final List<Uint8List> _photos = [];
   bool _posting = false;
 
+  static const _draftKey = 'okayspace.compose_draft';
+  final _storage = const FlutterSecureStorage();
+  Timer? _draftTimer;
+
   // Poll composer.
   bool _poll = false;
   final List<TextEditingController> _options = [
@@ -38,7 +44,45 @@ class _ComposeScreenState extends State<ComposeScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _text.addListener(_saveDraft);
+    _loadDraft();
+  }
+
+  Future<void> _loadDraft() async {
+    try {
+      final d = await _storage.read(key: _draftKey);
+      if (d != null && d.isNotEmpty && mounted && _text.text.isEmpty) {
+        _text.text = d;
+        setState(() {});
+        showInfo(context, 'Draft restored');
+      }
+    } catch (_) {/* ignore */}
+  }
+
+  /// Debounced auto-save of the post text (cleared when empty).
+  void _saveDraft() {
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 600), () {
+      final t = _text.text;
+      if (t.trim().isEmpty) {
+        _storage.delete(key: _draftKey).ignore();
+      } else {
+        _storage.write(key: _draftKey, value: t).ignore();
+      }
+    });
+  }
+
+  void _clearDraft() {
+    _draftTimer?.cancel();
+    _storage.delete(key: _draftKey).ignore();
+  }
+
+  @override
   void dispose() {
+    _draftTimer?.cancel();
+    _text.removeListener(_saveDraft);
     _text.dispose();
     for (final c in _options) {
       c.dispose();
@@ -184,6 +228,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
         likesDisabled: _likesDisabled ? true : null,
         minSubTier: _subscribersOnly ? 1 : null,
       ));
+      _clearDraft();
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) showError(context, e);

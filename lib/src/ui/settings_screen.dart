@@ -15,6 +15,7 @@ import 'friends_screen.dart';
 import 'guides_screen.dart';
 import 'leaderboard_screen.dart';
 import 'roadside_screen.dart';
+import 'support_screen.dart';
 
 /// Account, privacy and notification settings, backed by the auth service.
 class SettingsScreen extends StatefulWidget {
@@ -687,6 +688,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 1, indent: 56),
           _shortcut(Icons.group_add_outlined, 'Followers & following',
               () => ConnectionsScreen(userId: widget.user.userId)),
+          const Divider(height: 1, indent: 56),
+          _shortcut(Icons.support_agent_outlined, 'Help & support',
+              () => const SupportScreen()),
         ]),
       ];
 
