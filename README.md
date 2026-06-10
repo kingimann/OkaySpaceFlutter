@@ -38,6 +38,27 @@ instead: `await api.useApiKey('osk_...')`. Failed requests throw a normalized
 The API is large (~386 endpoints); auth + the social feed are implemented so
 far, and new feature areas are added as services following the same pattern.
 
+## Building & deploying the web app
+
+```bash
+./scripts/build_web.sh                      # base-href "/"
+./scripts/build_web.sh /OkaySpaceFlutter/   # subpath (GitHub project pages)
+```
+
+Deploy the current `main` build to GitHub Pages (`gh-pages` branch):
+
+```bash
+./scripts/deploy_gh_pages.sh
+```
+
+This builds with `--base-href "/OkaySpaceFlutter/"`, adds a `404.html` SPA
+fallback, and force-pushes `build/web` to `gh-pages`. One-time setup: in the
+repo on GitHub, **Settings > Pages > Source: Deploy from a branch >
+`gh-pages` / root**. Served at `https://<user>.github.io/OkaySpaceFlutter/`.
+
+**CORS:** the app calls the backend (`okayspace-v0vx.onrender.com`) from the
+browser, so that backend must allow the deployed origin.
+
 ## Building for Android
 
 Requires the Android SDK (with **platform 36** + **build-tools 36**) and a
