@@ -41,6 +41,13 @@ self.addEventListener('activate', (e) => {
 });
 SW
 
+# Cache-bust the entry scripts. Flutter's main.dart.js / flutter_bootstrap.js
+# have fixed names, so without a versioned query GitHub Pages' HTTP cache keeps
+# serving the old app code after a deploy. Appending a unique build stamp forces
+# the browser to fetch the new code every deploy.
+perl -pi -e "s/flutter_bootstrap\.js(\?v=[^\"']*)?/flutter_bootstrap.js?v=$BUILD_STAMP/g" "$BUILD_DIR/index.html"
+perl -pi -e "s/main\.dart\.js(\?v=[^\"']*)?/main.dart.js?v=$BUILD_STAMP/g" "$BUILD_DIR/flutter_bootstrap.js"
+
 # SPA fallback so deep links don't 404 on GitHub Pages.
 cp "$BUILD_DIR/index.html" "$BUILD_DIR/404.html"
 touch "$BUILD_DIR/.nojekyll"
