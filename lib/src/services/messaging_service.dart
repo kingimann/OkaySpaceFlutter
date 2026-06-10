@@ -57,6 +57,38 @@ class MessagingService {
       _conv(await _client.postJson('/conversations/$convId/disappearing',
           body: {'seconds': seconds}));
 
+  /// Sets the chat colour theme (default/ocean/sunset/forest/grape/rose/
+  /// midnight/mono).
+  Future<ConversationView> setTheme(String convId, String theme) async =>
+      _conv(await _client.postJson('/conversations/$convId/theme',
+          body: {'theme': theme}));
+
+  /// Enables/disables read receipts for the conversation.
+  Future<void> setReadReceipts(String convId, bool enabled) async {
+    await _client.postJson('/conversations/$convId/receipts',
+        body: {'enabled': enabled});
+  }
+
+  /// AI summary of the conversation. The client assembles the [transcript]
+  /// from locally-loaded messages and the server summarizes it.
+  Future<String> summarize(String convId, String transcript) async {
+    final res = await _client.postJson('/conversations/$convId/summarize',
+        body: {'transcript': transcript});
+    if (res is Map) {
+      return '${res['summary'] ?? res['text'] ?? res['result'] ?? ''}';
+    }
+    return '$res';
+  }
+
+  /// Lists scheduled (future) messages for the conversation.
+  Future<List<Map<String, dynamic>>> scheduledMessages(String convId) async {
+    final res = await _client.getJson('/conversations/$convId/scheduled');
+    final v = res is Map ? (res['scheduled'] ?? res['items']) : res;
+    return v is List
+        ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : const [];
+  }
+
   // --- Messages -----------------------------------------------------------
 
   /// Lists messages in a conversation.

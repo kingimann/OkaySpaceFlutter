@@ -1127,20 +1127,28 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     if (entries.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.only(top: 8),
       child: Wrap(
         alignment: WrapAlignment.center,
         spacing: 8,
+        runSpacing: 8,
         children: [
           for (final (icon, url) in entries)
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              icon: Icon(icon, size: 20, color: scheme.primary),
-              tooltip: url,
-              onPressed: () {
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () {
                 Clipboard.setData(ClipboardData(text: url));
                 showInfo(context, 'Link copied: $url');
               },
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHigh,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 18, color: scheme.primary),
+              ),
             ),
         ],
       ),
