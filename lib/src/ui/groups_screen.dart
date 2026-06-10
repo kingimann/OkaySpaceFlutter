@@ -437,6 +437,28 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     }
   }
 
+  /// A small rounded stat chip (members / privacy) for the header.
+  Widget _statChip(BuildContext context, IconData icon, String label) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: scheme.outline),
+          const SizedBox(width: 5),
+          Text(label,
+              style:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -522,46 +544,97 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   );
                 }
                 final g = snapshot.data!;
-                return Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                final color = _groupColor(g, context);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Colored banner with the group avatar overlapping it.
+                    SizedBox(
+                      height: 116,
+                      child: Stack(
+                        clipBehavior: Clip.none,
                         children: [
-                          Avatar(name: g.name, radius: 28),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(g.name,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge),
-                                Text(
-                                    '${formatCount(g.memberCount)} members${g.isPrivate ? ' · Private' : ''}',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall),
-                              ],
+                          Container(
+                            height: 84,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [color, darken(color, 0.25)],
+                              ),
                             ),
                           ),
-                          FilledButton.tonal(
-                            onPressed: (_working || g.membershipPending)
-                                ? null
-                                : () => _toggleMembership(g),
-                            child: Text(_membershipLabel(g)),
+                          Positioned(
+                            left: 16,
+                            bottom: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Theme.of(context).scaffoldBackgroundColor,
+                              ),
+                              child: CircleAvatar(
+                                radius: 32,
+                                backgroundColor: color,
+                                child: Text(
+                                  g.name.isNotEmpty
+                                      ? g.name[0].toUpperCase()
+                                      : '#',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 26),
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                      if (g.description != null &&
-                          g.description!.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Text(g.description!),
-                      ],
-                    ],
-                  ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(g.name,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                            fontWeight: FontWeight.bold)),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton.tonal(
+                                onPressed: (_working || g.membershipPending)
+                                    ? null
+                                    : () => _toggleMembership(g),
+                                child: Text(_membershipLabel(g)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              _statChip(context, Icons.people_outline,
+                                  '${formatCount(g.memberCount)} members'),
+                              const SizedBox(width: 8),
+                              _statChip(
+                                  context,
+                                  g.isPrivate ? Icons.lock_outline : Icons.public,
+                                  g.isPrivate ? 'Private' : 'Public'),
+                            ],
+                          ),
+                          if (g.description != null &&
+                              g.description!.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Text(g.description!),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
