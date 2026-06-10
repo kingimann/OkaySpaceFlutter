@@ -124,6 +124,12 @@ class MessagingService {
   Future<Message> pinMessage(String convId, String msgId) async => _msg(
       await _client.postJson('/conversations/$convId/messages/$msgId/pin'));
 
+  /// Votes on a poll message by option index.
+  Future<Message> votePoll(String convId, String msgId, int optionIndex) async =>
+      _msg(await _client.postJson(
+          '/conversations/$convId/messages/$msgId/vote',
+          body: {'option_index': optionIndex, 'option': optionIndex}));
+
   Future<List<Message>> pinnedMessages(String convId) async => asModelList(
       await _client.getJson('/conversations/$convId/pinned'), Message.fromJson);
 
