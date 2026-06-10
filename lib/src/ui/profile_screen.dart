@@ -30,11 +30,9 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late Future<PublicUser> _profile;
   late Future<List<Post>> _posts;
-  Future<List<Post>>? _replies;
-  Future<List<Post>>? _reposts;
   Future<List<Post>>? _likes;
   bool _following = false;
-  // 0 Posts · 1 Replies · 2 Reposts · 3 Media · 4 Likes
+  // 0 Posts · 1 Media · 2 Likes
   int _tab = 0;
 
   @override
@@ -48,18 +46,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (t == _tab) return;
     setState(() {
       _tab = t;
-      if (t == 1) _replies ??= api.users.replies(widget.userId);
-      if (t == 2) _reposts ??= api.users.reposts(widget.userId);
-      if (t == 4) _likes ??= api.users.likes(widget.userId);
+      if (t == 2) _likes ??= api.users.likes(widget.userId);
     });
   }
 
-  Future<List<Post>> get _currentFuture => switch (_tab) {
-        1 => _replies!,
-        2 => _reposts!,
-        4 => _likes!,
-        _ => _posts, // Posts and Media share the posts future
-      };
+  Future<List<Post>> get _currentFuture =>
+      _tab == 2 ? _likes! : _posts; // Posts and Media share the posts future
+
+  int _stat(PublicUser u, List<String> keys) {
+    final s = u.raw['stats'];
+    if (s is Map) {
+      for (final k in keys) {
+        if (s[k] is num) return (s[k] as num).toInt();
+      }
+    }
+    for (final k in keys) {
+      if (u.raw[k] is num) return (u.raw[k] as num).toInt();
+    }
+    return 0;
+  }
 
   Future<PublicUser> _load() async {
     final user = await api.users.publicProfile(widget.userId);
@@ -163,8 +168,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
+      bottomNavigationBar: const OkayBottomNav(),
       appBar: OkayAppBar(
         title: const Text('Profile'),
         actions: [
@@ -186,203 +191,310 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
           final u = snapshot.data!;
           return ListView(
-            padding: EdgeInsets.zero,
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
             children: [
-              // Gradient banner with overlapping avatar.
-              SizedBox(
-                height: 150,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      height: 100,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [scheme.primary, darken(scheme.primary, 0.22)],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 56,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: BoxDecoration(
-                            color: scheme.surface,
-                            shape: BoxShape.circle,
-                          ),
-                          child:
-                              Avatar(url: u.picture, name: u.name, radius: 44),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(u.name,
-                            style: Theme.of(context).textTheme.headlineSmall),
-                        if (u.verified) ...[
-                          const SizedBox(width: 6),
-                          const Icon(Icons.verified,
-                              size: 20, color: Colors.blue),
-                        ],
-                      ],
-                    ),
-                    if (u.username != null)
-                      Text(u.handle,
-                          style: TextStyle(color: scheme.outline)),
-                    if (u.headline != null && u.headline!.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(u.headline!),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) => ConnectionsScreen(
-                                      userId: widget.userId, initialIndex: 0))),
-                          child: const Text('Followers'),
-                        ),
-                        Text('·', style: TextStyle(color: scheme.outline)),
-                        TextButton(
-                          onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) => ConnectionsScreen(
-                                      userId: widget.userId, initialIndex: 1))),
-                          child: const Text('Following'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (u.bio != null && u.bio!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-                  child: Text(u.bio!, textAlign: TextAlign.center),
-                ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _toggleFollow,
-                        child: Text(_following ? 'Following' : 'Follow'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _message,
-                        icon: const Icon(Icons.chat_bubble_outline),
-                        label: const Text('Message'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, thickness: 6),
-              _ProfileTabs(tab: _tab, onChanged: _setTab),
-              const Divider(height: 1),
-              FutureBuilder<List<Post>>(
-                future: _currentFuture,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  var posts = snap.data ?? const <Post>[];
-                  // Media tab: only posts that have attachments.
-                  if (_tab == 3) {
-                    posts = posts.where((p) => p.media.isNotEmpty).toList();
-                  }
-                  if (posts.isEmpty) {
-                    final what = switch (_tab) {
-                      1 => 'No replies yet.',
-                      2 => 'No reposts yet.',
-                      3 => 'No media yet.',
-                      4 => 'No liked posts yet.',
-                      _ => 'No posts yet.',
-                    };
-                    return Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Center(child: Text(what)),
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (final p in posts) PostTile(post: p, card: true),
-                    ],
-                  );
-                },
-              ),
+              MaxWidth(child: _profileCard(u)),
+              const SizedBox(height: 12),
+              MaxWidth(child: _postsSection()),
             ],
           );
         },
       ),
     );
   }
-}
 
-/// Posts / Media / Likes selector for a profile.
-class _ProfileTabs extends StatelessWidget {
-  const _ProfileTabs({required this.tab, required this.onChanged});
-
-  final int tab;
-  final ValueChanged<int> onChanged;
-
-  static const _labels = ['Posts', 'Replies', 'Reposts', 'Media', 'Likes'];
-
-  @override
-  Widget build(BuildContext context) {
+  /// Profile card mirroring My Profile: banner, avatar, name, level pill,
+  /// info, stat cards and Follow/Message actions.
+  Widget _profileCard(PublicUser u) {
     final scheme = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
+    final levelTitle = '${u.raw['level_title'] ?? ''}';
+    final location = '${u.raw['location'] ?? ''}';
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
         children: [
-          for (var i = 0; i < _labels.length; i++)
-            InkWell(
-              onTap: () => onChanged(i),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-                child: Column(
+          Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
+            children: [
+              Container(
+                height: 100,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [scheme.primary, darken(scheme.primary, 0.25)],
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 56,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.surfaceContainerLow,
+                    border: Border.all(color: scheme.primary, width: 2),
+                  ),
+                  child: Avatar(url: u.picture, name: u.name, radius: 42),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 52),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(u.name,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ),
+              if (u.verified) ...[
+                const SizedBox(width: 6),
+                const Icon(Icons.verified, size: 20, color: Color(0xFF3B82F6)),
+              ],
+            ],
+          ),
+          if (u.username != null)
+            Text(u.handle, style: TextStyle(color: scheme.primary)),
+          const SizedBox(height: 12),
+          if (u.points > 0 || u.level > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
                   children: [
-                    Text(_labels[i],
-                        style: TextStyle(
-                          fontWeight:
-                              tab == i ? FontWeight.bold : FontWeight.normal,
-                          color: tab == i ? scheme.onSurface : scheme.outline,
-                        )),
-                    const SizedBox(height: 8),
+                    Icon(Icons.local_fire_department,
+                        color: scheme.primary, size: 18),
+                    const SizedBox(width: 6),
+                    Text('${u.points} points',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 8),
                     Container(
-                      height: 2,
-                      width: 28,
-                      color: tab == i ? scheme.primary : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: scheme.primary,
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Text('Lv ${u.level}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(levelTitle,
+                          style: TextStyle(color: scheme.outline)),
                     ),
                   ],
                 ),
               ),
             ),
+          if (u.headline != null && u.headline!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(u.headline!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+          ],
+          if (location.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.place_outlined, size: 16, color: scheme.outline),
+              const SizedBox(width: 4),
+              Text(location),
+            ]),
+          ],
+          if (u.bio != null && u.bio!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(u.bio!, textAlign: TextAlign.center),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _statsRow(u),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _toggleFollow,
+                    child: Text(_following ? 'Following' : 'Follow'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _message,
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: const Text('Message'),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _statsRow(PublicUser u) {
+    final scheme = Theme.of(context).colorScheme;
+    final posts = _stat(u, ['posts', 'post_count', 'posts_count']);
+    final followers =
+        _stat(u, ['followers', 'followers_count', 'follower_count']);
+    final following = _stat(u, ['following', 'following_count']);
+    final friends = _stat(u, ['friends', 'friends_count', 'friend_count']);
+    Widget cell(String label, int value, VoidCallback? onTap) => Expanded(
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(children: [
+                Text(formatCount(value),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 2),
+                Text(label,
+                    style: TextStyle(color: scheme.outline, fontSize: 12)),
+              ]),
+            ),
+          ),
+        );
+    final divider =
+        Container(width: 1, height: 28, color: scheme.outlineVariant);
+    return Container(
+      decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(14)),
+      child: Row(children: [
+        cell('Posts', posts, null),
+        divider,
+        cell(
+            'Followers',
+            followers,
+            () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) =>
+                    ConnectionsScreen(userId: widget.userId, initialIndex: 0)))),
+        divider,
+        cell(
+            'Following',
+            following,
+            () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) =>
+                    ConnectionsScreen(userId: widget.userId, initialIndex: 1)))),
+        divider,
+        cell('Friends', friends, null),
+      ]),
+    );
+  }
+
+  Widget _postsSection() {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              for (final (i, label, icon) in const [
+                (0, 'Posts', Icons.grid_view_rounded),
+                (1, 'Media', Icons.photo_library_outlined),
+                (2, 'Likes', Icons.favorite_border),
+              ])
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _setTab(i),
+                    behavior: HitTestBehavior.opaque,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: _tab == i ? scheme.primary : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icon,
+                              size: 16,
+                              color:
+                                  _tab == i ? Colors.white : scheme.outline),
+                          const SizedBox(width: 6),
+                          Text(label,
+                              style: TextStyle(
+                                  color: _tab == i
+                                      ? Colors.white
+                                      : scheme.outline,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        FutureBuilder<List<Post>>(
+          future: _currentFuture,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(28),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            var posts = snap.data ?? const <Post>[];
+            if (_tab == 1) {
+              posts = posts.where((p) => p.media.isNotEmpty).toList();
+            }
+            if (posts.isEmpty) {
+              final what = switch (_tab) {
+                1 => 'No media yet.',
+                2 => 'No liked posts yet.',
+                _ => 'No posts yet.',
+              };
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 36),
+                child: Center(
+                    child: Text(what,
+                        style: TextStyle(color: scheme.outline))),
+              );
+            }
+            return Column(
+              children: [
+                for (final p in posts) PostTile(post: p, card: true),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }

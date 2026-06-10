@@ -13,8 +13,8 @@ final ValueNotifier<int> feedScrollSignal = ValueNotifier<int>(0);
 /// The home destination the shell should show, identified by its id (see
 /// [kAllNavDests]). [OkayBottomNav] sets this from any screen; the shell
 /// listens and switches tabs (popping back to it first).
-class _HomeTabSignal extends ValueNotifier<String> {
-  _HomeTabSignal(super.value);
+class HomeTabSignal extends ValueNotifier<String> {
+  HomeTabSignal(super.value);
 
   /// Selects [id], re-notifying even if it's already selected (so re-tapping
   /// the active tab still triggers listeners, e.g. feed scroll-to-top).
@@ -27,7 +27,7 @@ class _HomeTabSignal extends ValueNotifier<String> {
   }
 }
 
-final _HomeTabSignal homeTabSignal = _HomeTabSignal('feed');
+final HomeTabSignal homeTabSignal = HomeTabSignal('feed');
 
 /// A navigation destination available for the customizable bottom bar.
 class NavDest {
