@@ -704,6 +704,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _draftTimer;
   // @mention autocomplete (group chats).
   List<PublicUser> _mentions = const [];
+  // Custom emoji: shortcode -> base64 image, rendered inline as :shortcode:.
+  Map<String, String> _customEmojis = const {};
   // Auto-scroll to the first unread message, once, on open.
   final _unreadKey = GlobalKey();
   bool _scrolledToUnread = false;
@@ -767,6 +769,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadDraft();
     _loadStarred();
     _loadPrefs();
+    _loadCustomEmojis();
     api.messaging.markRead(_convId).ignore();
     // Show the jump-to-latest button once scrolled away from the bottom
     // (offset 0 is the newest message in this reversed list).
@@ -830,6 +833,19 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() =>
             _starred = d.split('\n').where((s) => s.isNotEmpty).toSet());
       }
+    } catch (_) {/* ignore */}
+  }
+
+  Future<void> _loadCustomEmojis() async {
+    try {
+      final list = await api.messaging.customEmojis();
+      if (!mounted) return;
+      setState(() => _customEmojis = {
+            for (final e in list)
+              if ('${e['shortcode'] ?? ''}'.isNotEmpty &&
+                  '${e['image_base64'] ?? ''}'.isNotEmpty)
+                '${e['shortcode']}': '${e['image_base64']}',
+          });
     } catch (_) {/* ignore */}
   }
 
@@ -1891,21 +1907,57 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       showDragHandle: true,
       builder: (_) => SafeArea(
-        child: GridView.count(
+        child: ListView(
           shrinkWrap: true,
-          crossAxisCount: 8,
           padding: const EdgeInsets.all(12),
           children: [
-            for (final e in emojis)
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () {
-                  Navigator.pop(context);
-                  _insertEmoji(e);
-                },
-                child: Center(
-                    child: Text(e, style: const TextStyle(fontSize: 26))),
+            if (_customEmojis.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 6),
+                child: Text('Custom',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.outline,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12)),
               ),
+              Wrap(
+                children: [
+                  for (final e in _customEmojis.entries)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _insertText(':${e.key}:');
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Image.memory(base64Decode(e.value),
+                            width: 28,
+                            height: 28,
+                            errorBuilder: (_, __, ___) =>
+                                Text(':${e.key}:')),
+                      ),
+                    ),
+                ],
+              ),
+              const Divider(height: 16),
+            ],
+            Wrap(
+              children: [
+                for (final e in emojis)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _insertEmoji(e);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(e, style: const TextStyle(fontSize: 26)),
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),
@@ -2069,6 +2121,7 @@ class _ChatScreenState extends State<ChatScreen> {
             bubbleColor: _bubbleColor,
             showTimestamp: _showTimestamps,
             fontFamily: _fontFamily,
+            customEmojis: _customEmojis,
             squareCorners: _squareBubbles,
             compact: _compact,
             starred: _starred.contains(msg.id),
@@ -2431,6 +2484,102 @@ class _ChatScreenState extends State<ChatScreen> {
       avatarUrl: widget.conversation.avatar ??
           widget.conversation.otherUser?.picture,
       video: video,
+    );
+  }
+
+  /// Schedules the composer text to send at a chosen future time.
+  Future<void> _scheduleMessage() async {
+    final text = _input.text.trim();
+    if (text.isEmpty) {
+      showInfo(context, 'Type a message to schedule');
+      return;
+    }
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 10))),
+    );
+    if (time == null || !mounted) return;
+    final at = DateTime(
+        date.year, date.month, date.day, time.hour, time.minute);
+    if (!at.isAfter(now.add(const Duration(minutes: 1)))) {
+      showInfo(context, 'Pick a time at least a minute from now');
+      return;
+    }
+    try {
+      await api.messaging.scheduleMessage(_convId, text, at);
+      if (mounted) {
+        _input.clear();
+        _clearDraft();
+        showInfo(context, 'Message scheduled');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Lists pending scheduled messages with a cancel action.
+  void _showScheduled() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => FutureBuilder<List<Map<String, dynamic>>>(
+        future: api.messaging.scheduledMessages(_convId),
+        builder: (sheetCtx, snap) {
+          final items = snap.data ?? const [];
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                    title: Text('Scheduled messages',
+                        style: TextStyle(fontWeight: FontWeight.bold))),
+                if (snap.connectionState == ConnectionState.waiting)
+                  const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator())
+                else if (items.isEmpty)
+                  const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('No scheduled messages.'))
+                else
+                  for (final s in items)
+                    ListTile(
+                      leading: const Icon(Icons.schedule),
+                      title: Text('${s['body'] ?? s['text'] ?? ''}',
+                          maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text((s['send_at'] ?? '')
+                          .toString()
+                          .replaceFirst('T', ' ')
+                          .split('.')
+                          .first),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () async {
+                          final id = '${s['id'] ?? s['scheduled_id'] ?? ''}';
+                          if (id.isEmpty) return;
+                          try {
+                            await api.messaging.cancelScheduled(_convId, id);
+                            if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                            if (mounted) showInfo(context, 'Cancelled');
+                          } catch (e) {
+                            if (mounted) showError(context, e);
+                          }
+                        },
+                      ),
+                    ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -3002,6 +3151,14 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.schedule_send_outlined),
+              title: const Text('Scheduled messages'),
+              onTap: () {
+                Navigator.pop(context);
+                _showScheduled();
+              },
+            ),
+            ListTile(
               leading: Icon(
                   _muted ? Icons.notifications_off : Icons.notifications_none),
               title: Text(_muted ? 'Unmute notifications' : 'Mute notifications'),
@@ -3530,6 +3687,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                   IconButton(
+                    icon: const Icon(Icons.schedule_send_outlined),
+                    tooltip: 'Schedule',
+                    onPressed: _sending ? null : _scheduleMessage,
+                  ),
+                  IconButton(
                     onPressed: _sending ? null : _send,
                     icon: const Icon(Icons.send),
                   ),
@@ -3553,6 +3715,7 @@ class _MessageBubble extends StatelessWidget {
       this.bubbleColor,
       this.showTimestamp = false,
       this.fontFamily = 'default',
+      this.customEmojis = const {},
       this.squareCorners = false,
       this.compact = false,
       this.starred = false,
@@ -3585,6 +3748,9 @@ class _MessageBubble extends StatelessWidget {
 
   /// Chat font family: 'default' | 'serif' | 'mono'.
   final String fontFamily;
+
+  /// Custom emoji map (shortcode -> base64), rendered inline for `:shortcode:`.
+  final Map<String, String> customEmojis;
 
   /// Square vs. rounded bubble corners.
   final bool squareCorners;
@@ -3626,6 +3792,37 @@ class _MessageBubble extends StatelessWidget {
   bool _hasMarkdown(String s) => _mdPattern.hasMatch(s);
 
   /// Renders a subset of markdown (**bold**, _italic_, ~~strike~~) as spans.
+  static final _emojiToken = RegExp(r':(\w+):');
+
+  bool _hasCustomEmoji(String s) =>
+      customEmojis.isNotEmpty &&
+      _emojiToken.allMatches(s).any((m) => customEmojis.containsKey(m.group(1)));
+
+  /// Renders text with `:shortcode:` custom emojis substituted as inline images.
+  Widget _emojiText(String text, TextStyle base) {
+    final spans = <InlineSpan>[];
+    var idx = 0;
+    for (final m in _emojiToken.allMatches(text)) {
+      final code = m.group(1)!;
+      final b64 = customEmojis[code];
+      if (b64 == null) continue;
+      if (m.start > idx) spans.add(TextSpan(text: text.substring(idx, m.start)));
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 1),
+          child: Image.memory(base64Decode(b64),
+              width: 20,
+              height: 20,
+              errorBuilder: (_, __, ___) => Text(':$code:', style: base)),
+        ),
+      ));
+      idx = m.end;
+    }
+    if (idx < text.length) spans.add(TextSpan(text: text.substring(idx)));
+    return Text.rich(TextSpan(style: base, children: spans));
+  }
+
   Widget _formattedBody(String text, TextStyle base) {
     final spans = <TextSpan>[];
     var idx = 0;
@@ -4023,7 +4220,9 @@ class _MessageBubble extends StatelessWidget {
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _hasMarkdown(bodyText)
+                                  _hasCustomEmoji(bodyText)
+                                      ? _emojiText(bodyText, TextStyle(color: fg))
+                                      : _hasMarkdown(bodyText)
                                       ? _formattedBody(
                                           bodyText, TextStyle(color: fg))
                                       : LinkedText(bodyText,

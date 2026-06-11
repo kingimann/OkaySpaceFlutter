@@ -89,6 +89,27 @@ class MessagingService {
         : const [];
   }
 
+  /// Schedules a text message to send at [sendAt] (must be in the future).
+  Future<void> scheduleMessage(
+      String convId, String body, DateTime sendAt) async {
+    await _client.postJson('/conversations/$convId/scheduled',
+        body: {'body': body, 'send_at': sendAt.toUtc().toIso8601String()});
+  }
+
+  /// Cancels a pending scheduled message.
+  Future<void> cancelScheduled(String convId, String scheduledId) async {
+    await _client.deleteJson('/conversations/$convId/scheduled/$scheduledId');
+  }
+
+  /// The current user's uploadable custom emojis (`:shortcode:`).
+  Future<List<Map<String, dynamic>>> customEmojis() async {
+    final res = await _client.getJson('/emojis');
+    final v = res is Map ? (res['emojis'] ?? res['items']) : res;
+    return v is List
+        ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : const [];
+  }
+
   // --- Messages -----------------------------------------------------------
 
   /// Lists messages in a conversation.
