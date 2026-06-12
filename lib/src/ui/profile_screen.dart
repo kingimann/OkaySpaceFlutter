@@ -937,13 +937,29 @@ class MyProfileScreen extends StatefulWidget {
 }
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
-  late Future<User> _me = api.auth.me();
+  late Future<User> _me = _load();
   late Future<List<Map<String, dynamic>>> _leaderboard =
       api.users.leaderboard().catchError((_) => <Map<String, dynamic>>[]);
+  // Follower/following/friend counts — /auth/me omits them, so they come from
+  // the public profile's `stats` object.
+  Map<String, dynamic> _stats = const {};
+
+  /// Loads the signed-in user and (separately) the stats the /auth/me payload
+  /// doesn't include.
+  Future<User> _load() async {
+    final u = await api.auth.me();
+    api.users.publicProfile(u.userId).then((p) {
+      final s = p.raw['stats'];
+      if (mounted && s is Map) {
+        setState(() => _stats = Map<String, dynamic>.from(s));
+      }
+    }).catchError((_) {});
+    return u;
+  }
 
   Future<void> _reload() async {
     setState(() {
-      _me = api.auth.me();
+      _me = _load();
       _leaderboard =
           api.users.leaderboard().catchError((_) => <Map<String, dynamic>>[]);
     });
@@ -1037,6 +1053,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   }
 
   int _stat(User u, List<String> keys) {
+    // Prefer the stats fetched from the public profile (/auth/me omits them).
+    for (final k in keys) {
+      final v = _stats[k];
+      if (v is num) return v.toInt();
+    }
     final s = u.raw['stats'];
     if (s is Map) {
       for (final k in keys) {
