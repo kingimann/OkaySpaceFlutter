@@ -500,10 +500,7 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
       final secret = _secretOf(session);
       // The backend reports which embedded components the session enables
       // (e.g. the full 'payouts' dashboard vs onboarding-only); honor it.
-      final enabled = [
-        if (session['components'] is List)
-          for (final c in session['components'] as List) '$c',
-      ];
+      final enabled = _componentsOf(session['components']);
       if (!mounted) return;
       setState(() {
         _publishableKey = pk;
@@ -518,9 +515,35 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
 
   List<String> _enabled = const [];
 
+  /// Normalizes the session's enabled-components payload. Accepts a list of
+  /// names, a {name: bool} map, or a list of {name/enabled} maps, in either
+  /// Stripe-API (account_management) or Connect.js (account-management)
+  /// spelling — comparison happens dashed-lowercase.
+  static List<String> _componentsOf(Object? raw) {
+    String norm(Object? v) =>
+        '$v'.trim().toLowerCase().replaceAll('_', '-');
+    if (raw is Map) {
+      return [
+        for (final e in raw.entries)
+          if (e.value == true || e.value is Map) norm(e.key),
+      ];
+    }
+    if (raw is List) {
+      return [
+        for (final c in raw)
+          if (c is Map)
+            norm(c['name'] ?? c['component'] ?? c.keys.firstOrNull)
+          else
+            norm(c),
+      ];
+    }
+    return const [];
+  }
+
   /// The component to render: the requested one when the session enables it,
   /// otherwise the best enabled alternative ('payouts' is the full embedded
-  /// dashboard: payout methods, balance, and instant payouts).
+  /// dashboard: payout methods, balance, and instant payouts). Stripe renders
+  /// non-enabled components as a silent blank, so this choice matters.
   String get _component {
     if (_enabled.isEmpty || _enabled.contains(widget.component)) {
       return widget.component;

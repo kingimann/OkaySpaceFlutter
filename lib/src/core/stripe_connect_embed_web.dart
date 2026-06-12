@@ -101,6 +101,7 @@ Widget stripeConnectView({
         // The account session controls which components are enabled; fall
         // back (e.g. account-management → account-onboarding) before failing.
         JSObject? el;
+        var rendered = component;
         for (final name in <String>[
           component,
           if (fallbackComponent != null) fallbackComponent
@@ -109,6 +110,7 @@ Widget stripeConnectView({
             final created = instance.callMethod('create'.toJS, name.toJS);
             if (created != null && !created.isUndefinedOrNull) {
               el = created as JSObject;
+              rendered = name;
               break;
             }
           } catch (_) {/* try the fallback component */}
@@ -123,8 +125,32 @@ Widget stripeConnectView({
             !el.getProperty('setOnExit'.toJS).isUndefinedOrNull) {
           el.callMethod('setOnExit'.toJS, (() => done()).toJS);
         }
+        var failed = false;
+        if (!el.getProperty('setOnLoadError'.toJS).isUndefinedOrNull) {
+          el.callMethod(
+              'setOnLoadError'.toJS,
+              ((JSAny? e) {
+                failed = true;
+                onError?.call(
+                    'Stripe reported a load error for "$rendered".');
+              }).toJS);
+        }
         loading.remove();
         container.appendChild(el as web.Node);
+        // Stripe renders components that the account session does NOT
+        // enable as a silent empty element — detect the blank and surface
+        // it instead of leaving a white screen.
+        final mounted = el as web.Element;
+        Timer(const Duration(seconds: 8), () {
+          if (failed || !container.isConnected) return;
+          if (mounted.clientHeight < 40 && container.scrollHeight < 80) {
+            onError?.call(
+                'The "$rendered" form rendered empty. The account session '
+                'likely doesn\'t enable this component — the backend should '
+                'create it with components {account_onboarding, '
+                'account_management, payouts} enabled.');
+          }
+        });
       } catch (e) {
         loading.remove();
         onError?.call('$e');
