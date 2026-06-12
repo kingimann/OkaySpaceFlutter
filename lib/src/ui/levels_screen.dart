@@ -9,6 +9,7 @@ import 'gamification.dart';
 import 'points_breakdown_screen.dart';
 import 'profile_decor.dart';
 import 'rewards_screen.dart';
+import 'weekly_challenges_screen.dart';
 import 'weekly_recap_screen.dart';
 
 /// Points & Levels: current standing, progress to the next level, the tier
@@ -261,6 +262,48 @@ class LevelsScreen extends StatelessWidget {
                               const Text('Daily quests',
                                   style: TextStyle(fontWeight: FontWeight.w600)),
                               Text('$done of ${kDailyQuests.length} done today',
+                                  style: TextStyle(
+                                      color: scheme.outline, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: scheme.outline),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          // Weekly challenges entry.
+          AnimatedBuilder(
+            animation: pointsLedger,
+            builder: (context, _) {
+              final done = kWeeklyChallenges
+                  .where((c) => c.current(pointsLedger) >= c.target)
+                  .length;
+              return Material(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const WeeklyChallengesScreen())),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.flag_outlined, color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Weekly challenges',
+                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                              Text(
+                                  '$done of ${kWeeklyChallenges.length} done · resets Monday',
                                   style: TextStyle(
                                       color: scheme.outline, fontSize: 12)),
                             ],

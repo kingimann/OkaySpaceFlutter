@@ -103,6 +103,12 @@ class PointsLedger extends ChangeNotifier {
   final Map<String, int> _dailyActions = {};
   final Set<String> _claimedQuests = {};
 
+  // Per-week action counts and the ids of weekly challenges already claimed —
+  // both scoped to [_challengeWeek] (the Monday the current week began).
+  String _challengeWeek = '';
+  final Map<String, int> _weekActions = {};
+  final Set<String> _claimedChallenges = {};
+
   // Set while the app is in the foreground; null while backgrounded.
   DateTime? _activeSince;
 
@@ -230,6 +236,14 @@ class PointsLedger extends ChangeNotifier {
 
   String get _today => _dayKey(DateTime.now());
 
+  /// The Monday this week began on, as a day key — the weekly challenge epoch.
+  String get _thisWeek {
+    final now = DateTime.now();
+    final monday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    return _dayKey(monday);
+  }
+
   void _rolloverIfNeeded() {
     if (_onlineDay != _today) {
       _onlineDay = _today;
@@ -237,6 +251,11 @@ class PointsLedger extends ChangeNotifier {
       _onlinePointsToday = 0;
       _dailyActions.clear();
       _claimedQuests.clear();
+    }
+    if (_challengeWeek != _thisWeek) {
+      _challengeWeek = _thisWeek;
+      _weekActions.clear();
+      _claimedChallenges.clear();
     }
   }
 
@@ -259,6 +278,52 @@ class PointsLedger extends ChangeNotifier {
     if (_claimedQuests.contains(questId) || reward <= 0) return false;
     _claimedQuests.add(questId);
     award('quests', reward);
+    return true;
+  }
+
+  /// How many times [source] was awarded since Monday.
+  int actionsThisWeek(String source) {
+    _rolloverIfNeeded();
+    return _weekActions[source] ?? 0;
+  }
+
+  /// Points earned since Monday (the weekly-challenge week, unlike the rolling
+  /// 7-day window of [pointsThisWeek]).
+  int get pointsThisCalendarWeek {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day);
+    var sum = 0;
+    for (var i = 0; i < now.weekday; i++) {
+      sum += _dailyTotals[_dayKey(midnight.subtract(Duration(days: i)))] ?? 0;
+    }
+    return sum;
+  }
+
+  /// Days since Monday (inclusive of today) on which the daily goal was met.
+  int get goalDaysThisWeek {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day);
+    var days = 0;
+    for (var i = 0; i < now.weekday; i++) {
+      final t = _dailyTotals[_dayKey(midnight.subtract(Duration(days: i)))];
+      if ((t ?? 0) >= _dailyGoal) days++;
+    }
+    return days;
+  }
+
+  /// Whether a weekly challenge has already been claimed this week.
+  bool isChallengeClaimed(String challengeId) {
+    _rolloverIfNeeded();
+    return _claimedChallenges.contains(challengeId);
+  }
+
+  /// Claims a completed weekly challenge's reward (once per week). Returns
+  /// true if the reward was granted now.
+  bool claimChallenge(String challengeId, int reward) {
+    _rolloverIfNeeded();
+    if (_claimedChallenges.contains(challengeId) || reward <= 0) return false;
+    _claimedChallenges.add(challengeId);
+    award('challenges', reward);
     return true;
   }
 
@@ -366,6 +431,17 @@ class PointsLedger extends ChangeNotifier {
           if (cq is List) {
             _claimedQuests.addAll(cq.whereType<String>());
           }
+          _challengeWeek = (m['challengeWeek'] as String?) ?? '';
+          final wa = m['weekActions'];
+          if (wa is Map) {
+            wa.forEach((k, v) {
+              if (v is num) _weekActions['$k'] = v.toInt();
+            });
+          }
+          final cc = m['claimedChallenges'];
+          if (cc is List) {
+            _claimedChallenges.addAll(cc.whereType<String>());
+          }
           final dt = m['dailyTotals'];
           if (dt is Map) {
             dt.forEach((k, v) {
@@ -412,6 +488,9 @@ class PointsLedger extends ChangeNotifier {
           'lastSeenRank': _lastSeenRank,
           'dailyActions': _dailyActions,
           'claimedQuests': _claimedQuests.toList(),
+          'challengeWeek': _challengeWeek,
+          'weekActions': _weekActions,
+          'claimedChallenges': _claimedChallenges.toList(),
           'dailyTotals': _dailyTotals,
           'dailyGoal': _dailyGoal,
           'events': [
@@ -431,6 +510,7 @@ class PointsLedger extends ChangeNotifier {
     if (amount <= 0) return;
     _rolloverIfNeeded();
     _dailyActions[source] = (_dailyActions[source] ?? 0) + 1;
+    _weekActions[source] = (_weekActions[source] ?? 0) + 1;
     _credit(source, amount);
     notifyListeners();
     _persist();
