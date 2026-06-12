@@ -1573,6 +1573,9 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         }
         return;
       }
+      // (Backend note: if checkout rejects kind "topup" — e.g. "Invalid
+      // recipient" — the server needs a wallet top-up kind; tips/subs
+      // checkout requires a recipient.)
       await launchUrl(Uri.parse('$url'),
           mode: LaunchMode.externalApplication);
       if (mounted) {
