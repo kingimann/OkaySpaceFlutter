@@ -46,6 +46,21 @@ class PointsLedger extends ChangeNotifier {
   /// The most a single day's streak bonus can be worth.
   static const int streakDailyCap = 7;
 
+  /// The most streak freezes a user can bank at once.
+  static const int maxStreakFreezes = 2;
+
+  /// Streak length → one-time milestone bonus. Reaching each of these for the
+  /// first time grants a bigger reward on top of the daily streak bonus.
+  static const Map<int, int> streakMilestones = {
+    3: 5,
+    7: 10,
+    14: 15,
+    30: 30,
+    60: 50,
+    100: 100,
+    365: 365,
+  };
+
   /// How many recent point events to keep for the activity log.
   static const int _maxEvents = 60;
 
@@ -63,6 +78,14 @@ class PointsLedger extends ChangeNotifier {
   String _lastActiveDay = '';
   int _currentStreak = 0;
   int _longestStreak = 0;
+  // Streak milestones already rewarded (one-time each).
+  final Set<int> _streakMilestonesHit = {};
+  // The milestone just reached, surfaced once for a celebration then cleared.
+  int? _pendingStreakMilestone;
+  // Banked streak freezes (auto-protect a single missed day) and a one-shot
+  // flag set when one was just spent.
+  int _streakFreezes = 0;
+  bool _pendingFreezeUsed = false;
 
   // Highest backend level seen on this device (-1 = not yet known), used to
   // detect a level-up and celebrate it once.
@@ -216,9 +239,18 @@ class PointsLedger extends ChangeNotifier {
     final today = _today;
     if (_lastActiveDay == today) return; // already counted today
 
-    final yesterday = _dayKey(DateTime.now().subtract(const Duration(days: 1)));
+    final now = DateTime.now();
+    final yesterday = _dayKey(now.subtract(const Duration(days: 1)));
+    final dayBefore = _dayKey(now.subtract(const Duration(days: 2)));
     if (_lastActiveDay == yesterday) {
       _currentStreak += 1; // kept the run going
+    } else if (_lastActiveDay == dayBefore &&
+        _streakFreezes > 0 &&
+        _currentStreak > 0) {
+      // Missed exactly one day — spend a freeze to keep the run alive.
+      _streakFreezes -= 1;
+      _currentStreak += 1;
+      _pendingFreezeUsed = true;
     } else {
       _currentStreak = 1; // first day, or the run lapsed
     }
@@ -229,8 +261,43 @@ class PointsLedger extends ChangeNotifier {
     final bonus = _currentStreak.clamp(1, streakDailyCap);
     _credit('streak', bonus);
 
+    // One-time milestone bonus when the run first reaches a threshold, plus a
+    // banked streak freeze (up to the cap) as a reward.
+    final ms = streakMilestones[_currentStreak];
+    if (ms != null && !_streakMilestonesHit.contains(_currentStreak)) {
+      _streakMilestonesHit.add(_currentStreak);
+      _pendingStreakMilestone = _currentStreak;
+      _credit('streak', ms);
+      if (_streakFreezes < maxStreakFreezes) _streakFreezes += 1;
+    }
+
     notifyListeners();
     _persist();
+  }
+
+  /// The next streak length that earns a milestone bonus, or null if past all.
+  int? get nextStreakMilestone {
+    for (final d in streakMilestones.keys) {
+      if (d > _currentStreak) return d;
+    }
+    return null;
+  }
+
+  /// A milestone just reached but not yet celebrated; reading it clears it.
+  int? takePendingStreakMilestone() {
+    final m = _pendingStreakMilestone;
+    _pendingStreakMilestone = null;
+    return m;
+  }
+
+  /// Streak freezes currently banked (each protects one missed day).
+  int get streakFreezes => _streakFreezes;
+
+  /// Whether a freeze was just spent to save the streak; reading it clears it.
+  bool takePendingFreezeUsed() {
+    final used = _pendingFreezeUsed;
+    _pendingFreezeUsed = false;
+    return used;
   }
 
   // --- Persistence --------------------------------------------------------
@@ -252,6 +319,12 @@ class PointsLedger extends ChangeNotifier {
           _lastActiveDay = (m['lastActiveDay'] as String?) ?? '';
           _currentStreak = (m['currentStreak'] as num?)?.toInt() ?? 0;
           _longestStreak = (m['longestStreak'] as num?)?.toInt() ?? 0;
+          final ms = m['streakMilestones'];
+          if (ms is List) {
+            _streakMilestonesHit
+                .addAll(ms.whereType<num>().map((e) => e.toInt()));
+          }
+          _streakFreezes = (m['streakFreezes'] as num?)?.toInt() ?? 0;
           _lastSeenLevel = (m['lastSeenLevel'] as num?)?.toInt() ?? -1;
           _lastSeenRank = (m['lastSeenRank'] as num?)?.toInt() ?? -1;
           final da = m['dailyActions'];
@@ -303,6 +376,8 @@ class PointsLedger extends ChangeNotifier {
           'lastActiveDay': _lastActiveDay,
           'currentStreak': _currentStreak,
           'longestStreak': _longestStreak,
+          'streakMilestones': _streakMilestonesHit.toList(),
+          'streakFreezes': _streakFreezes,
           'lastSeenLevel': _lastSeenLevel,
           'lastSeenRank': _lastSeenRank,
           'dailyActions': _dailyActions,

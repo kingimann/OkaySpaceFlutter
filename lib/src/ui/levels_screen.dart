@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import '../core/points_ledger.dart';
@@ -29,7 +30,16 @@ class LevelsScreen extends StatelessWidget {
         : (user.points % 100) / 100;
 
     return Scaffold(
-      appBar: const OkayAppBar(title: Text('Points & Levels')),
+      appBar: OkayAppBar(
+        title: const Text('Points & Levels'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Share progress',
+            onPressed: () => _shareProgress(context, tier),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -88,6 +98,7 @@ class LevelsScreen extends StatelessWidget {
             builder: (context, _) {
               final streak = pointsLedger.currentStreak;
               final longest = pointsLedger.longestStreak;
+              final next = pointsLedger.nextStreakMilestone;
               const flame = Color(0xFFF59E0B);
               return Container(
                 padding: const EdgeInsets.all(16),
@@ -117,9 +128,35 @@ class LevelsScreen extends StatelessWidget {
                                   : 'Best: $longest days · keep it alive for a daily bonus',
                               style:
                                   TextStyle(color: scheme.outline, fontSize: 12)),
+                          if (next != null)
+                            Text(
+                                '${next - streak} day${next - streak == 1 ? '' : 's'} to your $next-day milestone',
+                                style: const TextStyle(
+                                    color: flame,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
+                    if (pointsLedger.streakFreezes > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF38BDF8).withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.ac_unit,
+                              size: 15, color: Color(0xFF38BDF8)),
+                          const SizedBox(width: 4),
+                          Text('${pointsLedger.streakFreezes}',
+                              style: const TextStyle(
+                                  color: Color(0xFF38BDF8),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13)),
+                        ]),
+                      ),
                   ],
                 ),
               );
@@ -359,5 +396,19 @@ class LevelsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Copies a shareable summary of the user's progress to the clipboard.
+  void _shareProgress(BuildContext context, PointsTier tier) {
+    final streak = pointsLedger.currentStreak;
+    final week = pointsLedger.pointsThisWeek;
+    final parts = <String>[
+      'I\'m level ${user.level} (${tier.name}) on OkaySpace 🚀',
+      '${user.points} points',
+      if (streak > 1) '🔥 $streak-day streak',
+      if (week > 0) '📈 $week points this week',
+    ];
+    Clipboard.setData(ClipboardData(text: parts.join(' · ')));
+    showInfo(context, 'Progress copied to share');
   }
 }

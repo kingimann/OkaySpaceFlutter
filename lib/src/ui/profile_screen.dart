@@ -970,6 +970,23 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         }
       });
     }
+    // Celebrate a freshly-reached streak milestone.
+    final milestone = pointsLedger.takePendingStreakMilestone();
+    if (milestone != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          showInfo(context, '🔥 $milestone-day streak! Bonus points earned');
+        }
+      });
+    }
+    // Note when a streak freeze saved the day.
+    if (pointsLedger.takePendingFreezeUsed()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          showInfo(context, '❄️ Streak freeze used — your streak is safe!');
+        }
+      });
+    }
     // Note how the leaderboard rank has moved since this device last looked.
     _leaderboard.then((lb) {
       final rank = _rankIn(lb, u.userId);
