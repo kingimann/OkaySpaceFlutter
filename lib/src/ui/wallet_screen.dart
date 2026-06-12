@@ -1673,6 +1673,9 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   num? _balance;
   String _currency = 'USD';
 
+  /// Recent transactions, used for the "between you and X" history.
+  List<WalletTxn> _recentTxns = const [];
+
   static const _presets = [5, 10, 20, 50, 100];
 
   @override
@@ -1683,10 +1686,19 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
         setState(() {
           _balance = w.balance;
           _currency = w.currency;
+          _recentTxns = [...w.recent, ...w.sent];
         });
       }
     }).catchError((_) {});
   }
+
+  /// Past transactions with the selected recipient, newest first.
+  List<WalletTxn> get _betweenUs => _recipient == null
+      ? const []
+      : _recentTxns
+          .where((t) => t.counterpartyId == _recipient!.userId)
+          .take(3)
+          .toList();
 
   @override
   void dispose() {
@@ -1869,6 +1881,61 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
                 ),
               ),
             ),
+            // Venmo-style mini history with this person.
+            if (_betweenUs.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Between you and ${_recipient!.name.split(' ').first}',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.outline,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    for (final t in _betweenUs)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                [
+                                  t.amount >= 0
+                                      ? 'They paid you'
+                                      : 'You paid them',
+                                  if (t.note != null && t.note!.isNotEmpty)
+                                    t.note!,
+                                  if (t.createdAt != null)
+                                    shortAgo(t.createdAt!),
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                            Text(
+                              '${t.amount >= 0 ? '+' : '−'} ${_money(t.amount.abs(), t.currency)}',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: t.amount >= 0
+                                      ? const Color(0xFF22C55E)
+                                      : Theme.of(context).colorScheme.error),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             // Venmo-style amount entry: big centered display over a keypad.
             Text(
