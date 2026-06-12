@@ -78,6 +78,50 @@ class LevelsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          // Daily activity streak (local).
+          AnimatedBuilder(
+            animation: pointsLedger,
+            builder: (context, _) {
+              final streak = pointsLedger.currentStreak;
+              final longest = pointsLedger.longestStreak;
+              const flame = Color(0xFFF59E0B);
+              return Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: flame.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: flame.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.local_fire_department,
+                        color: flame, size: 32),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              streak <= 1
+                                  ? 'Day 1 streak'
+                                  : '$streak-day streak',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text(
+                              streak <= 1
+                                  ? 'Come back tomorrow to keep it going'
+                                  : 'Best: $longest days · keep it alive for a daily bonus',
+                              style:
+                                  TextStyle(color: scheme.outline, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
           // Live entry into the per-activity points breakdown.
           AnimatedBuilder(
             animation: pointsLedger,

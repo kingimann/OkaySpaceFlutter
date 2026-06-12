@@ -195,6 +195,7 @@ class PointSource {
 /// Known point sources, in a sensible display order. Unknown ids fall back to
 /// a generic "Activity" row in the breakdown.
 const kPointSources = <PointSource>[
+  PointSource('streak', 'Daily streak', Icons.local_fire_department, _gold),
   PointSource('online', 'Online time', Icons.schedule_outlined, _cyan),
   PointSource('posts', 'Posts & replies', Icons.post_add_outlined, _blue),
   PointSource('reactions', 'Reactions', Icons.favorite_border, _rose),

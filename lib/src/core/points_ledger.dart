@@ -3,6 +3,14 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+/// A single point-earning event, newest-first in [PointsLedger.recentEvents].
+class PointEvent {
+  const PointEvent(this.source, this.amount, this.at);
+  final String source;
+  final int amount;
+  final DateTime at;
+}
+
 /// A local, on-device tally of point-earning activity.
 ///
 /// The backend stays authoritative for a user's real `points`/`level`, but it
@@ -35,11 +43,24 @@ class PointsLedger extends ChangeNotifier {
   static const int reactionPoints = 1;
   static const int socialPoints = 3;
 
+  /// The most a single day's streak bonus can be worth.
+  static const int streakDailyCap = 7;
+
+  /// How many recent point events to keep for the activity log.
+  static const int _maxEvents = 60;
+
   // --- State (persisted) --------------------------------------------------
   final Map<String, int> _bySource = {};
+  // Recent point events, newest last (kept ≤ _maxEvents).
+  final List<PointEvent> _events = [];
   String _onlineDay = '';
   int _onlineLeftoverSeconds = 0; // toward the next online point
   int _onlinePointsToday = 0;
+
+  // Daily activity streak.
+  String _lastActiveDay = '';
+  int _currentStreak = 0;
+  int _longestStreak = 0;
 
   // Set while the app is in the foreground; null while backgrounded.
   DateTime? _activeSince;
@@ -49,6 +70,18 @@ class PointsLedger extends ChangeNotifier {
 
   /// Points tallied per source id (read-only view), e.g. `{'online': 12}`.
   Map<String, int> get bySource => Map.unmodifiable(_bySource);
+
+  /// Recent point events, newest first.
+  List<PointEvent> get recentEvents => _events.reversed.toList(growable: false);
+
+  /// Adds [amount] to [source]'s total and records an event. Caller notifies.
+  void _credit(String source, int amount) {
+    _bySource[source] = (_bySource[source] ?? 0) + amount;
+    _events.add(PointEvent(source, amount, DateTime.now()));
+    if (_events.length > _maxEvents) {
+      _events.removeRange(0, _events.length - _maxEvents);
+    }
+  }
 
   /// Total points tracked locally across all sources.
   int get total => _bySource.values.fold(0, (a, b) => a + b);
@@ -62,10 +95,19 @@ class PointsLedger extends ChangeNotifier {
   /// How many more online points can still be earned today.
   int get onlineRemainingToday => (onlineDailyCap - onlinePointsToday).clamp(0, onlineDailyCap);
 
-  String get _today {
-    final n = DateTime.now();
-    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
-  }
+  /// Consecutive days the app has been opened (today counted once seen).
+  int get currentStreak => _currentStreak;
+
+  /// The best streak ever reached.
+  int get longestStreak => _longestStreak;
+
+  /// Whether today has already been counted toward the streak.
+  bool get countedToday => _lastActiveDay == _today;
+
+  String _dayKey(DateTime n) =>
+      '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+
+  String get _today => _dayKey(DateTime.now());
 
   void _rolloverIfNeeded() {
     if (_onlineDay != _today) {
@@ -73,6 +115,29 @@ class PointsLedger extends ChangeNotifier {
       _onlineLeftoverSeconds = 0;
       _onlinePointsToday = 0;
     }
+  }
+
+  /// Counts today toward the daily streak (once), extending or resetting it,
+  /// and awards a small streak bonus that grows with the run (capped per day).
+  void _touchStreak() {
+    final today = _today;
+    if (_lastActiveDay == today) return; // already counted today
+
+    final yesterday = _dayKey(DateTime.now().subtract(const Duration(days: 1)));
+    if (_lastActiveDay == yesterday) {
+      _currentStreak += 1; // kept the run going
+    } else {
+      _currentStreak = 1; // first day, or the run lapsed
+    }
+    _lastActiveDay = today;
+    if (_currentStreak > _longestStreak) _longestStreak = _currentStreak;
+
+    // Bonus grows with the streak but is capped so it stays modest.
+    final bonus = _currentStreak.clamp(1, streakDailyCap);
+    _credit('streak', bonus);
+
+    notifyListeners();
+    _persist();
   }
 
   // --- Persistence --------------------------------------------------------
@@ -91,11 +156,27 @@ class PointsLedger extends ChangeNotifier {
           _onlineDay = (m['onlineDay'] as String?) ?? '';
           _onlineLeftoverSeconds = (m['onlineSeconds'] as num?)?.toInt() ?? 0;
           _onlinePointsToday = (m['onlineToday'] as num?)?.toInt() ?? 0;
+          _lastActiveDay = (m['lastActiveDay'] as String?) ?? '';
+          _currentStreak = (m['currentStreak'] as num?)?.toInt() ?? 0;
+          _longestStreak = (m['longestStreak'] as num?)?.toInt() ?? 0;
+          final evts = m['events'];
+          if (evts is List) {
+            for (final e in evts) {
+              if (e is Map && e['s'] is String && e['a'] is num && e['t'] is num) {
+                _events.add(PointEvent(
+                  e['s'] as String,
+                  (e['a'] as num).toInt(),
+                  DateTime.fromMillisecondsSinceEpoch((e['t'] as num).toInt()),
+                ));
+              }
+            }
+          }
         }
       }
     } catch (_) {/* start fresh */}
     _rolloverIfNeeded();
     _loaded = true;
+    _touchStreak(); // count this session's day once persisted state is known
     notifyListeners();
   }
 
@@ -108,6 +189,13 @@ class PointsLedger extends ChangeNotifier {
           'onlineDay': _onlineDay,
           'onlineSeconds': _onlineLeftoverSeconds,
           'onlineToday': _onlinePointsToday,
+          'lastActiveDay': _lastActiveDay,
+          'currentStreak': _currentStreak,
+          'longestStreak': _longestStreak,
+          'events': [
+            for (final e in _events)
+              {'s': e.source, 'a': e.amount, 't': e.at.millisecondsSinceEpoch},
+          ],
         }),
       );
     } catch (_) {/* best effort */}
@@ -119,7 +207,7 @@ class PointsLedger extends ChangeNotifier {
   /// amounts so toggles (e.g. un-liking) never subtract.
   void award(String source, int amount) {
     if (amount <= 0) return;
-    _bySource[source] = (_bySource[source] ?? 0) + amount;
+    _credit(source, amount);
     notifyListeners();
     _persist();
   }
@@ -127,7 +215,11 @@ class PointsLedger extends ChangeNotifier {
   // --- Online-time accrual ------------------------------------------------
 
   /// Call when the app enters the foreground.
-  void noteActive() => _activeSince = DateTime.now();
+  void noteActive() {
+    _activeSince = DateTime.now();
+    // After load, a resume that crosses midnight should still count the day.
+    if (_loaded) _touchStreak();
+  }
 
   /// Call on a timer while foregrounded, and when leaving the foreground, to
   /// bank the elapsed online time as points (slowly, and capped per day).
@@ -153,7 +245,7 @@ class PointsLedger extends ChangeNotifier {
     if (_onlinePointsToday >= onlineDailyCap) _onlineLeftoverSeconds = 0;
 
     if (gained > 0) {
-      _bySource['online'] = (_bySource['online'] ?? 0) + gained;
+      _credit('online', gained);
       notifyListeners();
     }
     _persist();
