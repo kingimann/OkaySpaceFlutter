@@ -36,9 +36,11 @@ class AdminService {
     await _client.postJson('/admin/users/$userId/unban');
   }
 
-  Future<void> suspendUser(String userId, {String? reason}) async {
-    await _client.postJson('/admin/users/$userId/suspend',
-        body: {if (reason != null) 'reason': reason});
+  Future<void> suspendUser(String userId, {int? days, String? reason}) async {
+    await _client.postJson('/admin/users/$userId/suspend', body: {
+      if (days != null) 'days': days,
+      if (reason != null) 'reason': reason,
+    });
   }
 
   /// Sets per-user feature restrictions (messaging/posting/marketplace…).
@@ -100,6 +102,107 @@ class AdminService {
 
   Future<void> deleteBadge(String badgeId) async {
     await _client.deleteJson('/admin/badges/$badgeId');
+  }
+
+  Future<dynamic> listBadges() => _client.getJson('/admin/badges');
+
+  Future<Map<String, dynamic>> editTransaction(String userId, String txnId,
+          Map<String, dynamic> changes) async =>
+      _map(await _client.patchJson('/admin/users/$userId/transactions/$txnId',
+          body: changes));
+
+  Future<void> deleteTransaction(String userId, String txnId,
+      {bool adjust = false}) async {
+    await _client.deleteJson('/admin/users/$userId/transactions/$txnId',
+        query: {'adjust': adjust});
+  }
+
+  // --- Platform switches & resets ------------------------------------------
+
+  Future<dynamic> testPayments() => _client.getJson('/admin/test-payments');
+  Future<void> setTestPayments(bool on) async {
+    await _client.postJson('/admin/test-payments', body: {'enabled': on});
+  }
+
+  Future<dynamic> mobileOnly() => _client.getJson('/admin/mobile-only');
+  Future<void> setMobileOnly(bool on) async {
+    await _client.postJson('/admin/mobile-only', body: {'enabled': on});
+  }
+
+  Future<dynamic> webBuild() => _client.getJson('/admin/web-build');
+  Future<void> bumpWebBuild() async {
+    await _client.postJson('/admin/web-build/bump');
+  }
+
+  Future<void> resetMoney() async {
+    await _client.postJson('/admin/reset-money');
+  }
+
+  Future<void> resetAnalytics() async {
+    await _client.postJson('/admin/reset-analytics');
+  }
+
+  // --- Test bot -------------------------------------------------------------
+
+  Future<dynamic> botPosts() => _client.getJson('/admin/bot/posts');
+
+  Future<Map<String, dynamic>> runBot(Map<String, dynamic> body) async =>
+      _map(await _client.postJson('/admin/bot/run', body: body));
+
+  // --- Roadside calls -------------------------------------------------------
+
+  Future<Map<String, dynamic>> createRoadsideCall(
+          Map<String, dynamic> body) async =>
+      _map(await _client.postJson('/admin/roadside/calls', body: body));
+
+  Future<dynamic> roadsideCalls({String? date, String? callNumber}) =>
+      _client.getJson('/admin/roadside/calls',
+          query: {'date': date, 'call_number': callNumber});
+
+  Future<void> deleteRoadsideCall(String callId) async {
+    await _client.deleteJson('/admin/roadside/calls/$callId');
+  }
+
+  Future<void> eraseRoadsideCalls({bool testOnly = false}) async {
+    await _client
+        .postJson('/admin/roadside/calls/erase', body: {'test_only': testOnly});
+  }
+
+  // --- Render hosting -------------------------------------------------------
+
+  Future<dynamic> renderServices() => _client.getJson('/admin/render/services');
+
+  Future<dynamic> renderDeploys(String serviceId) =>
+      _client.getJson('/admin/render/services/$serviceId/deploys');
+
+  Future<Map<String, dynamic>> renderTriggerDeploy(String serviceId,
+          {bool clearCache = false}) async =>
+      _map(await _client.postJson('/admin/render/services/$serviceId/deploys',
+          body: {'clear_cache': clearCache}));
+
+  Future<void> renderRestart(String serviceId) async {
+    await _client.postJson('/admin/render/services/$serviceId/restart');
+  }
+
+  Future<void> renderSuspend(String serviceId) async {
+    await _client.postJson('/admin/render/services/$serviceId/suspend');
+  }
+
+  Future<void> renderResume(String serviceId) async {
+    await _client.postJson('/admin/render/services/$serviceId/resume');
+  }
+
+  Future<dynamic> renderEnvVars(String serviceId) =>
+      _client.getJson('/admin/render/services/$serviceId/env-vars');
+
+  Future<void> renderSetEnv(String serviceId, String key, String value) async {
+    await _client.postJson('/admin/render/services/$serviceId/env-vars',
+        body: {'key': key, 'value': value});
+  }
+
+  Future<void> renderDeleteEnv(String serviceId, String key) async {
+    await _client
+        .deleteJson('/admin/render/services/$serviceId/env-vars/$key');
   }
 
   // --- Integrations -------------------------------------------------------
