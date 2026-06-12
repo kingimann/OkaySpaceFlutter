@@ -26,3 +26,14 @@ Future<LatLng?> currentLatLng() async {
     return null;
   }
 }
+
+/// Continuous position updates (~every 10 m). Permission must already be
+/// granted (call [currentLatLng] first); errors end the stream silently.
+Stream<LatLng> positionStream() => Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    )
+        .map((p) => LatLng(p.latitude, p.longitude))
+        .handleError((Object _) {});

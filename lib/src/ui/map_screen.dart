@@ -60,6 +60,10 @@ const _osmStyles = <_TileStyle>[
       dark: true),
   _TileStyle('topo', 'Terrain',
       url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png'),
+  _TileStyle('satellite', 'Satellite',
+      url:
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      dark: true),
 ];
 
 List<_TileStyle> get _tileStyles => _hasMapbox ? _mapboxStyles : _osmStyles;
@@ -130,6 +134,33 @@ class _MapScreenState extends State<MapScreen> {
   String? _routeSummary;
   bool _locating = false;
 
+  // Follow-me: a live GPS stream keeps the location dot (and camera) moving.
+  StreamSubscription<LatLng>? _followSub;
+  bool get _following => _followSub != null;
+
+  void _toggleFollow() async {
+    if (_following) {
+      await _followSub?.cancel();
+      if (!mounted) return;
+      setState(() => _followSub = null);
+      showInfo(context, 'Stopped following your location');
+      return;
+    }
+    // Prime permissions + first fix via the one-shot path.
+    await _locateMe();
+    if (!mounted || _myLocation == null) return;
+    _followSub = positionStream().listen((pos) {
+      if (!mounted) return;
+      setState(() {
+        _myLocation = pos;
+        _center = pos;
+      });
+      _controller.move(pos, _controller.camera.zoom);
+    });
+    setState(() {});
+    showInfo(context, 'Following your location — long-press to stop');
+  }
+
   // Multi-stop route (waypoints) + straight-line directions target.
   bool _routing = false;
   final List<LatLng> _route = [];
@@ -179,6 +210,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
+    _followSub?.cancel();
     _chromeTimer?.cancel();
     // Don't leave the bars hidden if we leave mid-pan.
     showBars();
@@ -398,21 +430,15 @@ class _MapScreenState extends State<MapScreen> {
     _loadAll();
   }
 
-  /// Fetches a driving route (OSRM) from the location dot to the search pin
-  /// and draws it with a distance/time summary.
-  Future<void> _routeToPin() async {
-    final from = _myLocation;
-    final to = _searchPin;
-    if (to == null) return;
-    if (from == null) {
-      await _locateMe();
-      if (_myLocation == null) return;
-      return _routeToPin();
-    }
+  /// Fetches a driving route (OSRM) through [points] and draws it with a
+  /// distance/time summary.
+  Future<void> _fetchDriveRoute(List<LatLng> points) async {
+    if (points.length < 2) return;
     try {
+      final coordsParam =
+          points.map((p) => '${p.longitude},${p.latitude}').join(';');
       final res = await Dio().get<Map<String, dynamic>>(
-        'https://router.project-osrm.org/route/v1/driving/'
-        '${from.longitude},${from.latitude};${to.longitude},${to.latitude}',
+        'https://router.project-osrm.org/route/v1/driving/$coordsParam',
         queryParameters: {'overview': 'full', 'geometries': 'geojson'},
       );
       final routes = res.data?['routes'];
@@ -433,6 +459,36 @@ class _MapScreenState extends State<MapScreen> {
         ];
         _routeSummary = '${km.toStringAsFixed(1)} km · ~$mins min drive';
       });
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Route from the location dot to the search pin.
+  Future<void> _routeToPin() async {
+    final to = _searchPin;
+    if (to == null) return;
+    if (_myLocation == null) {
+      await _locateMe();
+      if (_myLocation == null) return;
+    }
+    await _fetchDriveRoute([_myLocation!, to]);
+  }
+
+  /// Saves the search pin into the user's places (shows on the Saved layer).
+  Future<void> _saveSearchPin() async {
+    final pin = _searchPin;
+    if (pin == null) return;
+    try {
+      await api.guides.addPlace(
+        title: _searchLabel ?? 'Saved spot',
+        latitude: pin.latitude,
+        longitude: pin.longitude,
+      );
+      if (mounted) {
+        showInfo(context, 'Saved — visible on the Saved layer');
+        _loadSaved();
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -1802,17 +1858,36 @@ class _MapScreenState extends State<MapScreen> {
           Positioned(
             right: 12,
             bottom: widget.embedded ? 160 : 170,
-            child: FloatingActionButton.small(
-              heroTag: 'locate-me',
-              onPressed: _locating ? null : _locateMe,
-              child: _locating
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.my_location),
+            child: GestureDetector(
+              // Long-press toggles follow-me (live tracking).
+              onLongPress: _toggleFollow,
+              child: FloatingActionButton.small(
+                heroTag: 'locate-me',
+                backgroundColor: _following ? const Color(0xFF2563EB) : null,
+                foregroundColor: _following ? Colors.white : null,
+                onPressed: _locating ? null : _locateMe,
+                child: _locating
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Icon(_following
+                        ? Icons.navigation
+                        : Icons.my_location),
+              ),
             ),
           ),
+          // Drive-route chip for the multi-stop route builder.
+          if (_routing && _route.length >= 2)
+            Positioned(
+              left: 12,
+              bottom: widget.embedded ? 160 : 170,
+              child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.route, size: 18),
+                label: Text('Drive route (${_route.length} stops)'),
+                onPressed: () => _fetchDriveRoute(List.of(_route)),
+              ),
+            ),
           // Search result card: name + real directions hand-off.
           if (_searchPin != null)
             Positioned(
@@ -1856,6 +1931,12 @@ class _MapScreenState extends State<MapScreen> {
                             )
                           else
                             const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.bookmark_add_outlined,
+                                size: 20),
+                            tooltip: 'Save this spot',
+                            onPressed: _saveSearchPin,
+                          ),
                           TextButton.icon(
                             icon: const Icon(Icons.route_outlined, size: 18),
                             label: const Text('Route'),
