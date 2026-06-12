@@ -5,6 +5,7 @@ import '../../okayspace_api.dart';
 import 'cashout_screen.dart';
 import 'common.dart';
 import 'pay_qr_screen.dart';
+import 'split_bill_screen.dart';
 import 'wallet_insights_screen.dart';
 
 String _money(num amount, String currency) =>
@@ -342,6 +343,9 @@ class _WalletScreenState extends State<WalletScreen> {
               const SizedBox(width: 10),
               _action('Request', Icons.arrow_downward,
                   () => _push(const RequestMoneyScreen())),
+              const SizedBox(width: 10),
+              _action('Split', Icons.call_split,
+                  () => _push(const SplitBillScreen())),
             ],
           ),
         ],
