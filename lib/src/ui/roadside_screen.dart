@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -61,7 +65,11 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
   /// Nearby search radius, adjustable from the Nearby tab.
   double _radiusKm = 50;
 
+  /// Nearby presentation: list or map.
+  bool _nearbyMap = false;
+
   late Future<List<RoadsideRequest>> _mine;
+  late Future<dynamic> _active;
   late Future<List<RoadsideRequest>> _nearby;
   late Future<List<RoadsideRequest>> _helping;
   late Future<List<RoadsideRequest>> _history;
@@ -74,6 +82,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
 
   void _load() {
     _mine = api.roadside.mine();
+    _active = api.roadside.active().catchError((_) => null);
     _nearby = api.roadside.nearby(lat: _lat, lng: _lng, radiusKm: _radiusKm);
     _helping = api.roadside.helping();
     _history = api.roadside.history();
@@ -123,14 +132,144 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
         body: MaxWidth(
           child: TabBarView(
             children: [
-              _list(_mine, 'No roadside requests.\nTap “Request help” if you’re stuck.'),
+              _mineTab(),
               _nearbyTab(),
-              _list(_helping, "You're not helping with any requests."),
+              _helpingTab(),
               _list(_history, 'No past requests.'),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// My requests, with the live request (if any) as a hero card up top.
+  Widget _mineTab() {
+    return Column(
+      children: [
+        FutureBuilder<dynamic>(
+          future: _active,
+          builder: (context, snap) {
+            final d = snap.data;
+            final m = d is Map
+                ? (d['request'] is Map ? d['request'] as Map : d)
+                : null;
+            if (m == null || '${m['id'] ?? ''}'.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            final r = RoadsideRequest.fromJson(Map<String, dynamic>.from(m));
+            final color = _statusColor(r.status);
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Material(
+                borderRadius: BorderRadius.circular(16),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _open(r),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [color, darken(color, 0.25)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(_serviceIcon(r.service),
+                            color: Colors.white, size: 30),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Active: ${_serviceLabel(r.service)}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16)),
+                              Text(
+                                  r.arrived
+                                      ? 'Your helper has arrived'
+                                      : r.enRoute
+                                          ? 'Help is on the way'
+                                          : r.status.toLowerCase() ==
+                                                  'accepted'
+                                              ? 'A helper accepted — waiting to depart'
+                                              : 'Waiting for a helper…',
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, color: Colors.white),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        Expanded(
+          child: _list(_mine,
+              'No roadside requests.\nTap “Request help” if you’re stuck.'),
+        ),
+      ],
+    );
+  }
+
+  /// Helping tab: lifetime helper stats over the active list.
+  Widget _helpingTab() {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        FutureBuilder<List<RoadsideRequest>>(
+          future: _history,
+          builder: (context, snap) {
+            final done = (snap.data ?? const <RoadsideRequest>[])
+                .where((r) =>
+                    r.helping && r.status.toLowerCase() == 'completed')
+                .toList();
+            if (done.isEmpty) return const SizedBox.shrink();
+            final earned =
+                done.fold<num>(0, (a, r) => a + r.total);
+            Widget stat(String label, String value) => Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(value,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 17)),
+                        Text(label,
+                            style: TextStyle(
+                                color: scheme.outline, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                );
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Row(children: [
+                stat('Rescues completed', '${done.length}'),
+                const SizedBox(width: 10),
+                stat('Earned helping', '\$${earned.toStringAsFixed(2)}'),
+              ]),
+            );
+          },
+        ),
+        Expanded(
+          child:
+              _list(_helping, "You're not helping with any requests."),
+        ),
+      ],
     );
   }
 
@@ -161,12 +300,81 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
                     }),
                   ),
                 ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(_nearbyMap ? Icons.view_list : Icons.map_outlined,
+                    size: 20),
+                visualDensity: VisualDensity.compact,
+                tooltip: _nearbyMap ? 'List view' : 'Map view',
+                onPressed: () => setState(() => _nearbyMap = !_nearbyMap),
+              ),
             ],
           ),
         ),
         Expanded(
-            child: _list(_nearby, 'No open requests nearby right now.')),
+          child: _nearbyMap
+              ? _nearbyMapView()
+              : _list(_nearby, 'No open requests nearby right now.'),
+        ),
       ],
+    );
+  }
+
+  /// Nearby requests as pins on a map; tapping a pin opens the request.
+  Widget _nearbyMapView() {
+    return FutureBuilder<List<RoadsideRequest>>(
+      future: _nearby,
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final items = snap.data!;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: FlutterMap(
+              options: const MapOptions(
+                initialCenter: LatLng(_lat, _lng),
+                initialZoom: 10,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'ca.okayspace.app',
+                ),
+                MarkerLayer(markers: [
+                  for (final r in items)
+                    Marker(
+                      point: LatLng(r.latitude, r.longitude),
+                      width: 44,
+                      height: 44,
+                      child: GestureDetector(
+                        onTap: () => _open(r),
+                        child: Column(children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: _statusColor(r.status),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: Colors.white, width: 1.5),
+                            ),
+                            child: Icon(_serviceIcon(r.service),
+                                size: 16, color: Colors.white),
+                          ),
+                          const Icon(Icons.arrow_drop_down,
+                              size: 16, color: Colors.black54),
+                        ]),
+                      ),
+                    ),
+                ]),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -496,7 +704,19 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.directions_outlined, size: 18),
+                    label: const Text('Get directions'),
+                    onPressed: () => launchUrl(
+                      Uri.parse(
+                          'https://www.google.com/maps/dir/?api=1&destination=${r.latitude},${r.longitude}'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                  ),
+                ),
                 _row(Icons.place_outlined, r.placeName ?? 'Location set'),
                 if (r.vehicleMake != null || r.vehicleModel != null)
                   _row(Icons.directions_car_outlined,
@@ -729,10 +949,50 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
 
   Future<List<Map<String, dynamic>>>? _geoResults;
   Timer? _geoDebounce;
+
+  /// Service price table from /roadside/quote (best-effort).
+  Map<String, dynamic> _quote = const {};
+
+  /// Photos of the situation (helps helpers bring the right gear).
+  final List<Uint8List> _photos = [];
+
+  Future<void> _addPhotos() async {
+    try {
+      final picked = await ImagePicker().pickMultiImage(
+          maxWidth: 1600, maxHeight: 1600, imageQuality: 80);
+      for (final f in picked.take(6 - _photos.length)) {
+        _photos.add(await f.readAsBytes());
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
   bool _manualCoords = false;
   String _fuelType = 'regular';
   String _payment = 'wallet';
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    api.roadside.quote().then((d) {
+      if (mounted && d is Map) {
+        setState(() => _quote = Map<String, dynamic>.from(d));
+      }
+    }).catchError((_) {});
+  }
+
+  /// The quoted price for [service], hunting through common payload shapes.
+  num? _priceFor(String service) {
+    dynamic v = _quote[service] ??
+        (_quote['prices'] is Map ? (_quote['prices'] as Map)[service] : null) ??
+        (_quote['services'] is Map
+            ? (_quote['services'] as Map)[service]
+            : null);
+    if (v is Map) v = v['price'] ?? v['total'] ?? v['amount'];
+    return v is num ? v : num.tryParse('$v');
+  }
 
   @override
   void dispose() {
@@ -801,6 +1061,10 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
         fuelType: _service == 'fuel' ? _fuelType : null,
         paymentMethod: _payment,
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        photos: [
+          for (final b in _photos)
+            'data:image/jpeg;base64,${base64Encode(b)}',
+        ],
       );
       if (mounted) {
         showInfo(context, 'Request submitted — help is on the way list');
@@ -1064,6 +1328,59 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                   ),
               ],
             ),
+            _sectionTitle('Photos (optional)'),
+            SizedBox(
+              height: 84,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (var i = 0; i < _photos.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.memory(_photos[i],
+                                width: 84, height: 84, fit: BoxFit.cover),
+                          ),
+                          Positioned(
+                            top: 2,
+                            right: 2,
+                            child: InkWell(
+                              onTap: () =>
+                                  setState(() => _photos.removeAt(i)),
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(
+                                    color: Colors.black54,
+                                    shape: BoxShape.circle),
+                                child: const Icon(Icons.close,
+                                    size: 14, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_photos.length < 6)
+                    InkWell(
+                      onTap: _addPhotos,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 84,
+                        height: 84,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: scheme.outlineVariant),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.add_a_photo_outlined,
+                            color: scheme.outline),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             const SizedBox(height: 14),
             TextField(
               controller: _note,
@@ -1073,6 +1390,31 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                 border: OutlineInputBorder(),
               ),
             ),
+            if (_priceFor(_service) != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.request_quote_outlined,
+                        color: scheme.primary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Estimated price: \$${_priceFor(_service)!.toStringAsFixed(2)}'
+                        ' — final total may vary',
+                        style:
+                            const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _busy || !located ? null : _submit,
