@@ -34,9 +34,10 @@ class CustomizeNavScreen extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   buildDefaultDragHandles: true,
-                  onReorder: (oldI, newI) {
+                  // onReorderItem pre-adjusts the destination index for the
+                  // removed item, unlike the deprecated onReorder.
+                  onReorderItem: (oldI, newI) {
                     final list = [...ids];
-                    if (newI > oldI) newI -= 1;
                     list.insert(newI, list.removeAt(oldI));
                     navController.set(list);
                   },
