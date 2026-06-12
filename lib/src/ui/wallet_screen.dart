@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
+import '../core/stripe_elements.dart';
 import '../core/stripe_pay.dart';
 import 'cashout_screen.dart';
 import 'common.dart';
@@ -1625,7 +1626,21 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         }
         // null = sheet unavailable (no client secret) → hosted fallbacks.
       }
-      // Web preferred: a dashboard-created Stripe Payment Link — pure
+      // Web: the inline Payment Element — card entry embedded in the app,
+      // no redirect to stripe.com. Hosted paths below are fallbacks only.
+      if (stripeElementsSupported) {
+        final paid = await _inlineWebTopUp(amount);
+        if (paid != null) {
+          if (paid && mounted) {
+            showInfo(context,
+                'Payment complete — your balance updates in a moment.');
+            Navigator.of(context).pop(true);
+          }
+          return; // paid or user-cancelled
+        }
+        // null = couldn't start the inline flow → hosted fallbacks.
+      }
+      // Hosted fallback: a dashboard-created Stripe Payment Link — pure
       // Stripe, no backend call to start the payment. client_reference_id
       // ties the payment to this user for the crediting webhook.
       if (_stripeTopupLink.isNotEmpty && currentUserId == null) {
@@ -1689,6 +1704,40 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Runs the inline web card form (Stripe Payment Element) against a
+  /// backend PaymentIntent. Returns true = paid, false = cancelled,
+  /// null = couldn't start (caller falls through to hosted options).
+  Future<bool?> _inlineWebTopUp(num amount) async {
+    final String pk;
+    final String secret;
+    try {
+      final cfg = await api.payments.config();
+      pk = '${cfg['publishable_key'] ?? ''}';
+      if (pk.isEmpty) return null;
+      final intent = await api.wallet.topupIntent(amount);
+      secret =
+          '${intent['client_secret'] ?? intent['clientSecret'] ?? intent['payment_intent_client_secret'] ?? ''}';
+      if (secret.isEmpty) return null;
+    } catch (_) {
+      return null;
+    }
+    if (!mounted) return false;
+    final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => _InlineCardPayScreen(
+          publishableKey: pk, clientSecret: secret, amount: amount),
+    ));
+    if (paid == true) {
+      // Credit immediately instead of waiting on the webhook.
+      final intentId = secret.split('_secret').first;
+      try {
+        await api.wallet.confirmTopupIntent({'intent_id': intentId});
+      } catch (_) {/* topup/sync reconciles on the next wallet load */}
+      return true;
+    }
+    return false; // backed out or cancelled
   }
 
   /// Runs the native PaymentSheet against a backend PaymentIntent.
@@ -2706,6 +2755,117 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
         ],
       ),
       ),
+    );
+  }
+}
+
+/// Inline card payment: Stripe's Payment Element rendered inside the app
+/// (web). Pops `true` once the payment succeeds.
+class _InlineCardPayScreen extends StatefulWidget {
+  const _InlineCardPayScreen({
+    required this.publishableKey,
+    required this.clientSecret,
+    required this.amount,
+  });
+
+  final String publishableKey;
+  final String clientSecret;
+  final num amount;
+
+  @override
+  State<_InlineCardPayScreen> createState() => _InlineCardPayScreenState();
+}
+
+class _InlineCardPayScreenState extends State<_InlineCardPayScreen> {
+  StripeElementsHandle? _handle;
+  String? _error;
+  bool _paying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _mount();
+  }
+
+  Future<void> _mount() async {
+    try {
+      final h = await createPaymentElement(
+        publishableKey: widget.publishableKey,
+        clientSecret: widget.clientSecret,
+      );
+      if (mounted) setState(() => _handle = h);
+    } catch (e) {
+      if (mounted) setState(() => _error = messageFor(e));
+    }
+  }
+
+  Future<void> _pay() async {
+    final h = _handle;
+    if (h == null || _paying) return;
+    setState(() => _paying = true);
+    final err = await h.confirm();
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() => _paying = false);
+      showInfo(context, err);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final h = _handle;
+    return Scaffold(
+      appBar: OkayAppBar(
+          title: Text('Pay \$${widget.amount.toStringAsFixed(2)}')),
+      body: _error != null
+          ? CenteredMessage(
+              message: 'The card form couldn\'t load.\n$_error',
+              icon: Icons.error_outline)
+          : h == null
+              ? const Center(child: CircularProgressIndicator())
+              : MaxWidth(
+                  child: Column(
+                    children: [
+                      // Stripe's iframe owns the card fields; give it room
+                      // to expand (some methods add extra inputs).
+                      Expanded(
+                          child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: h.view)),
+                      SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              FilledButton.icon(
+                                onPressed: _paying ? null : _pay,
+                                icon: _paying
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                    : const Icon(Icons.lock_outline),
+                                label: Text(_paying
+                                    ? 'Processing…'
+                                    : 'Pay \$${widget.amount.toStringAsFixed(2)}'),
+                              ),
+                              const SizedBox(height: 8),
+                              Text('Card details are processed by Stripe.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: scheme.outline, fontSize: 11)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
     );
   }
 }

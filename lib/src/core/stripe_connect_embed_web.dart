@@ -37,7 +37,7 @@ Future<void> _ensureConnectJs() {
   web.window.setProperty('StripeConnect'.toJS, holder);
   final s =
       web.document.createElement('script') as web.HTMLScriptElement
-        ..src = 'https://connect.stripe.com/v1.0/connect.js'
+        ..src = 'https://connect-js.stripe.com/v1.0/connect.js'
         ..async = true;
   s.addEventListener(
       'error',

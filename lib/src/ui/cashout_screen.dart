@@ -81,6 +81,27 @@ class _CashOutScreenState extends State<CashOutScreen> {
     await _setupHosted();
   }
 
+  /// Debit cards live in Stripe's payouts/account management components;
+  /// embedded first, Express-dashboard login only as the external fallback.
+  Future<void> _addDebitCard() async {
+    if (stripeEmbedSupported) {
+      final embedded = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+            builder: (_) =>
+                const EmbeddedPayoutScreen(component: 'payouts')),
+      );
+      if (embedded == true) {
+        await _load();
+        return;
+      }
+      if (!mounted) return;
+    }
+    await launchUrl(
+      Uri.parse('https://connect.stripe.com/express_login'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
   Future<void> _setupHosted() async {
     setState(() => _busy = true);
     try {
@@ -337,26 +358,23 @@ class _CashOutScreenState extends State<CashOutScreen> {
                                   _setup(component: 'account-management'),
                         ),
                       ),
-                      // Debit cards (instant payouts) are added in the Stripe
-                      // Express dashboard; connect.stripe.com/express_login
-                      // works for every connected account, no backend needed.
+                      // Debit cards (instant payouts): embedded payouts
+                      // dashboard when supported; the Stripe Express login
+                      // is the external fallback.
                       Card(
                         child: ListTile(
                           leading: Icon(Icons.credit_card_outlined,
                               color: scheme.primary),
                           title: const Text('Add a debit card'),
-                          subtitle: const Text(
-                              'Instant payouts — sign in to your Stripe '
-                              'Express dashboard to add one'),
-                          trailing: Icon(Icons.open_in_new,
-                              size: 18, color: scheme.outline),
-                          onTap: _busy
-                              ? null
-                              : () => launchUrl(
-                                    Uri.parse(
-                                        'https://connect.stripe.com/express_login'),
-                                    mode: LaunchMode.externalApplication,
-                                  ),
+                          subtitle:
+                              const Text('For instant payouts to your card'),
+                          trailing: Icon(
+                              stripeEmbedSupported
+                                  ? Icons.chevron_right
+                                  : Icons.open_in_new,
+                              size: 18,
+                              color: scheme.outline),
+                          onTap: _busy ? null : _addDebitCard,
                         ),
                       ),
                       const SizedBox(height: 16),
