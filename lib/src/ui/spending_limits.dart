@@ -68,7 +68,12 @@ class SpendingLimits extends ChangeNotifier {
   /// Outgoing spend since [since], from a wallet transaction list.
   static num _spentSince(List<WalletTxn> txns, DateTime since) => txns
       .where((t) =>
-          t.amount < 0 && t.createdAt != null && !t.createdAt!.isBefore(since))
+          t.amount < 0 &&
+          t.createdAt != null &&
+          !t.createdAt!.isBefore(since) &&
+          // Canceled/failed/reversed money never moved; pending still
+          // counts (it's expected to settle).
+          (t.isSettled || t.statusLabel == 'Pending'))
       .fold<num>(0, (a, t) => a + t.amount.abs());
 
   static DateTime _todayStart() {

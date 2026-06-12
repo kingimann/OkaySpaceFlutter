@@ -1405,11 +1405,28 @@ class _TxnTile extends StatelessWidget {
   /// Called when a follow-up action (e.g. send again) changed the wallet.
   final VoidCallback? onChanged;
 
+  /// Chip color per normalized status (Approved/Pending/Canceled/...).
+  static Color _statusColor(BuildContext context, String status) =>
+      switch (status) {
+        'Approved' => const Color(0xFF22C55E),
+        'Pending' => const Color(0xFFF59E0B),
+        'Canceled' => Theme.of(context).colorScheme.outline,
+        _ => Theme.of(context).colorScheme.error, // Failed / Reversed
+      };
+
   @override
   Widget build(BuildContext context) {
     final incoming = txn.amount >= 0;
-    final color =
-        incoming ? const Color(0xFF22C55E) : Theme.of(context).colorScheme.error;
+    final settled = txn.isSettled;
+    final status = txn.statusLabel;
+    final statusColor = _statusColor(context, status);
+    // Canceled/failed money didn't move — mute it instead of coloring it
+    // like real money.
+    final color = !settled && status != 'Pending'
+        ? Theme.of(context).colorScheme.outline
+        : incoming
+            ? const Color(0xFF22C55E)
+            : Theme.of(context).colorScheme.error;
     // Venmo-style: person-first title, note + relative time underneath.
     final who = txn.counterpartyName;
     final title = who != null
@@ -1435,17 +1452,41 @@ class _TxnTile extends StatelessWidget {
                 color: color.withValues(alpha: 0.14),
                 shape: BoxShape.circle,
               ),
-              child: Icon(incoming ? Icons.south_west : Icons.north_east,
-                  size: 20, color: color),
+              child: Icon(
+                  status == 'Pending'
+                      ? Icons.hourglass_top
+                      : status == 'Canceled'
+                          ? Icons.close
+                          : incoming
+                              ? Icons.south_west
+                              : Icons.north_east,
+                  size: 20,
+                  color: color),
             ),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: sub.isEmpty ? null : Text(sub),
-      trailing: Text(
-        hideAmount
-            ? '••••'
-            : '${incoming ? '+' : '−'} ${_money(txn.amount.abs(), txn.currency)}',
-        style: TextStyle(
-            color: color, fontWeight: FontWeight.bold, fontSize: 15),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            hideAmount
+                ? '••••'
+                : '${incoming ? '+' : '−'} ${_money(txn.amount.abs(), txn.currency)}',
+            style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                decoration: status == 'Canceled' || status == 'Failed'
+                    ? TextDecoration.lineThrough
+                    : null),
+          ),
+          Text(status,
+              style: TextStyle(
+                  color: statusColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }
@@ -1515,6 +1556,7 @@ class _TxnTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 16),
+              detail('Status', txn.statusLabel),
               if (txn.counterpartyName != null)
                 detail(incoming ? 'From' : 'To', txn.counterpartyName!),
               if (txn.note != null && txn.note!.isNotEmpty)
