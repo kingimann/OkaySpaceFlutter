@@ -119,6 +119,9 @@ class _FeedScreenState extends State<FeedScreen> {
       if (feedPrefs.hideReposts) {
         out = out.where((p) => p.repostOf == null).toList();
       }
+      if (feedPrefs.hidePolls) {
+        out = out.where((p) => p.poll == null).toList();
+      }
       if (feedPrefs.mutedAuthors.isNotEmpty) {
         out = out
             .where((p) => !feedPrefs.isAuthorMuted(p.author.userId))
@@ -314,7 +317,9 @@ class _FeedScreenState extends State<FeedScreen> {
                         }
                         final post = posts[i - 1];
                         return PostTile(
-                            post: post, card: true, onChanged: _reload);
+                            post: post,
+                            card: !feedPrefs.compact,
+                            onChanged: _reload);
                       },
                     );
                   },

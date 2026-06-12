@@ -24,6 +24,10 @@ class FeedPrefs extends ChangeNotifier {
   final List<({String id, String name})> _mutedAuthors = [];
   bool _hideReposts = false;
   bool _hideSponsored = false;
+  bool _hidePolls = false;
+  bool _hideCounts = false;
+  bool _compact = false;
+  String _textSize = 'm';
   bool _showMedia = true;
   bool _showTrending = true;
   bool _loaded = false;
@@ -54,6 +58,21 @@ class FeedPrefs extends ChangeNotifier {
   }
   bool get hideReposts => _hideReposts;
   bool get hideSponsored => _hideSponsored;
+  bool get hidePolls => _hidePolls;
+
+  /// Zen mode: action icons only, no like/repost/reply counts.
+  bool get hideCounts => _hideCounts;
+
+  /// Compact layout (flat rows) instead of cards.
+  bool get compact => _compact;
+
+  /// 's' | 'm' | 'l' post text size, as a text scale factor.
+  String get textSize => _textSize;
+  double get textScale => switch (_textSize) {
+        's' => 0.9,
+        'l' => 1.15,
+        _ => 1.0,
+      };
 
   /// False = data saver: media previews collapse to a small chip.
   bool get showMedia => _showMedia;
@@ -79,6 +98,12 @@ class FeedPrefs extends ChangeNotifier {
           }
           _hideReposts = m['hide_reposts'] == true;
           _hideSponsored = m['hide_sponsored'] == true;
+          _hidePolls = m['hide_polls'] == true;
+          _hideCounts = m['hide_counts'] == true;
+          _compact = m['compact'] == true;
+          _textSize = ['s', 'l'].contains(m['text_size'])
+              ? m['text_size'] as String
+              : 'm';
           _showMedia = m['show_media'] != false;
           _showTrending = m['show_trending'] != false;
         }
@@ -93,6 +118,10 @@ class FeedPrefs extends ChangeNotifier {
     String? sort,
     bool? hideReposts,
     bool? hideSponsored,
+    bool? hidePolls,
+    bool? hideCounts,
+    bool? compact,
+    String? textSize,
     bool? showMedia,
     bool? showTrending,
   }) {
@@ -100,6 +129,10 @@ class FeedPrefs extends ChangeNotifier {
     _sort = sort ?? _sort;
     _hideReposts = hideReposts ?? _hideReposts;
     _hideSponsored = hideSponsored ?? _hideSponsored;
+    _hidePolls = hidePolls ?? _hidePolls;
+    _hideCounts = hideCounts ?? _hideCounts;
+    _compact = compact ?? _compact;
+    _textSize = textSize ?? _textSize;
     _showMedia = showMedia ?? _showMedia;
     _showTrending = showTrending ?? _showTrending;
     notifyListeners();
@@ -118,6 +151,10 @@ class FeedPrefs extends ChangeNotifier {
           ],
           'hide_reposts': _hideReposts,
           'hide_sponsored': _hideSponsored,
+          'hide_polls': _hidePolls,
+          'hide_counts': _hideCounts,
+          'compact': _compact,
+          'text_size': _textSize,
           'show_media': _showMedia,
           'show_trending': _showTrending,
         }),
@@ -212,6 +249,67 @@ class FeedPrefsScreen extends StatelessWidget {
                 subtitle: const Text('No promoted content in your feed'),
                 value: feedPrefs.hideSponsored,
                 onChanged: (v) => feedPrefs.update(hideSponsored: v),
+              ),
+              SwitchListTile(
+                title: const Text('Hide polls'),
+                value: feedPrefs.hidePolls,
+                onChanged: (v) => feedPrefs.update(hidePolls: v),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                child: Text('APPEARANCE',
+                    style: TextStyle(
+                        color: scheme.outline,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.6)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    for (final (id, label) in const [
+                      (false, 'Cards'),
+                      (true, 'Compact')
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: ChoiceChip(
+                          label: Text(label),
+                          selected: feedPrefs.compact == id,
+                          onSelected: (_) => feedPrefs.update(compact: id),
+                        ),
+                      ),
+                    const Spacer(),
+                    for (final (id, label) in const [
+                      ('s', 'A'),
+                      ('m', 'A'),
+                      ('l', 'A')
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: ChoiceChip(
+                          label: Text(label,
+                              style: TextStyle(
+                                  fontSize: switch (id) {
+                                's' => 12.0,
+                                'l' => 18.0,
+                                _ => 15.0
+                              })),
+                          selected: feedPrefs.textSize == id,
+                          onSelected: (_) => feedPrefs.update(textSize: id),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              SwitchListTile(
+                title: const Text('Zen mode'),
+                subtitle:
+                    const Text('Hide like, repost & reply counts on posts'),
+                value: feedPrefs.hideCounts,
+                onChanged: (v) => feedPrefs.update(hideCounts: v),
               ),
               SwitchListTile(
                 title: const Text('Show media previews'),

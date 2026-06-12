@@ -641,6 +641,14 @@ class _PostTileState extends State<PostTile> {
     );
 
     Widget result = content;
+    // Post text size (Customize feed): scale all text in the tile.
+    if (feedPrefs.textScale != 1.0) {
+      result = MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: TextScaler.linear(feedPrefs.textScale)),
+        child: result,
+      );
+    }
     if (tappable) {
       result = InkWell(
         onTap: () => PostDetailScreen.open(context, post),
@@ -872,7 +880,8 @@ class _PostAction extends StatelessWidget {
                   size: 18,
                   color: color ?? muted),
             ),
-            if (count > 0) ...[
+            // Zen mode (Customize feed) hides the counts, icons stay.
+            if (count > 0 && !feedPrefs.hideCounts) ...[
               const SizedBox(width: 6),
               Text(formatCount(count),
                   style: TextStyle(color: color ?? muted, fontSize: 13)),
