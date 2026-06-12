@@ -1,4 +1,5 @@
 import '../core/api_client.dart';
+import '../core/points_ledger.dart';
 import '../models/json.dart';
 import '../models/post.dart';
 import '../models/post_create.dart';
@@ -95,8 +96,11 @@ class FeedService {
 
   /// Creates a post, reply (set [PostCreate.parentId]) or quote
   /// (set [PostCreate.quoteOf]).
-  Future<Post> createPost(PostCreate post) async =>
-      _post(await _client.postJson('/posts', body: post.toJson()));
+  Future<Post> createPost(PostCreate post) async {
+    final created = _post(await _client.postJson('/posts', body: post.toJson()));
+    pointsLedger.award('posts', PointsLedger.postPoints);
+    return created;
+  }
 
   /// Convenience helper for a plain text post.
   Future<Post> post(String text) => createPost(PostCreate(text: text));
@@ -116,8 +120,12 @@ class FeedService {
 
   // --- Engagement (each returns the updated post) -------------------------
 
-  Future<Post> toggleLike(String postId) async =>
-      _post(await _client.postJson('/posts/$postId/like'));
+  Future<Post> toggleLike(String postId) async {
+    final updated = _post(await _client.postJson('/posts/$postId/like'));
+    // Only reward adding a reaction, never removing one.
+    if (updated.likedByMe) pointsLedger.award('reactions', PointsLedger.reactionPoints);
+    return updated;
+  }
 
   Future<Post> toggleDislike(String postId) async =>
       _post(await _client.postJson('/posts/$postId/dislike'));
