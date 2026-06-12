@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -456,45 +460,94 @@ class RoadsideRequestForm extends StatefulWidget {
 class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
   String _service = _services.first.$1;
   final _place = TextEditingController();
+  final _make = TextEditingController();
+  final _model = TextEditingController();
+  final _note = TextEditingController();
   final _lat = TextEditingController();
   final _lng = TextEditingController();
-  final _vehicle = TextEditingController();
-  final _note = TextEditingController();
+
+  /// Resolved location (via search or manual entry).
+  double? _pickedLat;
+  double? _pickedLng;
+  String? _pickedName;
+
+  Future<List<Map<String, dynamic>>>? _geoResults;
+  Timer? _geoDebounce;
+  bool _manualCoords = false;
+  String _fuelType = 'regular';
+  String _payment = 'wallet';
   bool _busy = false;
 
   @override
   void dispose() {
-    _place.dispose();
-    _lat.dispose();
-    _lng.dispose();
-    _vehicle.dispose();
-    _note.dispose();
+    _geoDebounce?.cancel();
+    for (final c in [_place, _make, _model, _note, _lat, _lng]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  void _onPlaceQuery(String q) {
+    _geoDebounce?.cancel();
+    _geoDebounce = Timer(const Duration(milliseconds: 400), () {
+      final query = q.trim();
+      if (query.length < 3 || !mounted) return;
+      setState(() => _geoResults = api.roadside.geocode(query));
+    });
+  }
+
+  void _pickGeo(Map<String, dynamic> g) {
+    final lat = double.tryParse('${g['lat'] ?? g['latitude']}');
+    final lng = double.tryParse('${g['lng'] ?? g['lon'] ?? g['longitude']}');
+    if (lat == null || lng == null) return;
+    setState(() {
+      _pickedLat = lat;
+      _pickedLng = lng;
+      _pickedName =
+          '${g['name'] ?? g['display_name'] ?? g['label'] ?? _place.text.trim()}';
+      _geoResults = null;
+      _place.text = _pickedName!;
+    });
+  }
+
+  void _applyManual() {
     final lat = double.tryParse(_lat.text.trim());
     final lng = double.tryParse(_lng.text.trim());
-    if (lat == null || lng == null) {
+    if (lat == null || lng == null || lat.abs() > 90 || lng.abs() > 180) {
       showInfo(context, 'Enter a valid latitude and longitude.');
+      return;
+    }
+    setState(() {
+      _pickedLat = lat;
+      _pickedLng = lng;
+      _pickedName = _place.text.trim().isEmpty
+          ? '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}'
+          : _place.text.trim();
+    });
+  }
+
+  Future<void> _submit() async {
+    final lat = _pickedLat;
+    final lng = _pickedLng;
+    if (lat == null || lng == null) {
+      showInfo(context, 'Pick your location first.');
       return;
     }
     setState(() => _busy = true);
     try {
-      // The free-text vehicle field maps loosely to make/model.
-      final parts = _vehicle.text.trim().split(' ');
       await api.roadside.create(
         service: _service,
         latitude: lat,
         longitude: lng,
-        placeName: _place.text.trim().isEmpty ? null : _place.text.trim(),
-        vehicleMake: parts.isNotEmpty && parts.first.isNotEmpty ? parts.first : null,
-        vehicleModel:
-            parts.length > 1 ? parts.sublist(1).join(' ') : null,
+        placeName: _pickedName,
+        vehicleMake: _make.text.trim().isEmpty ? null : _make.text.trim(),
+        vehicleModel: _model.text.trim().isEmpty ? null : _model.text.trim(),
+        fuelType: _service == 'fuel' ? _fuelType : null,
+        paymentMethod: _payment,
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
       );
       if (mounted) {
-        showInfo(context, 'Request submitted');
+        showInfo(context, 'Request submitted — help is on the way list');
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -504,95 +557,280 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
     }
   }
 
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(top: 22, bottom: 10),
+        child: Text(text.toUpperCase(),
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.outline,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.6)),
+      );
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final located = _pickedLat != null && _pickedLng != null;
+
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Request help')),
       body: MaxWidth(
         child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text('What do you need?',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final s in _services)
-                ChoiceChip(
-                  avatar: Icon(s.$3, size: 18),
-                  label: Text(s.$2),
-                  selected: _service == s.$1,
-                  onSelected: (_) => setState(() => _service = s.$1),
-                ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _place,
-            decoration: const InputDecoration(
-              labelText: 'Location description',
-              hintText: 'e.g. Highway 401 near exit 12',
-              prefixIcon: Icon(Icons.place_outlined),
-              border: OutlineInputBorder(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            _sectionTitle('What do you need?'),
+            // Service grid: big tappable cards instead of cramped chips.
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.15,
+              children: [
+                for (final svc in _services)
+                  Material(
+                    color: _service == svc.$1
+                        ? scheme.primary.withValues(alpha: 0.16)
+                        : scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => setState(() => _service = svc.$1),
+                      child: Container(
+                        decoration: _service == svc.$1
+                            ? BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                border:
+                                    Border.all(color: scheme.primary, width: 1.5),
+                              )
+                            : null,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(svc.$3,
+                                size: 26,
+                                color: _service == svc.$1
+                                    ? scheme.primary
+                                    : scheme.outline),
+                            const SizedBox(height: 6),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: Text(svc.$2,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: _service == svc.$1
+                                          ? FontWeight.bold
+                                          : FontWeight.w500)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _lat,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true, signed: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Latitude', border: OutlineInputBorder()),
+            if (_service == 'fuel') ...[
+              _sectionTitle('Fuel type'),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final f in const ['regular', 'premium', 'diesel'])
+                    ChoiceChip(
+                      label: Text(f[0].toUpperCase() + f.substring(1)),
+                      selected: _fuelType == f,
+                      onSelected: (_) => setState(() => _fuelType = f),
+                    ),
+                ],
+              ),
+            ],
+            _sectionTitle('Where are you?'),
+            TextField(
+              controller: _place,
+              onChanged: _onPlaceQuery,
+              decoration: InputDecoration(
+                labelText: 'Search address or place',
+                hintText: 'e.g. Highway 401 near exit 12',
+                prefixIcon: const Icon(Icons.place_outlined),
+                suffixIcon: located
+                    ? const Icon(Icons.check_circle, color: Color(0xFF22C55E))
+                    : null,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            if (_geoResults != null)
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: _geoResults,
+                builder: (context, snap) {
+                  final results = snap.data ?? const [];
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Center(
+                            child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2))));
+                  }
+                  if (results.isEmpty) return const SizedBox.shrink();
+                  return Card(
+                    margin: const EdgeInsets.only(top: 6),
+                    child: Column(
+                      children: [
+                        for (final g in results.take(5))
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.place, size: 18),
+                            title: Text(
+                                '${g['name'] ?? g['display_name'] ?? g['label'] ?? 'Result'}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                            onTap: () => _pickGeo(g),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            // Live mini-map of the chosen spot.
+            if (located)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    height: 150,
+                    child: IgnorePointer(
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: LatLng(_pickedLat!, _pickedLng!),
+                          initialZoom: 14,
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'ca.okayspace.app',
+                          ),
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: LatLng(_pickedLat!, _pickedLng!),
+                              width: 36,
+                              height: 36,
+                              child: const Icon(Icons.location_pin,
+                                  color: Color(0xFFEF4444), size: 36),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _lng,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true, signed: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Longitude', border: OutlineInputBorder()),
-                ),
+            TextButton.icon(
+              icon: Icon(
+                  _manualCoords ? Icons.expand_less : Icons.expand_more,
+                  size: 18),
+              label: const Text('Enter coordinates manually'),
+              onPressed: () => setState(() => _manualCoords = !_manualCoords),
+            ),
+            if (_manualCoords)
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _lat,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
+                      decoration: const InputDecoration(
+                          labelText: 'Latitude',
+                          isDense: true,
+                          border: OutlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _lng,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
+                      decoration: const InputDecoration(
+                          labelText: 'Longitude',
+                          isDense: true,
+                          border: OutlineInputBorder()),
+                    ),
+                  ),
+                  IconButton(
+                      icon: const Icon(Icons.check), onPressed: _applyManual),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _vehicle,
-            decoration: const InputDecoration(
-              labelText: 'Vehicle (make & model)',
-              prefixIcon: Icon(Icons.directions_car_outlined),
-              border: OutlineInputBorder(),
+            _sectionTitle('Your vehicle'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _make,
+                    decoration: const InputDecoration(
+                        labelText: 'Make',
+                        hintText: 'Toyota',
+                        border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _model,
+                    decoration: const InputDecoration(
+                        labelText: 'Model',
+                        hintText: 'Corolla',
+                        border: OutlineInputBorder()),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _note,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Notes for the helper (optional)',
-              border: OutlineInputBorder(),
+            _sectionTitle('Payment'),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (id, label, icon) in const [
+                  ('wallet', 'Wallet', Icons.account_balance_wallet_outlined),
+                  ('cash', 'Cash', Icons.payments_outlined),
+                ])
+                  ChoiceChip(
+                    avatar: Icon(icon, size: 16),
+                    label: Text(label),
+                    selected: _payment == id,
+                    onSelected: (_) => setState(() => _payment = id),
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: _busy ? null : _submit,
-            icon: _busy
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.send),
-            label: const Text('Submit request'),
-          ),
-        ],
-      ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _note,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Notes for the helper (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _busy || !located ? null : _submit,
+              icon: _busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.send),
+              label: Text(located ? 'Submit request' : 'Pick a location first'),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }
