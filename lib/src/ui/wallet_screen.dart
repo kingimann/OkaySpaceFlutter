@@ -405,7 +405,7 @@ class _WalletScreenState extends State<WalletScreen> {
         future: _summary,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return _skeleton(Theme.of(context).colorScheme);
           }
           if (snapshot.hasError) {
             return CenteredMessage(
@@ -527,6 +527,60 @@ class _WalletScreenState extends State<WalletScreen> {
           );
         },
       ),
+    );
+  }
+
+  /// Placeholder layout shown while the summary loads, shaped like the
+  /// overview (balance card, stat row, transaction rows).
+  Widget _skeleton(ColorScheme scheme) {
+    Widget box(double height, {double? width, double radius = 12}) =>
+        Container(
+          height: height,
+          width: width,
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(radius),
+          ),
+        );
+
+    return ListView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      children: [
+        box(150, radius: 16),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(child: box(92, radius: 16)),
+            const SizedBox(width: 12),
+            Expanded(child: box(92, radius: 16)),
+          ],
+        ),
+        const SizedBox(height: 24),
+        box(16, width: 140, radius: 6),
+        const SizedBox(height: 16),
+        for (var i = 0; i < 5; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Row(
+              children: [
+                box(42, width: 42, radius: 21),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      box(13, width: 150, radius: 5),
+                      const SizedBox(height: 6),
+                      box(11, width: 90, radius: 5),
+                    ],
+                  ),
+                ),
+                box(14, width: 64, radius: 5),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
