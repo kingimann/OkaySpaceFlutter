@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
+import '../core/stripe_pay.dart';
 import 'cashout_screen.dart';
 import 'common.dart';
 import 'pay_qr_screen.dart';
@@ -20,6 +21,12 @@ String _money(num amount, String currency) => formatMoney(amount, currency);
 
 /// Venmo's signature blue, used for the primary payment actions.
 const _venmoBlue = Color(0xFF008CFF);
+
+/// A Stripe Payment Link (dashboard-created, customer-chooses-amount) used
+/// for wallet top-ups. When set, Add money goes straight to Stripe with no
+/// backend involvement in the payment path; the webhook credits the wallet
+/// via client_reference_id. Set with --dart-define=STRIPE_TOPUP_LINK=...
+const _stripeTopupLink = String.fromEnvironment('STRIPE_TOPUP_LINK');
 
 const _monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -1559,8 +1566,37 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     }
     setState(() => _busy = true);
     try {
-      // Stripe only: money enters the wallet exclusively through Stripe's
-      // hosted checkout; the webhook credits the balance. No demo paths.
+      // Native apps: the full Stripe PaymentSheet — card entry inside the
+      // app against a server-created PaymentIntent.
+      if (stripeSheetSupported) {
+        final paid = await _paySheetTopUp(amount);
+        if (paid != null) {
+          if (paid && mounted) {
+            showInfo(context,
+                'Payment complete — your balance updates in a moment.');
+            Navigator.of(context).pop(true);
+          }
+          return; // paid or user-cancelled; either way we're done
+        }
+        // null = sheet unavailable (no client secret) → hosted fallbacks.
+      }
+      // Web preferred: a dashboard-created Stripe Payment Link — pure
+      // Stripe, no backend call to start the payment. client_reference_id
+      // ties the payment to this user for the crediting webhook.
+      if (_stripeTopupLink.isNotEmpty && currentUserId != null) {
+        await launchUrl(
+          Uri.parse(
+              '$_stripeTopupLink?client_reference_id=$currentUserId'),
+          mode: LaunchMode.externalApplication,
+        );
+        if (mounted) {
+          showInfo(context,
+              'Finish the payment on Stripe — your balance updates once it succeeds.');
+          Navigator.of(context).pop(true);
+        }
+        return;
+      }
+      // Otherwise: Stripe hosted checkout via the backend session endpoint.
       final session = await api.payments
           .checkout({'kind': 'topup', 'amount': amount});
       final url = session['url'] ??
@@ -1573,6 +1609,9 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         }
         return;
       }
+      // (Backend note: if checkout rejects kind "topup" — e.g. "Invalid
+      // recipient" — the server needs a wallet top-up kind; tips/subs
+      // checkout requires a recipient.)
       await launchUrl(Uri.parse('$url'),
           mode: LaunchMode.externalApplication);
       if (mounted) {
@@ -1584,6 +1623,23 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Runs the native PaymentSheet against a backend PaymentIntent.
+  /// Returns true = paid, false = cancelled, null = unavailable.
+  Future<bool?> _paySheetTopUp(num amount) async {
+    try {
+      final cfg = await api.payments.config();
+      final pk = '${cfg['publishable_key'] ?? ''}';
+      if (pk.isEmpty) return null;
+      final intent = await api.wallet.topupIntent(amount);
+      final secret = '${intent['client_secret'] ?? intent['clientSecret'] ?? intent['payment_intent_client_secret'] ?? ''}';
+      if (secret.isEmpty) return null;
+      return await stripePaySheet(publishableKey: pk, clientSecret: secret);
+    } on Exception catch (e) {
+      if (mounted) showError(context, e);
+      return false;
     }
   }
 

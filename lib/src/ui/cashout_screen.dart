@@ -273,6 +273,22 @@ class _CashOutScreenState extends State<CashOutScreen> {
                         ),
                       ),
                     if (_ready) ...[
+                      // Bank / debit card on file — managed via Stripe's
+                      // account-update link (same flow as onboarding).
+                      Card(
+                        child: ListTile(
+                          leading: Icon(Icons.account_balance_outlined,
+                              color: scheme.primary),
+                          title: const Text('Payout method'),
+                          subtitle: const Text(
+                              'Change your bank account or debit card'),
+                          trailing:
+                              Icon(Icons.open_in_new, size: 18,
+                                  color: scheme.outline),
+                          onTap: _busy ? null : _setup,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       const Text('Amount to cash out',
                           style: TextStyle(fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
