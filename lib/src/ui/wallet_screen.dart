@@ -288,7 +288,12 @@ class _WalletScreenState extends State<WalletScreen>
 
   void _load() {
     final gen = ++_loadGen;
-    _summary = api.wallet.summary();
+    // Reconcile pending Stripe top-ups (Payment Link / checkout payments
+    // finished outside the app) before showing the balance; best effort.
+    _summary = api.wallet
+        .topupSync()
+        .catchError((_) {})
+        .then((_) => api.wallet.summary());
     _requests = api.wallet.moneyRequests().then(_moneyList);
     _transfers = api.wallet.transfers().then(_moneyList);
     () async {
@@ -1696,7 +1701,17 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       final intent = await api.wallet.topupIntent(amount);
       final secret = '${intent['client_secret'] ?? intent['clientSecret'] ?? intent['payment_intent_client_secret'] ?? ''}';
       if (secret.isEmpty) return null;
-      return await stripePaySheet(publishableKey: pk, clientSecret: secret);
+      final paid =
+          await stripePaySheet(publishableKey: pk, clientSecret: secret);
+      if (paid) {
+        // Credit immediately instead of waiting on the webhook; the id is
+        // the client secret's prefix (pi_..._secret_... → pi_...).
+        final intentId = secret.split('_secret').first;
+        try {
+          await api.wallet.confirmTopupIntent({'intent_id': intentId});
+        } catch (_) {/* webhook will reconcile */}
+      }
+      return paid;
     } on Exception {
       // A sheet failure (transient Stripe/network error) must not dead-end
       // the flow: null sends the caller down the hosted fallbacks. False is
@@ -2274,12 +2289,26 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     if (!confirmed || !mounted) return;
     setState(() => _busy = true);
     try {
-      await api.wallet.sendMoney(
-        toUserId: _recipient!.userId,
-        amount: amount,
-        answer: _answer.text.trim(),
-        note: note,
-      );
+      // Stripe rails first (/stripe/transfer); the ledger transfer remains
+      // the fallback for backends without the Stripe Connect endpoints.
+      try {
+        await api.payments.stripeTransfer(
+          toUserId: _recipient!.userId,
+          amount: amount,
+          note: note,
+        );
+      } on ApiException catch (e) {
+        if (e.isNotFound || e.statusCode == 405 || e.statusCode == 501) {
+          await api.wallet.sendMoney(
+            toUserId: _recipient!.userId,
+            amount: amount,
+            answer: _answer.text.trim(),
+            note: note,
+          );
+        } else {
+          rethrow;
+        }
+      }
       if (mounted) {
         await Navigator.of(context).push(MaterialPageRoute(
           fullscreenDialog: true,

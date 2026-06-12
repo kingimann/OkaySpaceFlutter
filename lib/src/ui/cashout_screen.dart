@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../okayspace_api.dart';
 import '../core/stripe_connect_embed.dart';
 import 'common.dart';
 
@@ -190,9 +191,23 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
     setState(() => _busy = true);
     try {
-      await api.payments.cashout({'amount': amount});
+      // Stripe rails first (/stripe/payout, supports instant-to-debit-card);
+      // the ledger cash-out remains the fallback for backends without it.
+      try {
+        await api.payments.stripePayout(amount: amount, instant: _instant);
+      } on ApiException catch (e) {
+        if (e.isNotFound || e.statusCode == 405 || e.statusCode == 501) {
+          await api.payments.cashout({'amount': amount});
+        } else {
+          rethrow;
+        }
+      }
       if (mounted) {
-        showInfo(context, 'Cash-out requested');
+        showInfo(
+            context,
+            _instant
+                ? 'Instant payout requested — usually minutes to your card.'
+                : 'Cash-out requested');
         _amount.clear();
         await _load();
       }
@@ -202,6 +217,10 @@ class _CashOutScreenState extends State<CashOutScreen> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  // Instant payouts hit the debit card in minutes (Stripe charges its
+  // instant fee); standard payouts take 1-2 business days.
+  bool _instant = false;
 
   @override
   Widget build(BuildContext context) {
@@ -385,7 +404,19 @@ class _CashOutScreenState extends State<CashOutScreen> {
                           ],
                         ),
                       ],
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Instant to debit card'),
+                        subtitle: const Text(
+                            'Minutes instead of 1–2 business days '
+                            '(Stripe instant fee applies)'),
+                        value: _instant,
+                        onChanged: _busy
+                            ? null
+                            : (v) => setState(() => _instant = v),
+                      ),
+                      const SizedBox(height: 8),
                       FilledButton.icon(
                         onPressed: _busy ? null : _cashout,
                         icon: _busy
