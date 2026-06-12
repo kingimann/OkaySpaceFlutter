@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'account_standing_screen.dart';
 import 'admin_settings_screen.dart';
 import 'ads_screen.dart';
 import 'api_keys_screen.dart';
@@ -443,6 +444,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 1, indent: 56),
           _categoryTile(
               'developer', Icons.code, 'Developer', 'API keys'),
+        ]),
+        const SizedBox(height: 12),
+        _card([
+          ListTile(
+            leading: const Icon(Icons.verified_user_outlined),
+            title: const Text('Account standing'),
+            subtitle:
+                const Text('Check restrictions: general, marketplace, messenger'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const AccountStandingScreen())),
+          ),
         ]),
         // Staff-only: the admin suite (the backend re-checks the role).
         if (widget.user.role == 'admin' || widget.user.role == 'mod') ...[
