@@ -6,8 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:dio/dio.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import '../core/device_location.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -121,6 +124,11 @@ class _MapScreenState extends State<MapScreen> {
   // The last search result: a visible pin + result card with directions.
   LatLng? _searchPin;
   String? _searchLabel;
+
+  // In-app road route (OSRM) from the location dot to the search pin.
+  List<LatLng> _roadRoute = const [];
+  String? _routeSummary;
+  bool _locating = false;
 
   // Multi-stop route (waypoints) + straight-line directions target.
   bool _routing = false;
@@ -369,6 +377,65 @@ class _MapScreenState extends State<MapScreen> {
     // looked like the search did nothing.
     _controller.move(_center, 15);
     _loadAll();
+  }
+
+  /// Centers the map on the device's GPS position and sets the location dot.
+  Future<void> _locateMe() async {
+    setState(() => _locating = true);
+    final pos = await currentLatLng();
+    if (!mounted) return;
+    setState(() => _locating = false);
+    if (pos == null) {
+      showInfo(context,
+          'Location unavailable — allow location access and try again.');
+      return;
+    }
+    setState(() {
+      _myLocation = pos;
+      _center = pos;
+    });
+    _controller.move(pos, 15);
+    _loadAll();
+  }
+
+  /// Fetches a driving route (OSRM) from the location dot to the search pin
+  /// and draws it with a distance/time summary.
+  Future<void> _routeToPin() async {
+    final from = _myLocation;
+    final to = _searchPin;
+    if (to == null) return;
+    if (from == null) {
+      await _locateMe();
+      if (_myLocation == null) return;
+      return _routeToPin();
+    }
+    try {
+      final res = await Dio().get<Map<String, dynamic>>(
+        'https://router.project-osrm.org/route/v1/driving/'
+        '${from.longitude},${from.latitude};${to.longitude},${to.latitude}',
+        queryParameters: {'overview': 'full', 'geometries': 'geojson'},
+      );
+      final routes = res.data?['routes'];
+      if (routes is! List || routes.isEmpty) {
+        if (mounted) showInfo(context, 'No drivable route found.');
+        return;
+      }
+      final route = routes.first as Map;
+      final coords =
+          ((route['geometry'] as Map)['coordinates'] as List).cast<List>();
+      final km = ((route['distance'] as num) / 1000);
+      final mins = ((route['duration'] as num) / 60).round();
+      if (!mounted) return;
+      setState(() {
+        _roadRoute = [
+          for (final c in coords)
+            LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
+        ];
+        _routeSummary = '${km.toStringAsFixed(1)} km · ~$mins min drive';
+      });
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   /// Search panel (opened from the app-bar icon): search field, recents,
@@ -1534,6 +1601,14 @@ class _MapScreenState extends State<MapScreen> {
                     color: const Color(0xFF2563EB),
                   ),
                 ]),
+              if (_roadRoute.isNotEmpty)
+                PolylineLayer(polylines: [
+                  Polyline(
+                    points: _roadRoute,
+                    strokeWidth: 5,
+                    color: const Color(0xFF2563EB),
+                  ),
+                ]),
               MarkerLayer(markers: [
                 ...shownMarkers,
                 if (_myLocation != null)
@@ -1723,6 +1798,21 @@ class _MapScreenState extends State<MapScreen> {
                       : () => setState(_areaPoints.clear)),
             ),
 
+          // GPS locate-me button.
+          Positioned(
+            right: 12,
+            bottom: widget.embedded ? 160 : 170,
+            child: FloatingActionButton.small(
+              heroTag: 'locate-me',
+              onPressed: _locating ? null : _locateMe,
+              child: _locating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.my_location),
+            ),
+          ),
           // Search result card: name + real directions hand-off.
           if (_searchPin != null)
             Positioned(
@@ -1732,29 +1822,58 @@ class _MapScreenState extends State<MapScreen> {
               child: Card(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.place, color: Color(0xFFEF4444)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(_searchLabel ?? 'Search result',
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                      Row(
+                        children: [
+                          const Icon(Icons.place, color: Color(0xFFEF4444)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(_searchLabel ?? 'Search result',
+                                maxLines: 2, overflow: TextOverflow.ellipsis),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed: () => setState(() {
+                              _searchPin = null;
+                              _searchLabel = null;
+                              _roadRoute = const [];
+                              _routeSummary = null;
+                            }),
+                          ),
+                        ],
                       ),
-                      TextButton.icon(
-                        icon: const Icon(Icons.directions_outlined, size: 18),
-                        label: const Text('Directions'),
-                        onPressed: () => launchUrl(
-                          Uri.parse(
-                              'https://www.google.com/maps/dir/?api=1&destination=${_searchPin!.latitude},${_searchPin!.longitude}'),
-                          mode: LaunchMode.externalApplication,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () => setState(() {
-                          _searchPin = null;
-                          _searchLabel = null;
-                        }),
+                      Row(
+                        children: [
+                          if (_routeSummary != null)
+                            Expanded(
+                              child: Text(_routeSummary!,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                      color: Color(0xFF2563EB))),
+                            )
+                          else
+                            const Spacer(),
+                          TextButton.icon(
+                            icon: const Icon(Icons.route_outlined, size: 18),
+                            label: const Text('Route'),
+                            onPressed: _routeToPin,
+                          ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.directions_outlined,
+                                size: 18),
+                            label: const Text('Directions'),
+                            onPressed: () => launchUrl(
+                              Uri.parse(
+                                  'https://www.google.com/maps/dir/?api=1'
+                                  '${_myLocation != null ? '&origin=${_myLocation!.latitude},${_myLocation!.longitude}' : ''}'
+                                  '&destination=${_searchPin!.latitude},${_searchPin!.longitude}'),
+                              mode: LaunchMode.externalApplication,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
