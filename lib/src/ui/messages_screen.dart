@@ -14,6 +14,34 @@ import 'call_screen.dart';
 import 'common.dart';
 import 'linked_text.dart';
 
+/// Safely renders a custom-emoji image from a base64 (or data-URI) string,
+/// returning [fallback] if the data is missing or malformed (base64Decode
+/// throws synchronously, before Image.memory's errorBuilder can catch it).
+Widget customEmojiImage(String b64, double size, Widget fallback) {
+  try {
+    final comma = b64.indexOf(',');
+    final data =
+        (b64.startsWith('data:') && comma != -1) ? b64.substring(comma + 1) : b64;
+    return Image.memory(base64Decode(data),
+        width: size, height: size, errorBuilder: (_, __, ___) => fallback);
+  } catch (_) {
+    return fallback;
+  }
+}
+
+/// Safely builds a [MemoryImage] from a base64 (or data-URI) string, returning
+/// null if the data is malformed (avoids a synchronous base64Decode crash).
+ImageProvider? memoryImageFromB64(String b64) {
+  try {
+    final comma = b64.indexOf(',');
+    final data =
+        (b64.startsWith('data:') && comma != -1) ? b64.substring(comma + 1) : b64;
+    return MemoryImage(base64Decode(data));
+  } catch (_) {
+    return null;
+  }
+}
+
 /// List of the current user's conversations.
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -598,12 +626,41 @@ class _ConversationTile extends StatelessWidget {
               padding: const EdgeInsets.only(right: 4),
               child: Icon(Icons.push_pin, size: 14, color: scheme.outline),
             ),
-          Expanded(
+          Flexible(
             child: Text(title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
+          if (conversation.listingTitle != null &&
+              conversation.listingTitle!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: scheme.tertiaryContainer,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.sell_outlined,
+                        size: 11, color: scheme.onTertiaryContainer),
+                    const SizedBox(width: 2),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 90),
+                      child: Text(conversation.listingTitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: scheme.onTertiaryContainer)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
       subtitle: (draft != null && draft!.trim().isNotEmpty)
@@ -706,6 +763,8 @@ class _ChatScreenState extends State<ChatScreen> {
   List<PublicUser> _mentions = const [];
   // Custom emoji: shortcode -> base64 image, rendered inline as :shortcode:.
   Map<String, String> _customEmojis = const {};
+  // Tap-to-reveal: the message whose exact time + status is shown (Messenger-style).
+  String? _revealedId;
   // Auto-scroll to the first unread message, once, on open.
   final _unreadKey = GlobalKey();
   bool _scrolledToUnread = false;
@@ -1246,49 +1305,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Shows a grid of every photo shared in this conversation.
+  /// Shows the shared Media / Files / Links gallery for this conversation.
   void _sharedMedia() {
-    ImageProvider? providerFor(Message m) {
-      final media = m.media.first;
-      if (media.url != null && media.url!.isNotEmpty) {
-        return NetworkImage(media.url!);
-      }
-      if (media.base64 != null && media.base64!.isNotEmpty) {
-        return MemoryImage(base64Decode(media.base64!));
-      }
-      return null;
-    }
-
-    final photos = _items
-        .where((m) => !m.deleted && m.media.isNotEmpty && providerFor(m) != null)
-        .toList();
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => Scaffold(
-        appBar: const OkayAppBar(title: Text('Shared media')),
-        body: photos.isEmpty
-            ? const CenteredMessage(
-                message: 'No photos shared yet.',
-                icon: Icons.photo_library_outlined)
-            : GridView.builder(
-                padding: const EdgeInsets.all(2),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
-                itemCount: photos.length,
-                itemBuilder: (c, i) {
-                  final provider = providerFor(photos[i])!;
-                  return GestureDetector(
-                    onTap: () => Navigator.of(c).push(MaterialPageRoute(
-                        fullscreenDialog: true,
-                        builder: (_) => _ImageViewer(provider: provider))),
-                    child: Image(
-                        image: provider,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            const ColoredBox(color: Colors.black12)),
-                  );
-                },
-              ),
-      ),
+      builder: (_) => _SharedGalleryScreen(
+          messages: _items.where((m) => !m.deleted).toList()),
     ));
   }
 
@@ -1931,11 +1952,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       },
                       child: Padding(
                         padding: const EdgeInsets.all(6),
-                        child: Image.memory(base64Decode(e.value),
-                            width: 28,
-                            height: 28,
-                            errorBuilder: (_, __, ___) =>
-                                Text(':${e.key}:')),
+                        child: customEmojiImage(e.value, 28, Text(':${e.key}:')),
                       ),
                     ),
                 ],
@@ -2119,7 +2136,7 @@ class _ChatScreenState extends State<ChatScreen> {
             highlight: _highlightId == msg.id,
             selected: selected,
             bubbleColor: _bubbleColor,
-            showTimestamp: _showTimestamps,
+            showTimestamp: _showTimestamps || _revealedId == msg.id,
             fontFamily: _fontFamily,
             customEmojis: _customEmojis,
             squareCorners: _squareBubbles,
@@ -2142,11 +2159,16 @@ class _ChatScreenState extends State<ChatScreen> {
             receipt: (!isGroup &&
                     mine &&
                     _receiptsEnabled &&
-                    msg.id == lastMineId)
+                    (msg.id == lastMineId || _revealedId == msg.id))
                 ? _receipt(msg)
                 : null,
             // In selection mode, a tap toggles selection instead of opening.
-            onTap: _selectionMode ? () => _toggleSelect(msg) : null,
+            onTap: _selectionMode
+                ? () => _toggleSelect(msg)
+                : (msg.deleted
+                    ? null
+                    : () => setState(() =>
+                        _revealedId = _revealedId == msg.id ? null : msg.id)),
             onLongPress: _selectionMode
                 ? () => _toggleSelect(msg)
                 : (msg.deleted ? null : () => _messageActions(msg, mine)),
@@ -3811,10 +3833,7 @@ class _MessageBubble extends StatelessWidget {
         alignment: PlaceholderAlignment.middle,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: Image.memory(base64Decode(b64),
-              width: 20,
-              height: 20,
-              errorBuilder: (_, __, ___) => Text(':$code:', style: base)),
+          child: customEmojiImage(b64, 20, Text(':$code:', style: base)),
         ),
       ));
       idx = m.end;
@@ -4013,7 +4032,7 @@ class _MessageBubble extends StatelessWidget {
     if (m.url != null && m.url!.isNotEmpty) {
       provider = NetworkImage(m.url!);
     } else if (m.base64 != null && m.base64!.isNotEmpty) {
-      provider = MemoryImage(base64Decode(m.base64!));
+      provider = memoryImageFromB64(m.base64!);
     }
     if (provider == null) return const SizedBox.shrink();
     return GestureDetector(
@@ -4353,6 +4372,131 @@ class _UnreadDivider extends StatelessWidget {
   }
 }
 
+/// A tabbed gallery of everything shared in a conversation: Media, Files, Links.
+class _SharedGalleryScreen extends StatelessWidget {
+  const _SharedGalleryScreen({required this.messages});
+
+  final List<Message> messages;
+
+  static final _urlRe = RegExp(r'https?://[^\s]+');
+
+  ImageProvider? _providerFor(Message m) {
+    if (m.media.isEmpty) return null;
+    final media = m.media.first;
+    if (media.url != null && media.url!.isNotEmpty) return NetworkImage(media.url!);
+    if (media.base64 != null && media.base64!.isNotEmpty) {
+      return memoryImageFromB64(media.base64!);
+    }
+    return null;
+  }
+
+  String _fmtSize(int bytes) => bytes >= 1024 * 1024
+      ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB'
+      : '${(bytes / 1024).toStringAsFixed(0)} KB';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final photos = [
+      for (final m in messages)
+        if (_providerFor(m) != null) (m, _providerFor(m)!)
+    ];
+    final files = messages.where((m) => m.type == 'file').toList();
+    // (url, message) pairs extracted from text.
+    final links = <String>[];
+    for (final m in messages) {
+      final t = m.text;
+      if (t == null) continue;
+      for (final match in _urlRe.allMatches(t)) {
+        links.add(match.group(0)!);
+      }
+    }
+
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: const OkayAppBar(
+          title: Text('Shared'),
+          bottom: TabBar(tabs: [
+            Tab(text: 'Media'),
+            Tab(text: 'Files'),
+            Tab(text: 'Links'),
+          ]),
+        ),
+        body: TabBarView(
+          children: [
+            // Media
+            photos.isEmpty
+                ? const CenteredMessage(
+                    message: 'No photos shared yet.',
+                    icon: Icons.photo_library_outlined)
+                : GridView.builder(
+                    padding: const EdgeInsets.all(2),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 2,
+                            mainAxisSpacing: 2),
+                    itemCount: photos.length,
+                    itemBuilder: (c, i) {
+                      final provider = photos[i].$2;
+                      return GestureDetector(
+                        onTap: () => Navigator.of(c).push(MaterialPageRoute(
+                            fullscreenDialog: true,
+                            builder: (_) => _ImageViewer(provider: provider))),
+                        child: Image(
+                            image: provider,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const ColoredBox(color: Colors.black12)),
+                      );
+                    },
+                  ),
+            // Files
+            files.isEmpty
+                ? const CenteredMessage(
+                    message: 'No files shared yet.',
+                    icon: Icons.insert_drive_file_outlined)
+                : ListView.separated(
+                    itemCount: files.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (c, i) {
+                      final m = files[i];
+                      final name = '${m.raw['file_name'] ?? 'File'}';
+                      final size = m.raw['file_size'];
+                      return ListTile(
+                        leading: const Icon(Icons.insert_drive_file_outlined),
+                        title: Text(name,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: size is num ? Text(_fmtSize(size.toInt())) : null,
+                      );
+                    },
+                  ),
+            // Links
+            links.isEmpty
+                ? const CenteredMessage(
+                    message: 'No links shared yet.', icon: Icons.link_off)
+                : ListView.separated(
+                    itemCount: links.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (c, i) => ListTile(
+                      leading: Icon(Icons.link, color: scheme.primary),
+                      title: Text(links[i],
+                          maxLines: 2, overflow: TextOverflow.ellipsis),
+                      trailing: const Icon(Icons.copy, size: 18),
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: links[i]));
+                        showInfo(c, 'Link copied');
+                      },
+                    ),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Full-screen, pinch-to-zoom viewer for a chat photo.
 class _ImageViewer extends StatelessWidget {
   const _ImageViewer({required this.provider});
@@ -4543,6 +4687,33 @@ class _NewChatScreenState extends State<_NewChatScreen> {
     }
   }
 
+  /// Opens (or creates) the private notes-to-self conversation.
+  Future<void> _notesToSelf() async {
+    final me = currentUserId;
+    if (me == null) return;
+    try {
+      final conv = await api.messaging.startDirect(me);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) =>
+            ChatScreen(conversation: conv, title: 'Notes to self'),
+      ));
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Widget _notesTile() => ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(Icons.bookmark_outline,
+              color: Theme.of(context).colorScheme.onPrimaryContainer),
+        ),
+        title: const Text('Notes to self'),
+        subtitle: const Text('A private place to save thoughts & places'),
+        onTap: _notesToSelf,
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -4558,16 +4729,36 @@ class _NewChatScreenState extends State<_NewChatScreen> {
         actions: [IconButton(icon: const Icon(Icons.search), onPressed: _run)],
       ),
       body: _results == null
-          ? const CenteredMessage(
-              message: 'Search for someone to message.', icon: Icons.search)
+          ? ListView(
+              children: [
+                _notesTile(),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
+                  child: Column(
+                    children: [
+                      Icon(Icons.search,
+                          size: 48,
+                          color: Theme.of(context).colorScheme.outline),
+                      const SizedBox(height: 12),
+                      Text('Search for someone to message.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.outline)),
+                    ],
+                  ),
+                ),
+              ],
+            )
           : AsyncList<PublicUser>(
               future: _results!,
               emptyMessage: 'No people found.',
               emptyIcon: Icons.person_search_outlined,
               builder: (context, items) => ListView.builder(
-                itemCount: items.length,
+                itemCount: items.length + 1,
                 itemBuilder: (context, i) {
-                  final u = items[i];
+                  if (i == 0) return _notesTile();
+                  final u = items[i - 1];
                   return ListTile(
                     leading: Avatar(url: u.picture, name: u.name),
                     title: Text(u.name),
