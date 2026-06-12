@@ -5,6 +5,7 @@ import '../../okayspace_api.dart';
 import 'cashout_screen.dart';
 import 'common.dart';
 import 'pay_qr_screen.dart';
+import 'wallet_insights_screen.dart';
 
 String _money(num amount, String currency) =>
     '$currency ${amount.toStringAsFixed(2)}';
@@ -150,8 +151,10 @@ class _WalletScreenState extends State<WalletScreen> {
                 if (v == 'currency') _changeCurrency();
                 if (v == 'security') _security();
                 if (v == 'topups') _push(const TopUpHistoryScreen());
+                if (v == 'insights') _push(const WalletInsightsScreen());
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'insights', child: Text('Insights')),
                 PopupMenuItem(value: 'cashout', child: Text('Cash out')),
                 PopupMenuItem(value: 'currency', child: Text('Change currency')),
                 PopupMenuItem(value: 'security', child: Text('Transfer security')),
