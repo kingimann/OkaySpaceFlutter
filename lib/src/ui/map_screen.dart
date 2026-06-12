@@ -71,7 +71,6 @@ const _osmStyles = <_TileStyle>[
       url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png'),
 ];
 
-List<_TileStyle> get _tileStyles => _hasMapbox ? _mapboxStyles : _osmStyles;
 
 /// An interactive map with switchable layers — marketplace listings, open
 /// roadside requests and nearby transit — plus location search and an
@@ -346,9 +345,35 @@ class _MapScreenState extends State<MapScreen> {
     _storage.delete(key: _recentKey).ignore();
   }
 
-  _TileStyle get _style =>
-      _tileStyles.firstWhere((s) => s.id == _tileStyle,
-          orElse: () => _tileStyles.first);
+  /// When Mapbox tiles repeatedly fail (bad/restricted token), fall back to
+  /// the free styles so the map never goes gray.
+  bool _forceOsm = false;
+  int _tileErrors = 0;
+
+  List<_TileStyle> get _styles =>
+      (_hasMapbox && !_forceOsm) ? _mapboxStyles : _osmStyles;
+
+  _TileStyle get _style => _styles.firstWhere((s) => s.id == _tileStyle,
+      orElse: () => _styles.first);
+
+  void _onTileError() {
+    _tileErrors++;
+    if (_tileErrors < 6) return;
+    _tileErrors = 0;
+    if (_style.isMapbox) {
+      // Token problem: switch the whole list to the free styles.
+      setState(() {
+        _forceOsm = true;
+        _tileStyle = 'explore';
+      });
+      showInfo(context,
+          'Map tiles unavailable (check the Mapbox token) — switched to the standard map.');
+    } else if (_style.id != 'standard') {
+      // A free CDN is unreachable: drop to the most reliable source.
+      setState(() => _tileStyle = 'standard');
+      showInfo(context, 'Switched to the standard map style.');
+    }
+  }
 
   /// Distinct categories of saved places, prefixed with 'all'.
   List<String> get _savedCategories => [
@@ -1295,7 +1320,7 @@ class _MapScreenState extends State<MapScreen> {
                   child: Wrap(
                     spacing: 8,
                     children: [
-                      for (final s in _tileStyles)
+                      for (final s in _styles)
                         ChoiceChip(
                           label: Text(s.label),
                           selected: _tileStyle == s.id,
@@ -1636,6 +1661,9 @@ class _MapScreenState extends State<MapScreen> {
                 additionalOptions: _style.isMapbox
                     ? const {'token': _mapboxToken}
                     : const {},
+                // Self-heal: repeated tile failures switch to a working style
+                // instead of leaving a gray map.
+                errorTileCallback: (tile, error, stackTrace) => _onTileError(),
               ),
               if (_showGrid) PolylineLayer(polylines: _graticule()),
               if (_showRadiusCircle)
