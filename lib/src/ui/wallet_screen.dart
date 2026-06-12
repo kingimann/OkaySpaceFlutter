@@ -21,6 +21,12 @@ String _money(num amount, String currency) => formatMoney(amount, currency);
 /// Venmo's signature blue, used for the primary payment actions.
 const _venmoBlue = Color(0xFF008CFF);
 
+/// A Stripe Payment Link (dashboard-created, customer-chooses-amount) used
+/// for wallet top-ups. When set, Add money goes straight to Stripe with no
+/// backend involvement in the payment path; the webhook credits the wallet
+/// via client_reference_id. Set with --dart-define=STRIPE_TOPUP_LINK=...
+const _stripeTopupLink = String.fromEnvironment('STRIPE_TOPUP_LINK');
+
 const _monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -1559,8 +1565,23 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     }
     setState(() => _busy = true);
     try {
-      // Stripe only: money enters the wallet exclusively through Stripe's
-      // hosted checkout; the webhook credits the balance. No demo paths.
+      // Preferred: a dashboard-created Stripe Payment Link — pure Stripe,
+      // no backend call to start the payment. client_reference_id ties the
+      // payment to this user for the crediting webhook.
+      if (_stripeTopupLink.isNotEmpty && currentUserId != null) {
+        await launchUrl(
+          Uri.parse(
+              '$_stripeTopupLink?client_reference_id=$currentUserId'),
+          mode: LaunchMode.externalApplication,
+        );
+        if (mounted) {
+          showInfo(context,
+              'Finish the payment on Stripe — your balance updates once it succeeds.');
+          Navigator.of(context).pop(true);
+        }
+        return;
+      }
+      // Otherwise: Stripe hosted checkout via the backend session endpoint.
       final session = await api.payments
           .checkout({'kind': 'topup', 'amount': amount});
       final url = session['url'] ??

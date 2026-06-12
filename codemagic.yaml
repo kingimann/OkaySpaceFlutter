@@ -80,6 +80,7 @@ workflows:
           flutter build ipa --release \
             --build-number=$(($LATEST + 1)) \
             --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
+            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}" \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
@@ -157,10 +158,12 @@ workflows:
           BUILD_STAMP="${CM_COMMIT:0:7}-$(date -u +%Y%m%d%H%M%S)"
           flutter build apk --release \
             --dart-define=BUILD_STAMP="$BUILD_STAMP" \
-            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}"
+            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
+            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}"
           flutter build appbundle --release \
             --dart-define=BUILD_STAMP="$BUILD_STAMP" \
-            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}"
+            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
+            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}"
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - build/app/outputs/bundle/release/*.aab
@@ -207,7 +210,8 @@ workflows:
           flutter build web --release \
             --base-href "/OkaySpaceFlutter/" \
             --dart-define=BUILD_STAMP="$BUILD_STAMP" \
-            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}"
+            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
+            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}"
           cd build && zip -r web.zip web
     artifacts:
       - build/web.zip

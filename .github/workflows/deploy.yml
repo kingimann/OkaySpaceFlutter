@@ -46,7 +46,9 @@ jobs:
           # Set a MAPBOX_TOKEN repo secret (Settings → Secrets → Actions) to
           # render Mapbox tiles; without it the map falls back to OSM tiles.
           MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
-        run: flutter build web --release --base-href "/OkaySpaceFlutter/" --dart-define=BUILD_STAMP="$STAMP" --dart-define=MAPBOX_TOKEN="$MAPBOX_TOKEN"
+          # Stripe Payment Link for wallet top-ups (optional).
+          STRIPE_TOPUP_LINK: ${{ secrets.STRIPE_TOPUP_LINK }}
+        run: flutter build web --release --base-href "/OkaySpaceFlutter/" --dart-define=BUILD_STAMP="$STAMP" --dart-define=MAPBOX_TOKEN="$MAPBOX_TOKEN" --dart-define=STRIPE_TOPUP_LINK="$STRIPE_TOPUP_LINK"
 
       - name: Post-process (kill-switch, cache-bust, version, SPA fallback)
         run: |
