@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'common.dart';
 
@@ -23,6 +24,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
   void initState() {
     super.initState();
     _load();
+    _loadConfig();
   }
 
   @override
@@ -65,9 +67,20 @@ class _CashOutScreenState extends State<CashOutScreen> {
       final url = res['url'] ?? res['onboarding_url'] ?? res['account_link'];
       if (!mounted) return;
       if (url != null) {
-        Clipboard.setData(ClipboardData(text: '$url'));
-        showInfo(context,
-            'Onboarding link copied — open it in a browser to finish setup.');
+        // Open Stripe onboarding directly; clipboard is the fallback.
+        final opened = await launchUrl(Uri.parse('$url'),
+            mode: LaunchMode.externalApplication);
+        if (!mounted) return;
+        if (!opened) {
+          await Clipboard.setData(ClipboardData(text: '$url'));
+          if (mounted) {
+            showInfo(context,
+                'Onboarding link copied — open it in a browser to finish setup.');
+          }
+        } else {
+          showInfo(context,
+              'Finish the Stripe onboarding, then pull to refresh here.');
+        }
       } else {
         showInfo(context, 'Payout setup started.');
       }
@@ -83,11 +96,22 @@ class _CashOutScreenState extends State<CashOutScreen> {
     setState(() => _busy = true);
     try {
       final res = await api.payments.startIdentity();
-      final url = res['url'] ?? res['verification_url'] ?? res['client_secret'];
+      final url = res['url'] ?? res['verification_url'];
       if (!mounted) return;
-      if (url != null) {
-        Clipboard.setData(ClipboardData(text: '$url'));
-        showInfo(context, 'Verification link copied — open it to continue.');
+      if (url != null && '$url'.startsWith('http')) {
+        final opened = await launchUrl(Uri.parse('$url'),
+            mode: LaunchMode.externalApplication);
+        if (!mounted) return;
+        if (!opened) {
+          await Clipboard.setData(ClipboardData(text: '$url'));
+          if (mounted) {
+            showInfo(
+                context, 'Verification link copied — open it to continue.');
+          }
+        } else {
+          showInfo(context,
+              'Finish the verification, then pull to refresh here.');
+        }
       } else {
         showInfo(context, 'Identity verification started.');
       }
@@ -99,8 +123,21 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
   }
 
-  /// Flat fee charged per cash-out.
-  static const num _fee = 1.99;
+  // Cash-out limits from /payments/config (Stripe-governed); defaults match
+  // the platform's published values until the config loads.
+  num _fee = 1.99;
+  num _min = 5.0;
+
+  Future<void> _loadConfig() async {
+    try {
+      final cfg = await api.payments.config();
+      if (!mounted) return;
+      setState(() {
+        _fee = cfg['cashout_fee'] is num ? cfg['cashout_fee'] as num : _fee;
+        _min = cfg['cashout_min'] is num ? cfg['cashout_min'] as num : _min;
+      });
+    } catch (_) {/* keep defaults */}
+  }
 
   num? get _entered => num.tryParse(_amount.text.trim());
 
@@ -115,8 +152,9 @@ class _CashOutScreenState extends State<CashOutScreen> {
 
   Future<void> _cashout() async {
     final amount = _entered;
-    if (amount == null || !amount.isFinite || amount < 5) {
-      showInfo(context, 'Minimum cash-out is \$5.00.');
+    if (amount == null || !amount.isFinite || amount < _min) {
+      showInfo(context,
+          'Minimum cash-out is $_symbol${_min.toStringAsFixed(2)}.');
       return;
     }
     if (_overAvailable) {
@@ -250,11 +288,13 @@ class _CashOutScreenState extends State<CashOutScreen> {
                           errorText: _overAvailable
                               ? 'More than your available balance'
                               : null,
-                          helperText: (_entered ?? 0) >= 5 && !_overAvailable
+                          helperText: (_entered ?? 0) >= _min &&
+                                  !_overAvailable
                               ? "You'll receive "
                                   '$_symbol${(_entered! - _fee).toStringAsFixed(2)} '
-                                  'after the ${_symbol}1.99 fee'
-                              : '${_symbol}5 minimum · ${_symbol}1.99 flat fee · instant to debit card',
+                                  'after the $_symbol${_fee.toStringAsFixed(2)} fee'
+                              : '$_symbol${_min.toStringAsFixed(0)} minimum · '
+                                  '$_symbol${_fee.toStringAsFixed(2)} flat fee · instant to debit card',
                         ),
                       ),
                       if (_available >= 5) ...[

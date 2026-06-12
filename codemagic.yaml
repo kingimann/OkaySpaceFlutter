@@ -79,6 +79,7 @@ workflows:
           LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
           flutter build ipa --release \
             --build-number=$(($LATEST + 1)) \
+            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
@@ -154,8 +155,12 @@ workflows:
       - name: Build release APK + App Bundle
         script: |
           BUILD_STAMP="${CM_COMMIT:0:7}-$(date -u +%Y%m%d%H%M%S)"
-          flutter build apk --release --dart-define=BUILD_STAMP="$BUILD_STAMP"
-          flutter build appbundle --release --dart-define=BUILD_STAMP="$BUILD_STAMP"
+          flutter build apk --release \
+            --dart-define=BUILD_STAMP="$BUILD_STAMP" \
+            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}"
+          flutter build appbundle --release \
+            --dart-define=BUILD_STAMP="$BUILD_STAMP" \
+            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}"
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - build/app/outputs/bundle/release/*.aab
@@ -198,9 +203,11 @@ workflows:
         script: |
           # BUILD_STAMP drives the in-app "new version available" prompt.
           BUILD_STAMP="${CM_COMMIT:0:7}-$(date -u +%Y%m%d%H%M%S)"
+          # Set MAPBOX_TOKEN as a Codemagic env var to enable Mapbox tiles.
           flutter build web --release \
             --base-href "/OkaySpaceFlutter/" \
-            --dart-define=BUILD_STAMP="$BUILD_STAMP"
+            --dart-define=BUILD_STAMP="$BUILD_STAMP" \
+            --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}"
           cd build && zip -r web.zip web
     artifacts:
       - build/web.zip

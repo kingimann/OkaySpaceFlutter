@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
 import 'cashout_screen.dart';
@@ -1558,14 +1559,25 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     }
     setState(() => _busy = true);
     try {
-      final intent = await api.wallet.topupIntent(amount);
-      // Best-effort confirm; demo backends auto-complete the intent.
-      final id = intent['id'] ?? intent['intent_id'] ?? intent['topup_id'];
-      if (id != null) {
-        await api.wallet.confirmTopupIntent({'intent_id': '$id'});
+      // Stripe only: money enters the wallet exclusively through Stripe's
+      // hosted checkout; the webhook credits the balance. No demo paths.
+      final session = await api.payments
+          .checkout({'kind': 'topup', 'amount': amount});
+      final url = session['url'] ??
+          session['checkout_url'] ??
+          session['session_url'];
+      if (url == null || '$url'.isEmpty) {
+        if (mounted) {
+          showInfo(context,
+              'Checkout is unavailable right now — try again shortly.');
+        }
+        return;
       }
+      await launchUrl(Uri.parse('$url'),
+          mode: LaunchMode.externalApplication);
       if (mounted) {
-        showInfo(context, 'Added ${_amount.text} to your wallet');
+        showInfo(context,
+            'Finish the payment in the secure checkout — your balance updates once it succeeds.');
         Navigator.of(context).pop(true);
       }
     } catch (e) {

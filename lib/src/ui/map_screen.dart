@@ -51,13 +51,22 @@ const _mapboxStyles = <_TileStyle>[
 ];
 
 const _osmStyles = <_TileStyle>[
-  _TileStyle('standard', 'Standard',
-      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+  // CARTO Voyager: modern Apple/Google-style cartography, retina tiles,
+  // continuously updated — the default look.
+  _TileStyle('explore', 'Explore',
+      url:
+          'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'),
   _TileStyle('light', 'Light',
-      url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'),
+      url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'),
   _TileStyle('dark', 'Dark',
-      url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
       dark: true),
+  _TileStyle('satellite', 'Satellite',
+      url:
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      dark: true),
+  _TileStyle('standard', 'Classic',
+      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
   _TileStyle('topo', 'Terrain',
       url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png'),
 ];
@@ -93,7 +102,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _loading = false;
 
   // Display options (persisted).
-  String _tileStyle = 'standard';
+  String _tileStyle = 'explore';
   bool _showRadiusCircle = true;
   bool _showCrosshair = false;
   bool _cluster = false;
@@ -129,6 +138,45 @@ class _MapScreenState extends State<MapScreen> {
   List<LatLng> _roadRoute = const [];
   String? _routeSummary;
   bool _locating = false;
+
+  // Latest rich fix: accuracy ring radius, compass heading, speed.
+  double _gpsAccuracyM = 0;
+  double _gpsHeading = 0;
+  double _gpsSpeedKmh = 0;
+
+  void _applyFix(GeoFix fix) {
+    _myLocation = fix.point;
+    _gpsAccuracyM = fix.accuracyM;
+    _gpsHeading = fix.heading;
+    _gpsSpeedKmh = fix.speedKmh;
+  }
+
+  // Follow-me: a live GPS stream keeps the location dot (and camera) moving.
+  StreamSubscription<GeoFix>? _followSub;
+  bool get _following => _followSub != null;
+
+  void _toggleFollow() async {
+    if (_following) {
+      await _followSub?.cancel();
+      if (!mounted) return;
+      setState(() => _followSub = null);
+      showInfo(context, 'Stopped following your location');
+      return;
+    }
+    // Prime permissions + first fix via the one-shot path.
+    await _locateMe();
+    if (!mounted || _myLocation == null) return;
+    _followSub = fixStream().listen((fix) {
+      if (!mounted) return;
+      setState(() {
+        _applyFix(fix);
+        _center = fix.point;
+      });
+      _controller.move(fix.point, _controller.camera.zoom);
+    });
+    setState(() {});
+    showInfo(context, 'Following your location — long-press to stop');
+  }
 
   // Multi-stop route (waypoints) + straight-line directions target.
   bool _routing = false;
@@ -179,6 +227,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
+    _followSub?.cancel();
     _chromeTimer?.cancel();
     // Don't leave the bars hidden if we leave mid-pan.
     showBars();
@@ -206,7 +255,7 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         if (p != null && p.isNotEmpty) {
           final d = jsonDecode(p) as Map<String, dynamic>;
-          _tileStyle = d['tile'] as String? ?? 'standard';
+          _tileStyle = d['tile'] as String? ?? 'explore';
           _radiusKm = (d['radius'] as num?)?.toDouble() ?? 25;
           _showListings = d['listings'] as bool? ?? true;
           _showRoadside = d['roadside'] as bool? ?? false;
@@ -382,38 +431,39 @@ class _MapScreenState extends State<MapScreen> {
   /// Centers the map on the device's GPS position and sets the location dot.
   Future<void> _locateMe() async {
     setState(() => _locating = true);
-    final pos = await currentLatLng();
+    final fix = await currentFix();
     if (!mounted) return;
     setState(() => _locating = false);
-    if (pos == null) {
+    if (fix == null) {
       showInfo(context,
           'Location unavailable — allow location access and try again.');
       return;
     }
     setState(() {
-      _myLocation = pos;
-      _center = pos;
+      _applyFix(fix);
+      _center = fix.point;
     });
-    _controller.move(pos, 15);
+    _controller.move(fix.point, 15);
     _loadAll();
   }
 
-  /// Fetches a driving route (OSRM) from the location dot to the search pin
-  /// and draws it with a distance/time summary.
-  Future<void> _routeToPin() async {
-    final from = _myLocation;
-    final to = _searchPin;
-    if (to == null) return;
-    if (from == null) {
-      await _locateMe();
-      if (_myLocation == null) return;
-      return _routeToPin();
-    }
+  /// Fetches a driving route through [points] and draws it with a
+  /// distance/time summary. Uses Mapbox Directions (live traffic) when the
+  /// token is configured, falling back to the public OSRM server.
+  Future<void> _fetchDriveRoute(List<LatLng> points) async {
+    if (points.length < 2) return;
     try {
+      final coordsParam =
+          points.map((p) => '${p.longitude},${p.latitude}').join(';');
       final res = await Dio().get<Map<String, dynamic>>(
-        'https://router.project-osrm.org/route/v1/driving/'
-        '${from.longitude},${from.latitude};${to.longitude},${to.latitude}',
-        queryParameters: {'overview': 'full', 'geometries': 'geojson'},
+        _hasMapbox
+            ? 'https://api.mapbox.com/directions/v5/mapbox/driving-traffic/$coordsParam'
+            : 'https://router.project-osrm.org/route/v1/driving/$coordsParam',
+        queryParameters: {
+          'overview': 'full',
+          'geometries': 'geojson',
+          if (_hasMapbox) 'access_token': _mapboxToken,
+        },
       );
       final routes = res.data?['routes'];
       if (routes is! List || routes.isEmpty) {
@@ -431,8 +481,39 @@ class _MapScreenState extends State<MapScreen> {
           for (final c in coords)
             LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
         ];
-        _routeSummary = '${km.toStringAsFixed(1)} km · ~$mins min drive';
+        _routeSummary = '${km.toStringAsFixed(1)} km · ~$mins min drive'
+            '${_hasMapbox ? ' (live traffic)' : ''}';
       });
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Route from the location dot to the search pin.
+  Future<void> _routeToPin() async {
+    final to = _searchPin;
+    if (to == null) return;
+    if (_myLocation == null) {
+      await _locateMe();
+      if (_myLocation == null) return;
+    }
+    await _fetchDriveRoute([_myLocation!, to]);
+  }
+
+  /// Saves the search pin into the user's places (shows on the Saved layer).
+  Future<void> _saveSearchPin() async {
+    final pin = _searchPin;
+    if (pin == null) return;
+    try {
+      await api.guides.addPlace(
+        title: _searchLabel ?? 'Saved spot',
+        latitude: pin.latitude,
+        longitude: pin.longitude,
+      );
+      if (mounted) {
+        showInfo(context, 'Saved — visible on the Saved layer');
+        _loadSaved();
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -1609,11 +1690,46 @@ class _MapScreenState extends State<MapScreen> {
                     color: const Color(0xFF2563EB),
                   ),
                 ]),
+              // GPS accuracy ring under the location dot (Apple Maps style).
+              if (_myLocation != null && _gpsAccuracyM > 10)
+                CircleLayer(circles: [
+                  CircleMarker(
+                    point: _myLocation!,
+                    radius: _gpsAccuracyM,
+                    useRadiusInMeter: true,
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.10),
+                    borderColor:
+                        const Color(0xFF2563EB).withValues(alpha: 0.3),
+                    borderStrokeWidth: 1,
+                  ),
+                ]),
               MarkerLayer(markers: [
                 ...shownMarkers,
                 if (_myLocation != null)
-                  _marker(_myLocation!, Icons.my_location,
-                      const Color(0xFF2563EB), () {}),
+                  Marker(
+                    point: _myLocation!,
+                    width: 30,
+                    height: 30,
+                    child: _gpsHeading > 0
+                        // Heading known: a rotating direction cone.
+                        ? Transform.rotate(
+                            angle: _gpsHeading * math.pi / 180,
+                            child: const Icon(Icons.navigation,
+                                color: Color(0xFF2563EB), size: 26),
+                          )
+                        : Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFF2563EB),
+                              border:
+                                  Border.all(color: Colors.white, width: 3),
+                              boxShadow: const [
+                                BoxShadow(
+                                    color: Colors.black26, blurRadius: 6),
+                              ],
+                            ),
+                          ),
+                  ),
                 if (_identify != null)
                   _marker(_identify!, Icons.place, const Color(0xFFEF4444),
                       () => _identifyAt(_identify!)),
@@ -1802,39 +1918,108 @@ class _MapScreenState extends State<MapScreen> {
           Positioned(
             right: 12,
             bottom: widget.embedded ? 160 : 170,
-            child: FloatingActionButton.small(
-              heroTag: 'locate-me',
-              onPressed: _locating ? null : _locateMe,
-              child: _locating
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.my_location),
+            child: GestureDetector(
+              // Long-press toggles follow-me (live tracking).
+              onLongPress: _toggleFollow,
+              child: FloatingActionButton.small(
+                heroTag: 'locate-me',
+                backgroundColor: _following ? const Color(0xFF2563EB) : null,
+                foregroundColor: _following ? Colors.white : null,
+                onPressed: _locating ? null : _locateMe,
+                child: _locating
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Icon(_following
+                        ? Icons.navigation
+                        : Icons.my_location),
+              ),
             ),
           ),
+          // Live speed chip while following (Apple Maps drive style).
+          if (_following && _gpsSpeedKmh > 1)
+            Positioned(
+              left: 12,
+              top: 100,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black26, blurRadius: 8),
+                  ],
+                ),
+                child: Text('${_gpsSpeedKmh.round()} km/h',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15)),
+              ),
+            ),
+          // Drive-route chip for the multi-stop route builder.
+          if (_routing && _route.length >= 2)
+            Positioned(
+              left: 12,
+              bottom: widget.embedded ? 160 : 170,
+              child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.route, size: 18),
+                label: Text('Drive route (${_route.length} stops)'),
+                onPressed: () => _fetchDriveRoute(List.of(_route)),
+              ),
+            ),
           // Search result card: name + real directions hand-off.
           if (_searchPin != null)
             Positioned(
               left: 12,
               right: 12,
               bottom: widget.embedded ? 90 : 100,
-              child: Card(
+              child: Material(
+                elevation: 8,
+                borderRadius: BorderRadius.circular(20),
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                  padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.place, color: Color(0xFFEF4444)),
-                          const SizedBox(width: 10),
                           Expanded(
-                            child: Text(_searchLabel ?? 'Search result',
-                                maxLines: 2, overflow: TextOverflow.ellipsis),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_searchLabel ?? 'Search result',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16)),
+                                const SizedBox(height: 2),
+                                Text(
+                                    _routeSummary ??
+                                        (_myLocation != null
+                                            ? '${_fmtDistance(_distance(_myLocation!, _searchPin!))} away'
+                                            : 'Tap Route for drive time'),
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: _routeSummary != null
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                        color: _routeSummary != null
+                                            ? const Color(0xFF2563EB)
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .outline)),
+                              ],
+                            ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close, size: 18),
+                            icon: const Icon(Icons.close, size: 20),
                             onPressed: () => setState(() {
                               _searchPin = null;
                               _searchLabel = null;
@@ -1844,26 +2029,15 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
-                          if (_routeSummary != null)
-                            Expanded(
-                              child: Text(_routeSummary!,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                      color: Color(0xFF2563EB))),
-                            )
-                          else
-                            const Spacer(),
-                          TextButton.icon(
-                            icon: const Icon(Icons.route_outlined, size: 18),
-                            label: const Text('Route'),
-                            onPressed: _routeToPin,
-                          ),
-                          TextButton.icon(
-                            icon: const Icon(Icons.directions_outlined,
-                                size: 18),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                visualDensity: VisualDensity.compact),
+                            icon: const Icon(Icons.directions, size: 18),
                             label: const Text('Directions'),
                             onPressed: () => launchUrl(
                               Uri.parse(
@@ -1872,6 +2046,21 @@ class _MapScreenState extends State<MapScreen> {
                                   '&destination=${_searchPin!.latitude},${_searchPin!.longitude}'),
                               mode: LaunchMode.externalApplication,
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.tonalIcon(
+                            style: FilledButton.styleFrom(
+                                visualDensity: VisualDensity.compact),
+                            icon: const Icon(Icons.route_outlined, size: 18),
+                            label: const Text('Route'),
+                            onPressed: _routeToPin,
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.bookmark_add_outlined,
+                                size: 22),
+                            tooltip: 'Save this spot',
+                            onPressed: _saveSearchPin,
                           ),
                         ],
                       ),
