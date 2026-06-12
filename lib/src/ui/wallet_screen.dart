@@ -153,6 +153,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 if (v == 'security') _security();
                 if (v == 'topups') _push(const TopUpHistoryScreen());
                 if (v == 'insights') _push(const WalletInsightsScreen());
+                if (v == 'history') _push(const TransferHistoryScreen());
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'insights', child: Text('Insights')),
@@ -160,6 +161,8 @@ class _WalletScreenState extends State<WalletScreen> {
                 PopupMenuItem(value: 'currency', child: Text('Change currency')),
                 PopupMenuItem(value: 'security', child: Text('Transfer security')),
                 PopupMenuItem(value: 'topups', child: Text('Top-up history')),
+                PopupMenuItem(
+                    value: 'history', child: Text('Transfer history')),
               ],
             ),
           ],
@@ -988,7 +991,23 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  void _load() {
     _topups = api.wallet.topups().then((d) => _mapList(d, 'topups'));
+  }
+
+  Future<void> _cancel(String id) async {
+    try {
+      await api.wallet.cancelTopup(id);
+      if (mounted) {
+        showInfo(context, 'Top-up cancelled');
+        setState(_load);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   @override
@@ -1005,14 +1024,91 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final t = items[i];
+              final id = _pick(t, ['id', 'topup_id']);
               final amount =
                   num.tryParse(_pick(t, ['amount'], '0')) ?? 0;
               final currency = _pick(t, ['currency'], 'USD');
               final status = _pick(t, ['status'], 'completed');
+              final pending = status.toLowerCase() == 'pending';
               return ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.add)),
                 title: Text(_money(amount, currency)),
                 subtitle: Text('Status: $status'),
+                trailing: pending && id.isNotEmpty
+                    ? OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 36)),
+                        onPressed: () => _cancel(id),
+                        child: const Text('Cancel'),
+                      )
+                    : null,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Read-only list of settled past transfers (`/money/transfers/history`).
+class TransferHistoryScreen extends StatefulWidget {
+  const TransferHistoryScreen({super.key});
+
+  @override
+  State<TransferHistoryScreen> createState() => _TransferHistoryScreenState();
+}
+
+class _TransferHistoryScreenState extends State<TransferHistoryScreen> {
+  late final Future<List<Map<String, dynamic>>> _history =
+      api.wallet.transferHistory().then(_moneyList);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const OkayAppBar(title: Text('Transfer history')),
+      body: MaxWidth(
+        child: AsyncList<Map<String, dynamic>>(
+          future: _history,
+          emptyMessage: 'No past transfers.',
+          emptyIcon: Icons.history,
+          builder: (context, items) => ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final t = items[i];
+              final amount = num.tryParse(_pick(t, ['amount'], '0')) ?? 0;
+              final currency = _pick(t, ['currency'], 'USD');
+              final status = _pick(t, ['status'], 'completed');
+              final toUserId = _pick(t, ['to_user_id', 'recipient_id']);
+              final incoming = t['_incoming'] as bool? ??
+                  (currentUserId != null && toUserId == currentUserId);
+              final who = _pick(t, [
+                incoming ? 'from_name' : 'to_name',
+                'counterparty_name',
+                'user_name',
+              ], 'Someone');
+              final when = _pick(t, ['created_at', 'completed_at']);
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor:
+                      (incoming ? const Color(0xFF22C55E) : scheme.primary)
+                          .withValues(alpha: 0.16),
+                  child: Icon(
+                      incoming ? Icons.south_west : Icons.north_east,
+                      color: incoming
+                          ? const Color(0xFF22C55E)
+                          : scheme.primary),
+                ),
+                title: Text(incoming ? 'From $who' : 'To $who',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text([
+                  _money(amount, currency),
+                  status,
+                  if (when.isNotEmpty) when.split('T').first,
+                ].join(' · ')),
               );
             },
           ),
