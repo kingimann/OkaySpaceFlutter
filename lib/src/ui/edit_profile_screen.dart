@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'profile_decor.dart';
 
 /// Edits the signed-in user's profile fields. Returns `true` via [Navigator]
 /// when changes were saved.
@@ -160,31 +161,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: OkayAppBar(
-        title: const Text('Edit profile'),
-        actions: [
-          TextButton(
-            onPressed: _busy ? null : _save,
-            child: _busy
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Save'),
-          ),
-        ],
-      ),
-      body: MaxWidth(
-        child: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          // Cover photo with the avatar overlapping its bottom edge.
-          SizedBox(
-            height: 168,
-            child: Stack(
+  /// Cover photo with the avatar overlapping its bottom edge (Basics tab).
+  Widget _coverAvatarHeader() {
+    return SizedBox(
+      height: 168,
+      child: Stack(
               clipBehavior: Clip.none,
               children: [
                 GestureDetector(
@@ -264,7 +245,57 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 5,
+      child: Scaffold(
+        appBar: OkayAppBar(
+          title: const Text('Edit profile'),
+          actions: [
+            TextButton(
+              onPressed: _busy ? null : _save,
+              child: _busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Save'),
+            ),
+          ],
+          bottom: const TabBar(
+            isScrollable: true,
+            tabs: [
+              Tab(text: 'Basics'),
+              Tab(text: 'Look'),
+              Tab(text: 'About'),
+              Tab(text: 'Links'),
+              Tab(text: 'Privacy'),
+            ],
           ),
+        ),
+        body: MaxWidth(
+          child: TabBarView(
+            children: [
+              _basicsTab(),
+              _lookTab(),
+              _aboutTab(),
+              _linksTab(),
+              _privacyTab(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _basicsTab() => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          _coverAvatarHeader(),
           const SizedBox(height: 16),
           TextField(
             controller: _name,
@@ -280,7 +311,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 hintText: 'A short tagline',
                 border: OutlineInputBorder()),
           ),
-          const SizedBox(height: 16),
+        ],
+      );
+
+  Widget _lookTab() => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text('Appearance',
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13)),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Theme, avatar frame & background'),
+            subtitle: const Text('Customize how your profile looks'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showProfileDecorSheet(context),
+          ),
+        ],
+      );
+
+  Widget _aboutTab() => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
           TextField(
             controller: _bio,
             maxLines: 4,
@@ -352,16 +408,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text('Social links',
-                style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13)),
-          ),
-          const SizedBox(height: 8),
+        ],
+      );
+
+  Widget _linksTab() => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
           for (final e in _socialPlatforms.entries) ...[
             TextField(
               controller: _socials[e.key],
@@ -374,9 +426,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 isDense: true,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
           ],
-          const SizedBox(height: 8),
+        ],
+      );
+
+  Widget _privacyTab() => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
           SwitchListTile(
             value: _private,
             onChanged: (v) => setState(() => _private = v),
@@ -386,8 +443,5 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             contentPadding: EdgeInsets.zero,
           ),
         ],
-      ),
-      ),
-    );
-  }
+      );
 }
