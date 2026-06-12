@@ -62,6 +62,11 @@ class PointsLedger extends ChangeNotifier {
   int _currentStreak = 0;
   int _longestStreak = 0;
 
+  // Per-day action counts (reset each day, keyed by source) and the ids of
+  // daily quests already claimed today — both scoped to [_onlineDay].
+  final Map<String, int> _dailyActions = {};
+  final Set<String> _claimedQuests = {};
+
   // Set while the app is in the foreground; null while backgrounded.
   DateTime? _activeSince;
 
@@ -114,7 +119,31 @@ class PointsLedger extends ChangeNotifier {
       _onlineDay = _today;
       _onlineLeftoverSeconds = 0;
       _onlinePointsToday = 0;
+      _dailyActions.clear();
+      _claimedQuests.clear();
     }
+  }
+
+  /// How many times [source] was awarded today (e.g. posts/reactions made).
+  int actionsToday(String source) {
+    _rolloverIfNeeded();
+    return _dailyActions[source] ?? 0;
+  }
+
+  /// Whether a daily quest has already been claimed today.
+  bool isQuestClaimed(String questId) {
+    _rolloverIfNeeded();
+    return _claimedQuests.contains(questId);
+  }
+
+  /// Claims a completed daily quest's reward (once per day). Returns true if
+  /// the reward was granted now.
+  bool claimQuest(String questId, int reward) {
+    _rolloverIfNeeded();
+    if (_claimedQuests.contains(questId) || reward <= 0) return false;
+    _claimedQuests.add(questId);
+    award('quests', reward);
+    return true;
   }
 
   /// Counts today toward the daily streak (once), extending or resetting it,
@@ -159,6 +188,16 @@ class PointsLedger extends ChangeNotifier {
           _lastActiveDay = (m['lastActiveDay'] as String?) ?? '';
           _currentStreak = (m['currentStreak'] as num?)?.toInt() ?? 0;
           _longestStreak = (m['longestStreak'] as num?)?.toInt() ?? 0;
+          final da = m['dailyActions'];
+          if (da is Map) {
+            da.forEach((k, v) {
+              if (v is num) _dailyActions['$k'] = v.toInt();
+            });
+          }
+          final cq = m['claimedQuests'];
+          if (cq is List) {
+            _claimedQuests.addAll(cq.whereType<String>());
+          }
           final evts = m['events'];
           if (evts is List) {
             for (final e in evts) {
@@ -192,6 +231,8 @@ class PointsLedger extends ChangeNotifier {
           'lastActiveDay': _lastActiveDay,
           'currentStreak': _currentStreak,
           'longestStreak': _longestStreak,
+          'dailyActions': _dailyActions,
+          'claimedQuests': _claimedQuests.toList(),
           'events': [
             for (final e in _events)
               {'s': e.source, 'a': e.amount, 't': e.at.millisecondsSinceEpoch},
@@ -207,6 +248,8 @@ class PointsLedger extends ChangeNotifier {
   /// amounts so toggles (e.g. un-liking) never subtract.
   void award(String source, int amount) {
     if (amount <= 0) return;
+    _rolloverIfNeeded();
+    _dailyActions[source] = (_dailyActions[source] ?? 0) + 1;
     _credit(source, amount);
     notifyListeners();
     _persist();

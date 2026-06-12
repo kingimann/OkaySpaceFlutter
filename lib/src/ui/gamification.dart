@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import '../core/points_ledger.dart';
 
 /// Local points / levels / badges system (the backend computes `level` and
 /// `level_title` from `points`; the tier ladder and earnable achievement
@@ -195,11 +196,44 @@ class PointSource {
 /// Known point sources, in a sensible display order. Unknown ids fall back to
 /// a generic "Activity" row in the breakdown.
 const kPointSources = <PointSource>[
+  PointSource('quests', 'Daily quests', Icons.task_alt_outlined, _violet),
   PointSource('streak', 'Daily streak', Icons.local_fire_department, _gold),
   PointSource('online', 'Online time', Icons.schedule_outlined, _cyan),
   PointSource('posts', 'Posts & replies', Icons.post_add_outlined, _blue),
   PointSource('reactions', 'Reactions', Icons.favorite_border, _rose),
   PointSource('social', 'Connections', Icons.people_outline, _green),
+];
+
+/// A once-a-day goal that grants a claimable bonus when its target is met.
+class DailyQuest {
+  const DailyQuest(this.id, this.title, this.description, this.icon, this.color,
+      this.target, this.reward, this.current);
+  final String id;
+  final String title;
+  final String description;
+  final IconData icon;
+  final Color color;
+  final int target;
+  final int reward;
+
+  /// Today's progress toward [target], read from the ledger.
+  final int Function(PointsLedger) current;
+}
+
+/// The daily quest board. Progress is read live from [PointsLedger]; rewards
+/// land in the `quests` point source when claimed.
+final kDailyQuests = <DailyQuest>[
+  DailyQuest('show_up', 'Show up', 'Open OkaySpace today',
+      Icons.waving_hand_outlined, _gold, 1, 2, (l) => l.countedToday ? 1 : 0),
+  DailyQuest('post', 'Share something', 'Make a post or reply',
+      Icons.post_add_outlined, _blue, 1, 5, (l) => l.actionsToday('posts')),
+  DailyQuest('react', 'Spread some love', 'React to 3 posts',
+      Icons.favorite_border, _rose, 3, 4, (l) => l.actionsToday('reactions')),
+  DailyQuest('connect', 'Make a connection', 'Follow someone new',
+      Icons.person_add_alt_1_outlined, _green, 1, 4,
+      (l) => l.actionsToday('social')),
+  DailyQuest('stick_around', 'Stick around', 'Spend ~15 min in the app',
+      Icons.schedule_outlined, _cyan, 3, 3, (l) => l.onlinePointsToday),
 ];
 
 /// Looks up display metadata for a source id.
