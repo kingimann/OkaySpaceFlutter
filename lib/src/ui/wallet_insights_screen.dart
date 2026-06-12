@@ -74,7 +74,9 @@ class _WalletInsightsScreenState extends State<WalletInsightsScreen> {
           child: FutureBuilder<WalletSummary>(
             future: _summary,
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              // Spinner only on first load; refreshes keep the data visible.
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
               if (snapshot.hasError) {
