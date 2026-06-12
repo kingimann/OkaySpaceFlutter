@@ -43,6 +43,33 @@ class WalletTxn {
       raw: json,
     );
   }
+
+  /// Normalized display status. Backends report many raw states; the UI
+  /// shows exactly: Pending, Canceled, Failed, Reversed or Approved
+  /// (the default for completed/settled/absent statuses).
+  String get statusLabel {
+    final s = '${raw['status'] ?? raw['state'] ?? ''}'.toLowerCase();
+    if (s.contains('cancel')) return 'Canceled';
+    if (s.contains('revers') || s.contains('refund')) return 'Reversed';
+    if (s.contains('fail') ||
+        s.contains('decline') ||
+        s.contains('reject') ||
+        s.contains('error')) {
+      return 'Failed';
+    }
+    if (s.contains('pend') ||
+        s.contains('process') ||
+        s.contains('hold') ||
+        s.contains('await') ||
+        s.contains('requires') ||
+        s == 'open' ||
+        s == 'created') {
+      return 'Pending';
+    }
+    return 'Approved';
+  }
+
+  bool get isSettled => statusLabel == 'Approved';
 }
 
 /// Summary of the authenticated user's wallet (earnings + spending).
