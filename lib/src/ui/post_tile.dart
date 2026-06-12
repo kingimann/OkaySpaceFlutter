@@ -10,9 +10,13 @@ import 'post_video.dart';
 import 'profile_screen.dart';
 
 /// Opens the post overflow menu. Own posts get edit/pin/delete; [onChanged]
-/// is invoked after a mutating action so the host can refresh.
+/// is invoked after a mutating action so the host can refresh. Bookmarking
+/// lives here too — [bookmarked] reflects the tile's optimistic state and
+/// [onBookmark] toggles it.
 Future<void> _showPostMenu(BuildContext context, Post post,
-    [VoidCallback? onChanged]) async {
+    {VoidCallback? onChanged,
+    bool bookmarked = false,
+    VoidCallback? onBookmark}) async {
   final mine = currentUserId != null && post.author.userId == currentUserId;
   final action = await showModalBottomSheet<String>(
     context: context,
@@ -35,6 +39,11 @@ Future<void> _showPostMenu(BuildContext context, Post post,
             leading: const Icon(Icons.forward_to_inbox_outlined),
             title: const Text('Share to a chat'),
             onTap: () => Navigator.pop(context, 'share'),
+          ),
+          ListTile(
+            leading: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border),
+            title: Text(bookmarked ? 'Remove bookmark' : 'Bookmark'),
+            onTap: () => Navigator.pop(context, 'bookmark'),
           ),
           if (mine) ...[
             ListTile(
@@ -87,6 +96,11 @@ Future<void> _showPostMenu(BuildContext context, Post post,
         if (context.mounted) showInfo(context, 'Text copied');
       case 'share':
         await _sharePostToChat(context, post);
+      case 'bookmark':
+        onBookmark?.call();
+        if (context.mounted) {
+          showInfo(context, bookmarked ? 'Bookmark removed' : 'Bookmarked');
+        }
       case 'not_interested':
         await api.feed.notInterested(post.id);
         if (context.mounted) showInfo(context, "We'll show less like this");
@@ -291,7 +305,6 @@ class _PostTileState extends State<PostTile> {
   late bool _disliked;
   late int _dislikes;
   late bool _bookmarked;
-  late int _bookmarks;
   late bool _reposted;
   late int _reposts;
 
@@ -321,7 +334,6 @@ class _PostTileState extends State<PostTile> {
     _disliked = post.dislikedByMe;
     _dislikes = post.dislikesCount;
     _bookmarked = post.bookmarkedByMe;
-    _bookmarks = post.bookmarksCount;
     _reposted = post.repostedByMe;
     _reposts = post.repostsCount;
   }
@@ -368,7 +380,6 @@ class _PostTileState extends State<PostTile> {
 
   void _bookmark() => _toggle(() => api.feed.toggleBookmark(post.id), () {
         _bookmarked = !_bookmarked;
-        _bookmarks += _bookmarked ? 1 : -1;
       });
 
   void _repost() => _toggle(() => api.feed.toggleRepost(post.id), () {
@@ -498,7 +509,10 @@ class _PostTileState extends State<PostTile> {
                 icon: Icon(Icons.more_horiz,
                     color: Theme.of(context).colorScheme.outline),
                 visualDensity: VisualDensity.compact,
-                onPressed: () => _showPostMenu(context, post, onChanged),
+                onPressed: () => _showPostMenu(context, post,
+                    onChanged: onChanged,
+                    bookmarked: _bookmarked,
+                    onBookmark: _bookmark),
               ),
             ],
           ),
@@ -527,22 +541,42 @@ class _PostTileState extends State<PostTile> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _PostAction(
-                icon: _liked ? Icons.favorite : Icons.favorite_border,
-                count: _likes,
-                color: _liked ? OkayColors.danger : null,
-                onTap: _like,
-                onLongPress: () => _reactToPost(context, post),
-              ),
-              _PostAction(
-                icon: _disliked
-                    ? Icons.thumb_down
-                    : Icons.thumb_down_outlined,
-                count: _dislikes,
-                color: _disliked
-                    ? Theme.of(context).colorScheme.primary
-                    : null,
-                onTap: _dislike,
+              // Like and dislike combined into one segmented pill.
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _PostAction(
+                      icon: _liked ? Icons.favorite : Icons.favorite_border,
+                      count: _likes,
+                      color: _liked ? OkayColors.danger : null,
+                      onTap: _like,
+                      onLongPress: () => _reactToPost(context, post),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 16,
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                    _PostAction(
+                      icon: _disliked
+                          ? Icons.thumb_down
+                          : Icons.thumb_down_outlined,
+                      count: _dislikes,
+                      color: _disliked
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                      onTap: _dislike,
+                    ),
+                  ],
+                ),
               ),
               _PostAction(
                 icon: Icons.mode_comment_outlined,
@@ -559,14 +593,6 @@ class _PostTileState extends State<PostTile> {
               if (post.viewsCount > 0)
                 _PostAction(
                     icon: Icons.visibility_outlined, count: post.viewsCount),
-              _PostAction(
-                icon: _bookmarked ? Icons.bookmark : Icons.bookmark_border,
-                count: _bookmarks,
-                color: _bookmarked
-                    ? Theme.of(context).colorScheme.primary
-                    : null,
-                onTap: _bookmark,
-              ),
             ],
           ),
         ],
