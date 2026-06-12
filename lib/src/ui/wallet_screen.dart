@@ -1800,6 +1800,18 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
                   prefixIcon: Icon(Icons.attach_money),
                   border: OutlineInputBorder()),
             ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in const [5, 10, 20, 50, 100])
+                  ActionChip(
+                    label: Text('$p'),
+                    onPressed: () => setState(() => _amount.text = '$p'),
+                  ),
+              ],
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: _note,
