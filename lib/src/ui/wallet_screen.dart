@@ -517,11 +517,22 @@ class _WalletScreenState extends State<WalletScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: Text('Recent activity',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold)),
+                    child: Row(
+                      children: [
+                        Text('Recent activity',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold)),
+                        TextButton(
+                          style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact),
+                          onPressed: () =>
+                              _push(const WalletActivityScreen()),
+                          child: const Text('See all'),
+                        ),
+                      ],
+                    ),
                   ),
                   IconButton(
                     icon: Icon(_searching ? Icons.search_off : Icons.search,
@@ -1716,6 +1727,97 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
                         child: const Text('Cancel'),
                       )
                     : null,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The full wallet activity feed (`/wallet/activity`) — everything, not just
+/// the recent slice on the overview. Reuses the overview's transaction tiles,
+/// so the detail sheet / send-again work here too.
+class WalletActivityScreen extends StatefulWidget {
+  const WalletActivityScreen({super.key});
+
+  @override
+  State<WalletActivityScreen> createState() => _WalletActivityScreenState();
+}
+
+class _WalletActivityScreenState extends State<WalletActivityScreen> {
+  late Future<List<WalletTxn>> _activity = _fetch();
+
+  Future<List<WalletTxn>> _fetch() async {
+    final raw = await api.wallet.activity();
+    final maps = _mapList(raw, 'activity');
+    return maps.map(WalletTxn.fromJson).toList()..sort(_byNewest);
+  }
+
+  Future<void> _reload() async {
+    setState(() => _activity = _fetch());
+    try {
+      await _activity;
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const OkayAppBar(title: Text('All activity')),
+      body: MaxWidth(
+        child: RefreshIndicator(
+          onRefresh: _reload,
+          child: FutureBuilder<List<WalletTxn>>(
+            future: _activity,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return CenteredMessage(
+                    message: messageFor(snapshot.error),
+                    icon: Icons.error_outline,
+                    onRetry: _reload);
+              }
+              final txns = snapshot.data ?? const <WalletTxn>[];
+              if (txns.isEmpty) {
+                return const CenteredMessage(
+                    message: 'No activity yet.',
+                    icon: Icons.receipt_long_outlined);
+              }
+              final now = DateTime.now();
+              final children = <Widget>[];
+              String? lastKey;
+              for (final t in txns) {
+                final d = t.createdAt;
+                final key = d == null ? 'earlier' : '${d.year}-${d.month}';
+                if (key != lastKey) {
+                  lastKey = key;
+                  final label = d == null
+                      ? 'Earlier'
+                      : d.year == now.year && d.month == now.month
+                          ? 'This month'
+                          : '${_monthNames[d.month - 1]}'
+                              '${d.year == now.year ? '' : ' ${d.year}'}';
+                  children.add(Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+                    child: Text(label,
+                        style: TextStyle(
+                            color: scheme.outline,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.4)),
+                  ));
+                }
+                children.add(_TxnTile(txn: t, onChanged: _reload));
+              }
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: children,
               );
             },
           ),
