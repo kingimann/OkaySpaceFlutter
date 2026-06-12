@@ -135,12 +135,18 @@ class RoadsideService {
     String? fuelType,
     String? paymentMethod,
     List<String>? photos,
+    String? destName,
+    double? destLatitude,
+    double? destLongitude,
   }) async =>
       _req(await _client.postJson('/roadside/requests', body: {
         'service': service,
         'latitude': latitude,
         'longitude': longitude,
         if (placeName != null) 'place_name': placeName,
+        if (destName != null) 'dest_name': destName,
+        if (destLatitude != null) 'dest_latitude': destLatitude,
+        if (destLongitude != null) 'dest_longitude': destLongitude,
         if (note != null) 'note': note,
         if (vehicleMake != null) 'vehicle_make': vehicleMake,
         if (vehicleModel != null) 'vehicle_model': vehicleModel,

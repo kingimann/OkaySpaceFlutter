@@ -810,6 +810,8 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                   ),
                 ),
                 _row(Icons.place_outlined, r.placeName ?? 'Location set'),
+                if (r.destName != null && r.destName!.isNotEmpty)
+                  _row(Icons.flag_outlined, 'Drop-off: ${r.destName}'),
                 if (r.vehicleMake != null || r.vehicleModel != null)
                   _row(Icons.directions_car_outlined,
                       [r.vehicleColor, r.vehicleMake, r.vehicleModel]
@@ -1051,6 +1053,48 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
   /// Service price table from /roadside/quote (best-effort).
   Map<String, dynamic> _quote = const {};
 
+  // Tow drop-off (required when service == 'tow').
+  final _drop = TextEditingController();
+  double? _dropLat;
+  double? _dropLng;
+  String? _dropName;
+  Future<List<Map<String, dynamic>>>? _dropResults;
+  Timer? _dropDebounce;
+
+  void _onDropQuery(String q) {
+    if (_dropName != null && q.trim() != _dropName) {
+      setState(() {
+        _dropLat = null;
+        _dropLng = null;
+        _dropName = null;
+      });
+    }
+    _dropDebounce?.cancel();
+    _dropDebounce = Timer(const Duration(milliseconds: 400), () {
+      final query = q.trim();
+      if (!mounted) return;
+      if (query.length < 3) {
+        setState(() => _dropResults = null);
+        return;
+      }
+      setState(() => _dropResults = api.roadside.geocode(query));
+    });
+  }
+
+  void _pickDrop(Map<String, dynamic> g) {
+    final lat = double.tryParse('${g['lat'] ?? g['latitude']}');
+    final lng = double.tryParse('${g['lng'] ?? g['lon'] ?? g['longitude']}');
+    if (lat == null || lng == null) return;
+    setState(() {
+      _dropLat = lat;
+      _dropLng = lng;
+      _dropName =
+          '${g['name'] ?? g['display_name'] ?? g['label'] ?? _drop.text.trim()}';
+      _dropResults = null;
+      _drop.text = _dropName!;
+    });
+  }
+
   /// Photos of the situation (helps helpers bring the right gear).
   final List<Uint8List> _photos = [];
 
@@ -1096,7 +1140,8 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
   @override
   void dispose() {
     _geoDebounce?.cancel();
-    for (final c in [_place, _make, _model, _note, _lat, _lng]) {
+    _dropDebounce?.cancel();
+    for (final c in [_place, _make, _model, _note, _lat, _lng, _drop]) {
       c.dispose();
     }
     super.dispose();
@@ -1161,6 +1206,10 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
       showInfo(context, 'Pick your location first.');
       return;
     }
+    if (_service == 'tow' && (_dropLat == null || _dropLng == null)) {
+      showInfo(context, 'Pick a drop-off location for the tow.');
+      return;
+    }
     setState(() => _busy = true);
     try {
       await api.roadside.create(
@@ -1177,6 +1226,9 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
           for (final b in _photos)
             'data:image/jpeg;base64,${base64Encode(b)}',
         ],
+        destName: _service == 'tow' ? _dropName : null,
+        destLatitude: _service == 'tow' ? _dropLat : null,
+        destLongitude: _service == 'tow' ? _dropLng : null,
       );
       if (mounted) {
         showInfo(context, 'Request submitted — help is on the way');
@@ -1203,6 +1255,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final located = _pickedLat != null && _pickedLng != null;
+    final dropSet = _service != 'tow' || (_dropLat != null && _dropLng != null);
 
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Request help')),
@@ -1279,7 +1332,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                 ],
               ),
             ],
-            _sectionTitle('Where are you?'),
+            _sectionTitle(_service == 'tow' ? 'Pickup location' : 'Where are you?'),
             TextField(
               controller: _place,
               onChanged: _onPlaceQuery,
@@ -1400,6 +1453,114 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                       icon: const Icon(Icons.check), onPressed: _applyManual),
                 ],
               ),
+            if (_service == 'tow') ...[
+              _sectionTitle('Drop-off location'),
+              TextField(
+                controller: _drop,
+                onChanged: _onDropQuery,
+                decoration: InputDecoration(
+                  labelText: 'Where should the vehicle go?',
+                  hintText: 'e.g. Joe\'s Auto Repair, Mississauga',
+                  prefixIcon: const Icon(Icons.flag_outlined),
+                  suffixIcon: _dropLat != null
+                      ? const Icon(Icons.check_circle,
+                          color: Color(0xFF22C55E))
+                      : null,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              if (_dropResults != null)
+                FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _dropResults,
+                  builder: (context, snap) {
+                    final results = snap.data ?? const [];
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Center(
+                              child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2))));
+                    }
+                    if (results.isEmpty) return const SizedBox.shrink();
+                    return Card(
+                      margin: const EdgeInsets.only(top: 6),
+                      child: Column(
+                        children: [
+                          for (final g in results.take(5))
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.place, size: 18),
+                              title: Text(
+                                  '${g['name'] ?? g['display_name'] ?? g['label'] ?? 'Result'}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis),
+                              onTap: () => _pickDrop(g),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              // Route preview once both ends are set.
+              if (located && _dropLat != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      height: 160,
+                      child: IgnorePointer(
+                        child: FlutterMap(
+                          options: MapOptions(
+                            initialCenter: LatLng(
+                                (_pickedLat! + _dropLat!) / 2,
+                                (_pickedLng! + _dropLng!) / 2),
+                            initialZoom: 10,
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'ca.okayspace.app',
+                            ),
+                            PolylineLayer(polylines: [
+                              Polyline(
+                                points: [
+                                  LatLng(_pickedLat!, _pickedLng!),
+                                  LatLng(_dropLat!, _dropLng!),
+                                ],
+                                strokeWidth: 3,
+                                color: const Color(0xFF008CFF),
+                              ),
+                            ]),
+                            MarkerLayer(markers: [
+                              Marker(
+                                point: LatLng(_pickedLat!, _pickedLng!),
+                                width: 32,
+                                height: 32,
+                                alignment: Alignment.topCenter,
+                                child: const Icon(Icons.location_pin,
+                                    color: Color(0xFFEF4444), size: 32),
+                              ),
+                              Marker(
+                                point: LatLng(_dropLat!, _dropLng!),
+                                width: 32,
+                                height: 32,
+                                alignment: Alignment.topCenter,
+                                child: const Icon(Icons.flag,
+                                    color: Color(0xFF22C55E), size: 32),
+                              ),
+                            ]),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
             _sectionTitle('Your vehicle'),
             Row(
               children: [
@@ -1529,14 +1690,18 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
             ],
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: _busy || !located ? null : _submit,
+              onPressed: _busy || !located || !dropSet ? null : _submit,
               icon: _busy
                   ? const SizedBox(
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.send),
-              label: Text(located ? 'Submit request' : 'Pick a location first'),
+              label: Text(!located
+                  ? 'Pick a location first'
+                  : !dropSet
+                      ? 'Pick a drop-off first'
+                      : 'Submit request'),
             ),
             const SizedBox(height: 24),
           ],
