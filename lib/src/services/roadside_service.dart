@@ -134,6 +134,7 @@ class RoadsideService {
     String? vehicleModel,
     String? fuelType,
     String? paymentMethod,
+    List<String>? photos,
   }) async =>
       _req(await _client.postJson('/roadside/requests', body: {
         'service': service,
@@ -145,6 +146,7 @@ class RoadsideService {
         if (vehicleModel != null) 'vehicle_model': vehicleModel,
         if (fuelType != null) 'fuel_type': fuelType,
         if (paymentMethod != null) 'payment_method': paymentMethod,
+        if (photos != null && photos.isNotEmpty) 'photos': photos,
       }));
 
   // --- Lifecycle (helper + requester actions) -----------------------------

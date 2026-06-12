@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
@@ -949,6 +952,22 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
 
   /// Service price table from /roadside/quote (best-effort).
   Map<String, dynamic> _quote = const {};
+
+  /// Photos of the situation (helps helpers bring the right gear).
+  final List<Uint8List> _photos = [];
+
+  Future<void> _addPhotos() async {
+    try {
+      final picked = await ImagePicker().pickMultiImage(
+          maxWidth: 1600, maxHeight: 1600, imageQuality: 80);
+      for (final f in picked.take(6 - _photos.length)) {
+        _photos.add(await f.readAsBytes());
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
   bool _manualCoords = false;
   String _fuelType = 'regular';
   String _payment = 'wallet';
@@ -1042,6 +1061,10 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
         fuelType: _service == 'fuel' ? _fuelType : null,
         paymentMethod: _payment,
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        photos: [
+          for (final b in _photos)
+            'data:image/jpeg;base64,${base64Encode(b)}',
+        ],
       );
       if (mounted) {
         showInfo(context, 'Request submitted — help is on the way list');
@@ -1304,6 +1327,59 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                     onSelected: (_) => setState(() => _payment = id),
                   ),
               ],
+            ),
+            _sectionTitle('Photos (optional)'),
+            SizedBox(
+              height: 84,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (var i = 0; i < _photos.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.memory(_photos[i],
+                                width: 84, height: 84, fit: BoxFit.cover),
+                          ),
+                          Positioned(
+                            top: 2,
+                            right: 2,
+                            child: InkWell(
+                              onTap: () =>
+                                  setState(() => _photos.removeAt(i)),
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(
+                                    color: Colors.black54,
+                                    shape: BoxShape.circle),
+                                child: const Icon(Icons.close,
+                                    size: 14, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_photos.length < 6)
+                    InkWell(
+                      onTap: _addPhotos,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 84,
+                        height: 84,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: scheme.outlineVariant),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.add_a_photo_outlined,
+                            color: scheme.outline),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 14),
             TextField(
