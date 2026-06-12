@@ -18,6 +18,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   late Future<List<Map<String, dynamic>>> _activity;
   bool _unreadOnly = false;
 
+  /// Type filter: 'all' | 'like' | 'follow' | 'reply' | 'mention'.
+  String _typeFilter = 'all';
+
+  bool _matchesType(AppNotification n) => switch (_typeFilter) {
+        'like' => n.type.contains('like'),
+        'follow' => n.type.contains('follow'),
+        'reply' =>
+          n.type.contains('comment') || n.type.contains('reply'),
+        'mention' => n.type.contains('mention'),
+        _ => true,
+      };
+
   @override
   void initState() {
     super.initState();
@@ -156,6 +168,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   selected: _unreadOnly,
                   onSelected: (_) => setState(() => _unreadOnly = true),
                 ),
+                Container(
+                  width: 1,
+                  height: 24,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                for (final (id, label) in const [
+                  ('like', 'Likes'),
+                  ('follow', 'Follows'),
+                  ('reply', 'Replies'),
+                  ('mention', 'Mentions'),
+                ])
+                  FilterChip(
+                    label: Text(label),
+                    selected: _typeFilter == id,
+                    onSelected: (v) =>
+                        setState(() => _typeFilter = v ? id : 'all'),
+                  ),
               ],
             ),
           ),
@@ -168,11 +198,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               emptyMessage: "You're all caught up.",
               emptyIcon: Icons.check_circle_outline,
               builder: (context, all) {
-                final items =
-                    _unreadOnly ? all.where((n) => !n.read).toList() : all;
+                final items = all
+                    .where((n) => (!_unreadOnly || !n.read) && _matchesType(n))
+                    .toList();
                 if (items.isEmpty) {
-                  return const CenteredMessage(
-                      message: 'No unread notifications.',
+                  return CenteredMessage(
+                      message: _typeFilter == 'all'
+                          ? 'No unread notifications.'
+                          : 'Nothing here for this filter.',
                       icon: Icons.done_all);
                 }
                 return ListView.separated(
