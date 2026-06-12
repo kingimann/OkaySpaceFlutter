@@ -81,6 +81,27 @@ class _CashOutScreenState extends State<CashOutScreen> {
     await _setupHosted();
   }
 
+  /// Debit cards live in Stripe's payouts/account management components;
+  /// embedded first, Express-dashboard login only as the external fallback.
+  Future<void> _addDebitCard() async {
+    if (stripeEmbedSupported) {
+      final embedded = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+            builder: (_) =>
+                const EmbeddedPayoutScreen(component: 'payouts')),
+      );
+      if (embedded == true) {
+        await _load();
+        return;
+      }
+      if (!mounted) return;
+    }
+    await launchUrl(
+      Uri.parse('https://connect.stripe.com/express_login'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
   Future<void> _setupHosted() async {
     setState(() => _busy = true);
     try {
@@ -337,26 +358,23 @@ class _CashOutScreenState extends State<CashOutScreen> {
                                   _setup(component: 'account-management'),
                         ),
                       ),
-                      // Debit cards (instant payouts) are added in the Stripe
-                      // Express dashboard; connect.stripe.com/express_login
-                      // works for every connected account, no backend needed.
+                      // Debit cards (instant payouts): embedded payouts
+                      // dashboard when supported; the Stripe Express login
+                      // is the external fallback.
                       Card(
                         child: ListTile(
                           leading: Icon(Icons.credit_card_outlined,
                               color: scheme.primary),
                           title: const Text('Add a debit card'),
-                          subtitle: const Text(
-                              'Instant payouts — sign in to your Stripe '
-                              'Express dashboard to add one'),
-                          trailing: Icon(Icons.open_in_new,
-                              size: 18, color: scheme.outline),
-                          onTap: _busy
-                              ? null
-                              : () => launchUrl(
-                                    Uri.parse(
-                                        'https://connect.stripe.com/express_login'),
-                                    mode: LaunchMode.externalApplication,
-                                  ),
+                          subtitle:
+                              const Text('For instant payouts to your card'),
+                          trailing: Icon(
+                              stripeEmbedSupported
+                                  ? Icons.chevron_right
+                                  : Icons.open_in_new,
+                              size: 18,
+                              color: scheme.outline),
+                          onTap: _busy ? null : _addDebitCard,
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -478,11 +496,19 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
       final cfg = await api.payments.config();
       final pk = '${cfg['publishable_key'] ?? ''}';
       if (pk.isEmpty) throw StateError('No Stripe publishable key');
-      final secret = await _freshSecret();
+      final session = await api.payments.payoutAccountSession();
+      final secret = _secretOf(session);
+      // The backend reports which embedded components the session enables
+      // (e.g. the full 'payouts' dashboard vs onboarding-only); honor it.
+      final enabled = [
+        if (session['components'] is List)
+          for (final c in session['components'] as List) '$c',
+      ];
       if (!mounted) return;
       setState(() {
         _publishableKey = pk;
         _firstSecret = secret;
+        _enabled = enabled;
         _attempt++;
       });
     } catch (e) {
@@ -490,8 +516,22 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
     }
   }
 
-  Future<String> _freshSecret() async {
-    final s = await api.payments.payoutAccountSession();
+  List<String> _enabled = const [];
+
+  /// The component to render: the requested one when the session enables it,
+  /// otherwise the best enabled alternative ('payouts' is the full embedded
+  /// dashboard: payout methods, balance, and instant payouts).
+  String get _component {
+    if (_enabled.isEmpty || _enabled.contains(widget.component)) {
+      return widget.component;
+    }
+    for (final c in ['payouts', 'account-management', 'account-onboarding']) {
+      if (_enabled.contains(c)) return c;
+    }
+    return widget.component;
+  }
+
+  String _secretOf(Map<String, dynamic> s) {
     final secret =
         '${s['client_secret'] ?? s['clientSecret'] ?? s['secret'] ?? ''}';
     if (secret.isEmpty) {
@@ -500,6 +540,9 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
     }
     return secret;
   }
+
+  Future<String> _freshSecret() async =>
+      _secretOf(await api.payments.payoutAccountSession());
 
   /// First call uses the pre-validated secret; Connect.js re-asks when a
   /// session expires, and then we mint a fresh one.
@@ -585,10 +628,10 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
                     child: stripeConnectView(
                       publishableKey: pk,
                       fetchClientSecret: _clientSecret,
-                      component: widget.component,
+                      component: _component,
                       // The session may not have this component enabled;
                       // onboarding is the universal fallback.
-                      fallbackComponent: widget.component == 'account-management'
+                      fallbackComponent: _component == 'account-management'
                           ? 'account-onboarding'
                           : null,
                       onExit: () {

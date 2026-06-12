@@ -1,0 +1,352 @@
+================================================================================
+OKAYSPACE API — IMPROVEMENT GUIDE FOR SDK-FRIENDLINESS
+================================================================================
+Audience: backend maintainers of https://okayspace-v0vx.onrender.com/api/v1
+Based on: the deployed OpenAPI spec (fetched 2026-06-12) and months of real
+client-SDK experience building the Flutter app against this API.
+
+Every issue below was actually hit while building the official client. Fixing
+them makes EVERY future SDK (JS, Python, mobile, third-party developers using
+Developer API keys) dramatically easier to build and harder to misuse.
+
+--------------------------------------------------------------------------------
+1. DOCUMENT RESPONSE SHAPES (the single highest-impact fix)
+--------------------------------------------------------------------------------
+PROBLEM
+  Nearly every endpoint in the OpenAPI spec declares NO response schema —
+  the 200 response is empty. Example: POST /stripe/transfer, GET /stripe/
+  balance, GET /payments/payouts/status all return "200: (nothing declared)".
+  The Flutter client compensates by guessing keys defensively:
+      s['client_secret'] ?? s['clientSecret'] ?? s['secret']
+      status['payouts_enabled'] ?? status['ready'] ?? status['charges_enabled']
+      v = status['available'] ?? status['balance'] ?? status['payout_balance']
+  Every one of those ?? chains exists because the response shape is
+  undocumented. SDK code generators (openapi-generator, Kiota, etc.) produce
+  empty types from this spec, so nobody can generate a typed client.
+
+FIX
+  - In FastAPI, declare `response_model=` on every route with a Pydantic
+    model. That single change makes the OpenAPI spec complete.
+  - Add an example to each model (model_config json_schema_extra) so docs
+    and generated SDKs show realistic payloads.
+  - Where a response is intentionally dynamic (admin ops payloads), say so
+    in the description and wrap it: {"data": {...}} so the envelope itself
+    is still typed.
+
+--------------------------------------------------------------------------------
+2. ONE ERROR ENVELOPE, NOT TWO
+--------------------------------------------------------------------------------
+PROBLEM
+  Errors currently return BOTH shapes duplicated:
+      {"error":{"code":"not_found","message":"Not Found"},
+       "detail":{"code":"not_found","message":"Not Found"}}
+  And 422 validation failures use a third shape (FastAPI's detail list, plus
+  a custom "fields" array). Clients must parse three formats.
+
+FIX
+  - Pick ONE canonical envelope and use it for every non-2xx response:
+      {"error": {"code": "string", "message": "human readable",
+                 "fields": [{"field": "...", "message": "..."}]   // optional
+      }}
+  - Keep "fields" for validation errors (it is genuinely good — better than
+    FastAPI's raw loc/msg list).
+  - Publish a registry of every "code" value (not_found, unauthorized,
+    validation_error, insufficient_funds, limit_exceeded, ...) with the HTTP
+    status each maps to. SDKs switch on `code`, never on message text.
+  - Never change a code's meaning once published; add new codes instead.
+
+--------------------------------------------------------------------------------
+3. CONSISTENT AUTH ORDERING (validation must not run before auth)
+--------------------------------------------------------------------------------
+PROBLEM (observed live)
+  POST /wallet/topup/intent with no body and no token → 422 "amount required"
+  POST /payments/checkout with no body and no token   → 422 "kind required"
+  GET  /wallet with no token                          → 401
+  Some routes validate the body before checking auth; others check auth
+  first. This (a) is inconsistent, (b) leaks request schemas to
+  unauthenticated callers, (c) confuses SDK retry logic (a 422 normally
+  means "fix your input", not "you forgot the token").
+
+FIX
+  Make authentication a dependency that resolves BEFORE body validation on
+  every protected route, so unauthenticated calls always 401.
+
+--------------------------------------------------------------------------------
+4. ACCEPT IDIOMATIC PARAMETER TYPES
+--------------------------------------------------------------------------------
+PROBLEM (observed live)
+  GET /admin/integrations?live=true → 422 "query.live: Input should be a
+  valid integer". The endpoint demands live=0/1. Every HTTP client library
+  on earth serializes booleans as true/false; the Flutter SDK needed a
+  special case (live ? 1 : 0) for this one endpoint.
+
+FIX
+  - Declare boolean query params as bool in FastAPI (it accepts true/false,
+    1/0, yes/no automatically).
+  - Audit all query params for the same problem.
+  - Be liberal in what you accept for enums too: case-insensitive matching
+    costs nothing and kills a whole class of support tickets.
+
+--------------------------------------------------------------------------------
+5. ONE NAMING CONVENTION FOR KEYS
+--------------------------------------------------------------------------------
+PROBLEM
+  Mostly snake_case (good!), but clients have met clientSecret, display_name
+  vs name vs full_address, lat/lng vs latitude/longitude across endpoints
+  (e.g. /pub/geocode rows vs place objects). The Flutter geocode consumers
+  read r['lat'] ?? r['latitude'] and r['lng'] ?? r['lon'] ?? r['longitude'].
+
+FIX
+  - snake_case everywhere, forever. Document it as policy.
+  - Standardize shared vocabulary across ALL endpoints:
+      id, created_at, updated_at, user_id, amount, currency,
+      latitude, longitude, name, address
+  - When two endpoints return "the same thing" (a place, a user, a txn),
+    return the SAME object shape. Define shared Pydantic models and reuse
+    them — never hand-build dicts per endpoint.
+
+--------------------------------------------------------------------------------
+6. ONE LIST ENVELOPE
+--------------------------------------------------------------------------------
+PROBLEM
+  List endpoints variously return a bare JSON array, {"items":[...]},
+  {"posts":[...]}, {"requests":[...]}, {"services":[...]} etc. The Flutter
+  client literally probes: data['items'] ?? data['posts'] ?? data['requests']
+  ?? ... ?? (data is List ? data : []).
+
+FIX
+  Every list endpoint returns:
+      {"data": [...], "total": 123, "next_cursor": "abc" | null}
+  - "data" is always the array.
+  - "total" optional but appreciated.
+  - "next_cursor" enables cursor pagination (see §7).
+  Keep old keys during a deprecation window if needed (emit both).
+
+--------------------------------------------------------------------------------
+7. PAGINATION, FILTERING, SORTING — ONE WAY
+--------------------------------------------------------------------------------
+CURRENT
+  Mix of limit/offset on some endpoints, nothing on others; feeds use their
+  own scheme.
+
+FIX
+  - Standard params on every list: ?limit= (max documented, default 20),
+    ?cursor= (opaque, from next_cursor). Cursor > offset for feeds: offset
+    pagination skips/duplicates items when new rows are inserted.
+  - Standard ?sort=field and ?order=asc|desc where sorting is supported.
+  - Document max page size and what happens when exceeded (clamp, don't 4xx).
+
+--------------------------------------------------------------------------------
+8. MONEY: INTEGER CENTS + IDEMPOTENCY KEYS
+--------------------------------------------------------------------------------
+PROBLEM
+  Amounts are JSON numbers in dollars (amount: 10.55). Binary floats make
+  0.1 + 0.2 != 0.3; the client already had a real cent-drift bug splitting
+  bills. Stripe itself uses integer cents for exactly this reason.
+  Also: if a client times out and retries POST /stripe/transfer, the user
+  can be double-charged. There is no idempotency mechanism.
+
+FIX
+  - New money endpoints: accept/return integer minor units
+    ("amount_cents": 1055) alongside the float for a transition period;
+    document rounding (half-up on display, never in storage).
+  - Honor an Idempotency-Key header (UUID per logical attempt) on every
+    money-moving POST: /stripe/transfer, /stripe/payout, /wallet/topup/*,
+    /payments/checkout, /money/send. Store key → response for 24h; replay
+    returns the stored response. This is THE feature that lets SDKs retry
+    safely. (Stripe's own API works this way; you can pass the same key
+    through to Stripe.)
+  - /wallet/topup/confirm-intent and /wallet/topup/sync being idempotent
+    already is exactly right — say so in the docs for every endpoint
+    ("idempotent: yes/no").
+
+--------------------------------------------------------------------------------
+9. CONSOLIDATE THE MONEY SURFACE (or at least map it)
+--------------------------------------------------------------------------------
+PROBLEM
+  Money operations live under four prefixes: /wallet/*, /money/send,
+  /payments/*, /stripe/*. A new SDK author cannot guess which to use; the
+  official client only knows because we probed the live API repeatedly.
+
+FIX
+  - Publish a one-page "money map":
+      balances/history ........ /wallet, /wallet/activity  (ledger view)
+      add money ............... /wallet/topup/intent (+confirm-intent, sync)
+                                /payments/checkout kind=topup (hosted)
+      user → user ............. /stripe/transfer  (preferred)
+                                /money/send       (legacy ledger)
+      cash out ................ /stripe/payout    (preferred, instant flag)
+                                /payments/payouts/cashout (legacy)
+      payout onboarding ....... /payments/payouts/setup | account-session
+  - Mark legacy ones deprecated in OpenAPI (deprecated: true) with the
+    replacement named in the description.
+  - Long-term: a single /v2/wallet namespace.
+
+--------------------------------------------------------------------------------
+10. ROUTE HYGIENE
+--------------------------------------------------------------------------------
+OBSERVED
+  - POST /api/v1/webhooks/stripe returns 405 because it collides with
+    /webhooks/{webhook_id} (the developer-webhook resource). The actual
+    Stripe receiver is /stripe/webhook. Static segments colliding with
+    dynamic ones ({webhook_id}) is a foot-gun: reserve literal names or
+    namespace differently (/integrations/stripe/webhook).
+  - Earlier, admin roadside-call routes 404'd while the admin UI shipped
+    against guessed paths. The OpenAPI spec is served — treat it as the
+    contract: anything not in the spec doesn't exist; anything in the spec
+    must work.
+
+FIX
+  - Add a CI check on the backend: spec snapshot diff per deploy + a smoke
+    test that hits every route with an auth'd test user (even just asserting
+    "not 404/500").
+
+--------------------------------------------------------------------------------
+11. ENUMS IN THE SPEC (the checkout 'kind' lesson)
+--------------------------------------------------------------------------------
+PROBLEM
+  POST /payments/checkout kind is typed as a plain string. The set of valid
+  kinds (tip/subscription/promote/topup) lives only in a prose description —
+  the client discovered "Invalid recipient" by trial and error because
+  'topup' wasn't supported yet and nothing said so.
+
+FIX
+  - kind: Literal["tip","subscription","promote","topup"] → OpenAPI enum.
+  - Same for every string that has a closed set: roadside service types,
+    payment methods, statuses, report reasons, restriction names, webhook
+    event types (GET /webhooks/events is great — also embed the enum in the
+    subscription schema).
+
+--------------------------------------------------------------------------------
+12. CAPABILITY DISCOVERY (keep doing what account-session did)
+--------------------------------------------------------------------------------
+WHAT WENT RIGHT
+  /payments/payouts/account-session returning the enabled `components` list
+  let the client adapt its UI without version-sniffing. /payments/config
+  exposing publishable_key, fees, and test_mode is the same good pattern.
+
+EXTEND IT
+  - A single GET /capabilities (auth'd) returning feature flags the client
+    can rely on: {"stripe_rails": true, "instant_payouts": true,
+    "checkout_kinds": [...], "embedded_components": [...], "sms": false}.
+  - SDKs then enable/disable features at runtime instead of shipping
+    hardcoded assumptions; old app builds degrade gracefully when the
+    backend changes.
+
+--------------------------------------------------------------------------------
+13. RATE LIMITS — VISIBLE AND DOCUMENTED
+--------------------------------------------------------------------------------
+FIX
+  - Return 429 with the standard envelope (code: "rate_limited"), a
+    Retry-After header, and X-RateLimit-Limit / -Remaining / -Reset on every
+    response so SDKs can pre-emptively throttle.
+  - Document the limits per auth type (session vs Developer API key vs
+    admin) in one table.
+
+--------------------------------------------------------------------------------
+14. AUTH & DEVELOPER KEYS
+--------------------------------------------------------------------------------
+CURRENT
+  Bearer token that may be a session token or a long-lived API key
+  (osk_live_...). OAuth endpoints exist.
+
+FIX
+  - Document the three credential types side by side: how to get each,
+    lifetime, what each can/can't call (e.g. can an API key hit /wallet?).
+  - Key prefixes are great (osk_live_/osk_test_) — guarantee them so SDKs
+    and secret-scanners can recognize them; register with GitHub secret
+    scanning to auto-revoke leaked keys.
+  - Scopes for API keys (read, write, money) — even coarse ones. A
+    third-party game using the SDK leaderboard should never be able to call
+    /stripe/payout with the user's key.
+  - Token refresh/expiry behavior documented (the app currently learns a
+    session died only by receiving a 401).
+
+--------------------------------------------------------------------------------
+15. WEBHOOKS FOR DEVELOPERS (outbound)
+--------------------------------------------------------------------------------
+WHAT EXISTS (good): /webhooks CRUD, /webhooks/events, deliveries +
+redeliver, test endpoint. That's a strong foundation. Make it bulletproof:
+  - Sign every delivery: X-OkaySpace-Signature: t=<unix>,v1=HMAC_SHA256(
+    secret, t + "." + body). Document verification with code samples.
+  - Document retry policy (e.g. exponential, 3 days) and timeout.
+  - Event payloads: same envelope as the API objects ({"type": "...",
+    "created_at": ..., "data": {...}}), with the event type enum published.
+  - Idempotent delivery id so consumers can dedupe.
+
+--------------------------------------------------------------------------------
+16. TIMESTAMPS, IDS, NULLS
+--------------------------------------------------------------------------------
+  - Timestamps: ISO-8601 UTC with trailing Z, always ("2026-06-12T22:00:00Z").
+    The client currently splits('T') and tryParses defensively.
+  - IDs: always strings in JSON (even if integers in the DB) — JS SDKs
+    corrupt int64s silently.
+  - Omit-vs-null: pick a policy (recommend: omit means "unchanged" in
+    PATCH; null means "clear the value") and document it. The client
+    currently strips nulls from queries because ?foo=null once reached
+    handlers as the string "null".
+
+--------------------------------------------------------------------------------
+17. CORS, CACHING, COMPRESSION
+--------------------------------------------------------------------------------
+  - CORS: explicit allow-list (the app origins + localhost dev ports),
+    max-age on preflights (Access-Control-Max-Age: 86400) — the web app pays
+    a preflight on every Authorization'd request today.
+  - ETag/If-None-Match on heavy GETs (feed, profile) — mobile clients on
+    poor networks benefit enormously.
+  - gzip/br on all JSON responses (verify Render config).
+
+--------------------------------------------------------------------------------
+18. RENDER-SPECIFIC RELIABILITY
+--------------------------------------------------------------------------------
+  - Cold starts: the client ships 20s connect timeouts mostly because of
+    Render spin-up. A paid always-on instance, or at minimum a documented
+    /healthz endpoint + expected worst-case latency, lets SDKs tune
+    timeouts sanely.
+  - Outbound IPs: document (in the API docs!) that Stripe and other
+    key-restricted vendors must allow-list Render's outbound IPs — this
+    cost a full debugging session ("everything fails" symptom).
+  - Set explicit request body size limits and document them (photo uploads
+    were base64-in-JSON; now that Cloudinary handles media, a small limit
+    like 1–2 MB protects the service).
+
+--------------------------------------------------------------------------------
+19. VERSIONING & CHANGE MANAGEMENT
+--------------------------------------------------------------------------------
+  - /api/v1 + legacy /api both live today. Put a Deprecation and Sunset
+    header on every legacy /api response with a date; then actually remove.
+  - Additive changes only within v1 (new fields/endpoints fine; never
+    rename/retype/remove). Breaking changes → /api/v2.
+  - Keep a CHANGELOG endpoint or markdown (the admin "web-build" bump shows
+    you already track deploys — expose the API-visible changes the same
+    way). Today the only way the official client discovers changes is
+    re-downloading openapi.json and diffing it.
+
+--------------------------------------------------------------------------------
+20. SDK ENABLEMENT EXTRAS
+--------------------------------------------------------------------------------
+  - The spec is already public at /openapi.json — version it (info.version
+    bump per deploy) and keep serving it; it's how this session verified
+    every backend change in seconds.
+  - Generate + publish reference docs from it (FastAPI's /docs is likely
+    already there; link it from the site).
+  - A sandbox: test-mode API keys + the existing admin test-payments switch,
+    documented together, so third-party devs can integrate without real
+    money. Stripe test cards listed in the same doc.
+  - Ship official SDKs from the spec (TypeScript first) once §1 is done —
+    with §1–§6 fixed, openapi-generator output is actually usable.
+  - A status page (even a free UptimeRobot page) linked from error docs.
+
+--------------------------------------------------------------------------------
+QUICK WINS — DO THESE FIRST (1 day of backend work, huge SDK payoff)
+--------------------------------------------------------------------------------
+ 1. response_model on the ~20 money/payout endpoints (§1)
+ 2. Single error envelope; drop the duplicated error/detail (§2)
+ 3. Auth before validation everywhere (§3)
+ 4. bool query params accept true/false (§4) — fixes /admin/integrations
+ 5. kind/status/type fields become enums in the spec (§11)
+ 6. Idempotency-Key on /stripe/transfer and /stripe/payout (§8)
+ 7. {"data": [...]} envelope on the worst offenders (lists the client
+    currently key-probes) (§6)
+ 8. GET /capabilities (§12)
+================================================================================
