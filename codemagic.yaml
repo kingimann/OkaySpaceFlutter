@@ -11,15 +11,24 @@
 #   3. Register bundle id `com.okayspace.okayspace` in App Store Connect and
 #      create the app record, then put its numeric Apple ID in
 #      `APP_STORE_APPLE_ID` below.
+#   4. The app uses NFC tap-to-pay and Face ID. On the Apple Developer
+#      portal, enable the "NFC Tag Reading" capability on the App ID before
+#      fetching signing files — the provisioning profile must carry it to
+#      match Runner/Runner.entitlements (already linked via
+#      CODE_SIGN_ENTITLEMENTS). Face ID needs no capability, only the
+#      NSFaceIDUsageDescription already present in Info.plist.
+#   5. Android release signing: upload your keystore in Codemagic
+#      (Teams > Code signing identities) under the reference name
+#      `okayspace_keystore`, or builds fall back to debug signing.
 # --------------------------------------------------------------------------
 
 definitions:
   # Reused environment across workflows.
   flutter_env: &flutter_env
-    flutter: 3.44.1
+    flutter: 3.44.2
     java: 21
   ios_signing_env: &ios_signing_env
-    flutter: 3.44.1
+    flutter: 3.44.2
     xcode: latest
     cocoapods: default
 
@@ -126,6 +135,11 @@ workflows:
     max_build_duration: 60
     environment:
       <<: *flutter_env
+      android_signing:
+        # Upload the keystore under this reference name in Codemagic
+        # (Teams > Code signing identities). Remove this block to build
+        # with debug signing instead.
+        - okayspace_keystore
     cache:
       cache_paths:
         - $HOME/.pub-cache
@@ -137,14 +151,63 @@ workflows:
         script: flutter analyze
       - name: Flutter test
         script: flutter test
-      - name: Build APK (debug — release signing not configured yet)
-        script: flutter build apk --debug
+      - name: Build release APK + App Bundle
+        script: |
+          BUILD_STAMP="${CM_COMMIT:0:7}-$(date -u +%Y%m%d%H%M%S)"
+          flutter build apk --release --dart-define=BUILD_STAMP="$BUILD_STAMP"
+          flutter build appbundle --release --dart-define=BUILD_STAMP="$BUILD_STAMP"
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/bundle/release/*.aab
     publishing:
       email:
         recipients:
           - ifakhargomi@gmail.com
         notify:
           success: true
+          failure: true
+
+  # ───────────────────────────── Web ──────────────────────────────────────
+  # Builds the deployable web bundle (the live site itself deploys via the
+  # GitHub Actions workflow on pushes to main; this artifact is for manual
+  # hosting or verification).
+  web-release:
+    name: OkaySpace Web
+    instance_type: linux_x2
+    max_build_duration: 30
+    environment:
+      <<: *flutter_env
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+      cancel_previous_builds: true
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Flutter analyze
+        script: flutter analyze
+      - name: Flutter test
+        script: flutter test
+      - name: Build web (release)
+        script: |
+          # BUILD_STAMP drives the in-app "new version available" prompt.
+          BUILD_STAMP="${CM_COMMIT:0:7}-$(date -u +%Y%m%d%H%M%S)"
+          flutter build web --release \
+            --base-href "/OkaySpaceFlutter/" \
+            --dart-define=BUILD_STAMP="$BUILD_STAMP"
+          cd build && zip -r web.zip web
+    artifacts:
+      - build/web.zip
+    publishing:
+      email:
+        recipients:
+          - ifakhargomi@gmail.com
+        notify:
+          success: false
           failure: true
