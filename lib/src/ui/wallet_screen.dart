@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'cashout_screen.dart';
 import 'common.dart';
 import 'pay_qr_screen.dart';
+import 'split_bill_screen.dart';
+import 'wallet_insights_screen.dart';
 
 String _money(num amount, String currency) =>
     '$currency ${amount.toStringAsFixed(2)}';
@@ -62,6 +65,12 @@ class _WalletScreenState extends State<WalletScreen> {
   late Future<WalletSummary> _summary;
   late Future<List<Map<String, dynamic>>> _requests;
   late Future<List<Map<String, dynamic>>> _transfers;
+
+  /// Masks amounts on the overview (privacy in public places).
+  bool _hideBalance = false;
+
+  /// Recent-activity direction filter: 'all' | 'in' | 'out'.
+  String _txnFilter = 'all';
 
   @override
   void initState() {
@@ -143,12 +152,17 @@ class _WalletScreenState extends State<WalletScreen> {
                 if (v == 'currency') _changeCurrency();
                 if (v == 'security') _security();
                 if (v == 'topups') _push(const TopUpHistoryScreen());
+                if (v == 'insights') _push(const WalletInsightsScreen());
+                if (v == 'history') _push(const TransferHistoryScreen());
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'insights', child: Text('Insights')),
                 PopupMenuItem(value: 'cashout', child: Text('Cash out')),
                 PopupMenuItem(value: 'currency', child: Text('Change currency')),
                 PopupMenuItem(value: 'security', child: Text('Transfer security')),
                 PopupMenuItem(value: 'topups', child: Text('Top-up history')),
+                PopupMenuItem(
+                    value: 'history', child: Text('Transfer history')),
               ],
             ),
           ],
@@ -186,42 +200,83 @@ class _WalletScreenState extends State<WalletScreen> {
           }
           final w = snapshot.data!;
           final scheme = Theme.of(context).colorScheme;
+          final txns = switch (_txnFilter) {
+            'in' => w.recent.where((t) => t.amount >= 0).toList(),
+            'out' => w.recent.where((t) => t.amount < 0).toList(),
+            _ => w.recent,
+          };
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               _balanceCard(w, scheme),
+              ..._quickSendRow(w),
               const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
                       child: _StatCard(
                           label: 'Earned',
-                          value: _money(w.totalEarned, w.currency),
+                          value: _hideBalance
+                              ? '••••'
+                              : _money(w.totalEarned, w.currency),
                           icon: Icons.trending_up,
                           color: const Color(0xFF22C55E))),
                   const SizedBox(width: 12),
                   Expanded(
                       child: _StatCard(
                           label: 'Spent',
-                          value: _money(w.totalSpent, w.currency),
+                          value: _hideBalance
+                              ? '••••'
+                              : _money(w.totalSpent, w.currency),
                           icon: Icons.trending_down,
                           color: const Color(0xFFF43F5E))),
                 ],
               ),
+              if (w.tipsTotal > 0 ||
+                  w.subsTotal > 0 ||
+                  w.adsTotal > 0 ||
+                  w.activeSubscribers > 0) ...[
+                const SizedBox(height: 16),
+                _earningsCard(w, scheme),
+              ],
               const SizedBox(height: 24),
-              Text('Recent activity',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Recent activity',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold)),
+                  ),
+                  for (final (id, label) in const [
+                    ('all', 'All'),
+                    ('in', 'In'),
+                    ('out', 'Out')
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: ChoiceChip(
+                        label: Text(label),
+                        selected: _txnFilter == id,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => setState(() => _txnFilter = id),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 4),
-              if (w.recent.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(child: Text('No transactions yet.')),
+              if (txns.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Center(
+                      child: Text(_txnFilter == 'all'
+                          ? 'No transactions yet.'
+                          : 'Nothing ${_txnFilter == 'in' ? 'incoming' : 'outgoing'} yet.')),
                 )
               else
-                ...w.recent.map((t) => _TxnTile(txn: t)),
+                ...txns.map((t) => _TxnTile(
+                    txn: t, hideAmount: _hideBalance, onChanged: _reload)),
             ],
           );
         },
@@ -255,12 +310,28 @@ class _WalletScreenState extends State<WalletScreen> {
               Icon(Icons.account_balance_wallet,
                   color: Colors.white.withValues(alpha: 0.9), size: 20),
               const SizedBox(width: 8),
-              Text('Available balance',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.85))),
+              Expanded(
+                child: Text('Available balance',
+                    style:
+                        TextStyle(color: Colors.white.withValues(alpha: 0.85))),
+              ),
+              InkWell(
+                onTap: () => setState(() => _hideBalance = !_hideBalance),
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                      _hideBalance
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: Colors.white.withValues(alpha: 0.9),
+                      size: 20),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
-          Text(_money(w.balance, w.currency),
+          Text(_hideBalance ? '••••••' : _money(w.balance, w.currency),
               style: const TextStyle(
                   color: Colors.white,
                   fontSize: 36,
@@ -275,9 +346,117 @@ class _WalletScreenState extends State<WalletScreen> {
               const SizedBox(width: 10),
               _action('Request', Icons.arrow_downward,
                   () => _push(const RequestMoneyScreen())),
+              const SizedBox(width: 10),
+              _action('Split', Icons.call_split,
+                  () => _push(const SplitBillScreen())),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// People the user has sent money to recently (unique, newest first).
+  List<({String id, String name})> _quickRecipients(WalletSummary w) {
+    final seen = <String>{};
+    final out = <({String id, String name})>[];
+    for (final t in [...w.sent, ...w.recent.where((t) => t.amount < 0)]) {
+      final id = t.counterpartyId;
+      if (id == null || id.isEmpty || !seen.add(id)) continue;
+      out.add((id: id, name: t.counterpartyName ?? 'User'));
+      if (out.length >= 10) break;
+    }
+    return out;
+  }
+
+  /// A horizontal strip of recent recipients for one-tap repeat sends.
+  List<Widget> _quickSendRow(WalletSummary w) {
+    final people = _quickRecipients(w);
+    if (people.isEmpty) return const [];
+    return [
+      const SizedBox(height: 16),
+      Text('Quick send',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      SizedBox(
+        height: 86,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: people.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 12),
+          itemBuilder: (context, i) {
+            final p = people[i];
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _push(SendMoneyScreen(
+                  recipient: PublicUser(userId: p.id, name: p.name))),
+              child: SizedBox(
+                width: 60,
+                child: Column(
+                  children: [
+                    Avatar(name: p.name, radius: 24),
+                    const SizedBox(height: 6),
+                    Text(p.name.split(' ').first,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    ];
+  }
+
+  /// Creator earnings split by source (tips / subscriptions / ads).
+  Widget _earningsCard(WalletSummary w, ColorScheme scheme) {
+    Widget row(IconData icon, Color color, String label, num amount) =>
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 10),
+              Expanded(child: Text(label)),
+              Text(_hideBalance ? '••••' : _money(amount, w.currency),
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+            ],
+          ),
+        );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.payments_outlined, size: 20, color: scheme.primary),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Earnings breakdown',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                if (w.activeSubscribers > 0)
+                  Text(
+                      '${w.activeSubscribers} subscriber${w.activeSubscribers == 1 ? '' : 's'}',
+                      style: TextStyle(color: scheme.outline, fontSize: 12)),
+              ],
+            ),
+            row(Icons.volunteer_activism_outlined, const Color(0xFFE11D48),
+                'Tips', w.tipsTotal),
+            row(Icons.workspace_premium_outlined, const Color(0xFF8B5CF6),
+                'Subscriptions', w.subsTotal),
+            row(Icons.campaign_outlined, const Color(0xFF0EA5E9), 'Ads',
+                w.adsTotal),
+          ],
+        ),
       ),
     );
   }
@@ -551,9 +730,13 @@ class _StatCard extends StatelessWidget {
 }
 
 class _TxnTile extends StatelessWidget {
-  const _TxnTile({required this.txn});
+  const _TxnTile({required this.txn, this.hideAmount = false, this.onChanged});
 
   final WalletTxn txn;
+  final bool hideAmount;
+
+  /// Called when a follow-up action (e.g. send again) changed the wallet.
+  final VoidCallback? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -562,6 +745,7 @@ class _TxnTile extends StatelessWidget {
         incoming ? const Color(0xFF22C55E) : Theme.of(context).colorScheme.error;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      onTap: () => _showDetails(context),
       leading: Container(
         width: 42,
         height: 42,
@@ -576,11 +760,125 @@ class _TxnTile extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(txn.note ?? txn.counterpartyName ?? ''),
       trailing: Text(
-        '${incoming ? '+' : '−'}${_money(txn.amount.abs(), txn.currency)}',
+        hideAmount
+            ? '••••'
+            : '${incoming ? '+' : '−'}${_money(txn.amount.abs(), txn.currency)}',
         style: TextStyle(
             color: color, fontWeight: FontWeight.bold, fontSize: 15),
       ),
     );
+  }
+
+  Future<void> _showDetails(BuildContext context) async {
+    final incoming = txn.amount >= 0;
+    final color = incoming
+        ? const Color(0xFF22C55E)
+        : Theme.of(context).colorScheme.error;
+    final scheme = Theme.of(context).colorScheme;
+    final canResend = !incoming && txn.counterpartyId != null;
+
+    Widget detail(String label, String value) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 96,
+                child: Text(label,
+                    style: TextStyle(color: scheme.outline, fontSize: 13)),
+              ),
+              Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+            ],
+          ),
+        );
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.14),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                        incoming ? Icons.south_west : Icons.north_east,
+                        size: 20,
+                        color: color),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(txn.type ?? 'Transaction',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                  Text(
+                    '${incoming ? '+' : '−'}${_money(txn.amount.abs(), txn.currency)}',
+                    style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (txn.counterpartyName != null)
+                detail(incoming ? 'From' : 'To', txn.counterpartyName!),
+              if (txn.note != null && txn.note!.isNotEmpty)
+                detail('Note', txn.note!),
+              if (txn.createdAt != null)
+                detail('Date',
+                    '${txn.createdAt!.toLocal()}'.split('.').first),
+              if (txn.id != null) detail('Reference', txn.id!),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (txn.id != null)
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.copy, size: 16),
+                      label: const Text('Copy reference'),
+                      onPressed: () => Navigator.pop(sheetContext, 'copy'),
+                    ),
+                  if (canResend) ...[
+                    const SizedBox(width: 10),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.send, size: 16),
+                      label: const Text('Send again'),
+                      onPressed: () => Navigator.pop(sheetContext, 'resend'),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (action == null || !context.mounted) return;
+    if (action == 'copy' && txn.id != null) {
+      await Clipboard.setData(ClipboardData(text: txn.id!));
+      if (context.mounted) showInfo(context, 'Reference copied');
+    } else if (action == 'resend' && canResend) {
+      final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => SendMoneyScreen(
+          recipient: PublicUser(
+            userId: txn.counterpartyId!,
+            name: txn.counterpartyName ?? 'User',
+          ),
+        ),
+      ));
+      if (changed == true) onChanged?.call();
+    }
   }
 }
 
@@ -693,7 +991,23 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  void _load() {
     _topups = api.wallet.topups().then((d) => _mapList(d, 'topups'));
+  }
+
+  Future<void> _cancel(String id) async {
+    try {
+      await api.wallet.cancelTopup(id);
+      if (mounted) {
+        showInfo(context, 'Top-up cancelled');
+        setState(_load);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   @override
@@ -710,14 +1024,91 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final t = items[i];
+              final id = _pick(t, ['id', 'topup_id']);
               final amount =
                   num.tryParse(_pick(t, ['amount'], '0')) ?? 0;
               final currency = _pick(t, ['currency'], 'USD');
               final status = _pick(t, ['status'], 'completed');
+              final pending = status.toLowerCase() == 'pending';
               return ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.add)),
                 title: Text(_money(amount, currency)),
                 subtitle: Text('Status: $status'),
+                trailing: pending && id.isNotEmpty
+                    ? OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 36)),
+                        onPressed: () => _cancel(id),
+                        child: const Text('Cancel'),
+                      )
+                    : null,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Read-only list of settled past transfers (`/money/transfers/history`).
+class TransferHistoryScreen extends StatefulWidget {
+  const TransferHistoryScreen({super.key});
+
+  @override
+  State<TransferHistoryScreen> createState() => _TransferHistoryScreenState();
+}
+
+class _TransferHistoryScreenState extends State<TransferHistoryScreen> {
+  late final Future<List<Map<String, dynamic>>> _history =
+      api.wallet.transferHistory().then(_moneyList);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const OkayAppBar(title: Text('Transfer history')),
+      body: MaxWidth(
+        child: AsyncList<Map<String, dynamic>>(
+          future: _history,
+          emptyMessage: 'No past transfers.',
+          emptyIcon: Icons.history,
+          builder: (context, items) => ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final t = items[i];
+              final amount = num.tryParse(_pick(t, ['amount'], '0')) ?? 0;
+              final currency = _pick(t, ['currency'], 'USD');
+              final status = _pick(t, ['status'], 'completed');
+              final toUserId = _pick(t, ['to_user_id', 'recipient_id']);
+              final incoming = t['_incoming'] as bool? ??
+                  (currentUserId != null && toUserId == currentUserId);
+              final who = _pick(t, [
+                incoming ? 'from_name' : 'to_name',
+                'counterparty_name',
+                'user_name',
+              ], 'Someone');
+              final when = _pick(t, ['created_at', 'completed_at']);
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor:
+                      (incoming ? const Color(0xFF22C55E) : scheme.primary)
+                          .withValues(alpha: 0.16),
+                  child: Icon(
+                      incoming ? Icons.south_west : Icons.north_east,
+                      color: incoming
+                          ? const Color(0xFF22C55E)
+                          : scheme.primary),
+                ),
+                title: Text(incoming ? 'From $who' : 'To $who',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text([
+                  _money(amount, currency),
+                  status,
+                  if (when.isNotEmpty) when.split('T').first,
+                ].join(' · ')),
               );
             },
           ),
@@ -831,6 +1222,25 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   late PublicUser? _recipient = widget.recipient;
   bool _busy = false;
 
+  /// Available balance, fetched for the overdraft hint (null while loading).
+  num? _balance;
+  String _currency = 'USD';
+
+  static const _presets = [5, 10, 20, 50, 100];
+
+  @override
+  void initState() {
+    super.initState();
+    api.wallet.summary().then((w) {
+      if (mounted) {
+        setState(() {
+          _balance = w.balance;
+          _currency = w.currency;
+        });
+      }
+    }).catchError((_) {});
+  }
+
   @override
   void dispose() {
     _search.dispose();
@@ -846,10 +1256,19 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     setState(() => _results = api.users.search(q));
   }
 
+  bool get _overBalance {
+    final amount = num.tryParse(_amount.text.trim());
+    return _balance != null && amount != null && amount > _balance!;
+  }
+
   Future<void> _send() async {
     final amount = num.tryParse(_amount.text.trim());
     if (_recipient == null || amount == null || amount <= 0) {
       showInfo(context, 'Pick a recipient and a valid amount.');
+      return;
+    }
+    if (_overBalance) {
+      showInfo(context, 'That\'s more than your available balance.');
       return;
     }
     setState(() => _busy = true);
@@ -942,10 +1361,35 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
               controller: _amount,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
                   labelText: 'Amount',
-                  prefixIcon: Icon(Icons.attach_money),
-                  border: OutlineInputBorder()),
+                  prefixIcon: const Icon(Icons.attach_money),
+                  helperText: _balance != null
+                      ? 'Available: ${_money(_balance!, _currency)}'
+                      : null,
+                  errorText: _overBalance
+                      ? 'More than your available balance'
+                      : null,
+                  border: const OutlineInputBorder()),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in _presets)
+                  ActionChip(
+                    label: Text('$p'),
+                    onPressed: () => setState(() => _amount.text = '$p'),
+                  ),
+                if (_balance != null && _balance! > 0)
+                  ActionChip(
+                    label: const Text('Max'),
+                    onPressed: () => setState(
+                        () => _amount.text = _balance!.toStringAsFixed(2)),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
             TextField(
