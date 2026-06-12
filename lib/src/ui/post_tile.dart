@@ -76,6 +76,13 @@ Future<void> _showPostMenu(BuildContext context, Post post,
               onTap: () => Navigator.pop(context, 'not_interested'),
             ),
             ListTile(
+              leading: const Icon(Icons.volume_off_outlined),
+              title: Text(feedPrefs.isAuthorMuted(post.author.userId)
+                  ? 'Unmute ${post.author.name}'
+                  : 'Mute ${post.author.name}'),
+              onTap: () => Navigator.pop(context, 'mute_author'),
+            ),
+            ListTile(
               leading: const Icon(Icons.flag_outlined),
               title: const Text('Report'),
               onTap: () => Navigator.pop(context, 'report'),
@@ -105,6 +112,17 @@ Future<void> _showPostMenu(BuildContext context, Post post,
       case 'not_interested':
         await api.feed.notInterested(post.id);
         if (context.mounted) showInfo(context, "We'll show less like this");
+      case 'mute_author':
+        if (feedPrefs.isAuthorMuted(post.author.userId)) {
+          feedPrefs.unmuteAuthor(post.author.userId);
+          if (context.mounted) showInfo(context, 'Unmuted ${post.author.name}');
+        } else {
+          feedPrefs.muteAuthor(post.author.userId, post.author.name);
+          if (context.mounted) {
+            showInfo(context,
+                '${post.author.name} muted — manage in Customize feed');
+          }
+        }
       case 'report':
         if (context.mounted) await _reportPost(context, post);
       case 'pin':

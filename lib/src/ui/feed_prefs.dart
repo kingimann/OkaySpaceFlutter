@@ -20,6 +20,8 @@ class FeedPrefs extends ChangeNotifier {
   static const _storage = FlutterSecureStorage();
 
   String _defaultTab = 'explore';
+  String _sort = 'recent';
+  final List<({String id, String name})> _mutedAuthors = [];
   bool _hideReposts = false;
   bool _hideSponsored = false;
   bool _showMedia = true;
@@ -28,6 +30,28 @@ class FeedPrefs extends ChangeNotifier {
 
   /// 'explore' | 'following' — which tab the feed opens on.
   String get defaultTab => _defaultTab;
+
+  /// 'recent' | 'top' — how the feed is ordered.
+  String get sort => _sort;
+
+  /// People muted from the feed (on-device).
+  List<({String id, String name})> get mutedAuthors =>
+      List.unmodifiable(_mutedAuthors);
+  bool isAuthorMuted(String userId) =>
+      _mutedAuthors.any((a) => a.id == userId);
+
+  void muteAuthor(String userId, String name) {
+    if (userId.isEmpty || isAuthorMuted(userId)) return;
+    _mutedAuthors.add((id: userId, name: name));
+    notifyListeners();
+    _persist();
+  }
+
+  void unmuteAuthor(String userId) {
+    _mutedAuthors.removeWhere((a) => a.id == userId);
+    notifyListeners();
+    _persist();
+  }
   bool get hideReposts => _hideReposts;
   bool get hideSponsored => _hideSponsored;
 
@@ -43,6 +67,16 @@ class FeedPrefs extends ChangeNotifier {
         final m = jsonDecode(raw);
         if (m is Map) {
           _defaultTab = m['tab'] == 'following' ? 'following' : 'explore';
+          _sort = m['sort'] == 'top' ? 'top' : 'recent';
+          final muted = m['muted_authors'];
+          if (muted is List) {
+            for (final e in muted) {
+              if (e is Map && e['id'] is String) {
+                _mutedAuthors
+                    .add((id: e['id'] as String, name: '${e['name'] ?? ''}'));
+              }
+            }
+          }
           _hideReposts = m['hide_reposts'] == true;
           _hideSponsored = m['hide_sponsored'] == true;
           _showMedia = m['show_media'] != false;
@@ -56,12 +90,14 @@ class FeedPrefs extends ChangeNotifier {
 
   void update({
     String? defaultTab,
+    String? sort,
     bool? hideReposts,
     bool? hideSponsored,
     bool? showMedia,
     bool? showTrending,
   }) {
     _defaultTab = defaultTab ?? _defaultTab;
+    _sort = sort ?? _sort;
     _hideReposts = hideReposts ?? _hideReposts;
     _hideSponsored = hideSponsored ?? _hideSponsored;
     _showMedia = showMedia ?? _showMedia;
@@ -76,6 +112,10 @@ class FeedPrefs extends ChangeNotifier {
         key: _key,
         value: jsonEncode({
           'tab': _defaultTab,
+          'sort': _sort,
+          'muted_authors': [
+            for (final a in _mutedAuthors) {'id': a.id, 'name': a.name},
+          ],
           'hide_reposts': _hideReposts,
           'hide_sponsored': _hideSponsored,
           'show_media': _showMedia,
@@ -132,6 +172,34 @@ class FeedPrefsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                child: Text('SORT BY',
+                    style: TextStyle(
+                        color: scheme.outline,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.6)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    for (final (id, label) in const [
+                      ('recent', 'Most recent'),
+                      ('top', 'Top engagement')
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: ChoiceChip(
+                          label: Text(label),
+                          selected: feedPrefs.sort == id,
+                          onSelected: (_) => feedPrefs.update(sort: id),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 8),
               SwitchListTile(
                 title: const Text('Hide reposts'),
@@ -165,6 +233,34 @@ class FeedPrefsScreen extends StatelessWidget {
                   onChanged: (v) => hideStoriesController.set(!v),
                 ),
               ),
+              if (feedPrefs.mutedAuthors.isNotEmpty) ...[
+                const Divider(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+                  child: Text('MUTED PEOPLE',
+                      style: TextStyle(
+                          color: scheme.outline,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.6)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final a in feedPrefs.mutedAuthors)
+                        InputChip(
+                          label: Text(a.name.isEmpty ? 'User' : a.name),
+                          onDeleted: () => feedPrefs.unmuteAuthor(a.id),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               const Divider(),
               ListTile(
                 leading: Icon(Icons.volume_off_outlined,
