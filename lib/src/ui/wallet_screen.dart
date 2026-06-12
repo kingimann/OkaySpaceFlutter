@@ -23,6 +23,15 @@ const _monthNames = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+/// Sort comparator: newest first, undated transactions last.
+int _byNewest(WalletTxn a, WalletTxn b) {
+  final ad = a.createdAt, bd = b.createdAt;
+  if (ad == null && bd == null) return 0;
+  if (ad == null) return 1;
+  if (bd == null) return -1;
+  return bd.compareTo(ad);
+}
+
 /// Venmo-style confirmation: big amount over the recipient's avatar with one
 /// prominent blue button. Returns true when confirmed.
 Future<bool> _confirmPayment(
@@ -236,10 +245,36 @@ class _WalletScreenState extends State<WalletScreen> {
     super.dispose();
   }
 
+  // Pending counts for the tab badges, kept across refreshes so the badges
+  // don't blink to zero while the lists reload.
+  int _pendingRequests = 0;
+  int _pendingTransfers = 0;
+
   void _load() {
     _summary = api.wallet.summary();
     _requests = api.wallet.moneyRequests().then(_moneyList);
     _transfers = api.wallet.transfers().then(_moneyList);
+    () async {
+      try {
+        final items = await _requests;
+        if (mounted) {
+          setState(() => _pendingRequests =
+              items.where((m) => m['_incoming'] == true).length);
+        }
+      } catch (_) {}
+    }();
+    () async {
+      try {
+        final items = await _transfers;
+        if (mounted) {
+          setState(() => _pendingTransfers = items
+              .where((m) =>
+                  m['_incoming'] == true &&
+                  _pick(m, ['status']).toLowerCase() == 'pending')
+              .length);
+        }
+      } catch (_) {}
+    }();
   }
 
   Future<void> _loadFavorites() async {
@@ -304,7 +339,7 @@ class _WalletScreenState extends State<WalletScreen> {
     if (!mounted) return;
     final picked = await showModalBottomSheet<String>(
       context: context,
-      builder: (_) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -315,7 +350,7 @@ class _WalletScreenState extends State<WalletScreen> {
               ListTile(
                 title: Text(c),
                 trailing: c == current ? const Icon(Icons.check) : null,
-                onTap: () => Navigator.pop(context, c),
+                onTap: () => Navigator.pop(sheetContext, c),
               ),
           ],
         ),
@@ -337,23 +372,16 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  /// A tab whose label carries a count badge of items matching [needsAction].
-  Widget _countedTab(String label, Future<List<Map<String, dynamic>>> future,
-      bool Function(Map<String, dynamic>) needsAction) {
+  /// A tab whose label carries a count badge when [count] is non-zero.
+  Widget _countedTab(String label, int count) {
     return Tab(
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: future,
-        builder: (context, snapshot) {
-          final count =
-              (snapshot.data ?? const []).where(needsAction).length;
-          if (count == 0) return Text(label);
-          return Badge.count(
-            count: count,
-            offset: const Offset(14, -4),
-            child: Text(label),
-          );
-        },
-      ),
+      child: count == 0
+          ? Text(label)
+          : Badge.count(
+              count: count,
+              offset: const Offset(14, -4),
+              child: Text(label),
+            ),
     );
   }
 
@@ -393,14 +421,8 @@ class _WalletScreenState extends State<WalletScreen> {
           bottom: TabBar(
             tabs: [
               const Tab(text: 'Overview'),
-              _countedTab('Requests', _requests,
-                  (m) => m['_incoming'] == true),
-              _countedTab(
-                  'Transfers',
-                  _transfers,
-                  (m) =>
-                      m['_incoming'] == true &&
-                      _pick(m, ['status']).toLowerCase() == 'pending'),
+              _countedTab('Requests', _pendingRequests),
+              _countedTab('Transfers', _pendingTransfers),
             ],
           ),
         ),
@@ -448,11 +470,13 @@ class _WalletScreenState extends State<WalletScreen> {
               query.isEmpty ||
               [t.counterpartyName, t.note, t.type]
                   .any((s) => s != null && s.toLowerCase().contains(query));
+          // Sorted defensively: month grouping relies on newest-first order.
           final txns = switch (_txnFilter) {
             'in' => w.recent.where((t) => t.amount >= 0 && matches(t)).toList(),
             'out' => w.recent.where((t) => t.amount < 0 && matches(t)).toList(),
             _ => w.recent.where(matches).toList(),
-          };
+          }
+            ..sort(_byNewest);
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -1894,7 +1918,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
         setState(() {
           _balance = w.balance;
           _currency = w.currency;
-          _recentTxns = [...w.recent, ...w.sent];
+          _recentTxns = [...w.recent, ...w.sent]..sort(_byNewest);
         });
       }
     }).catchError((_) {});
@@ -2056,7 +2080,9 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  final users = snapshot.data ?? const [];
+                  final users = (snapshot.data ?? const <PublicUser>[])
+                      .where((u) => u.userId != currentUserId)
+                      .toList();
                   if (users.isEmpty) {
                     return const Padding(
                         padding: EdgeInsets.all(24),
@@ -2320,7 +2346,9 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
               FutureBuilder<List<PublicUser>>(
                 future: _results,
                 builder: (context, snapshot) {
-                  final users = snapshot.data ?? const [];
+                  final users = (snapshot.data ?? const <PublicUser>[])
+                      .where((u) => u.userId != currentUserId)
+                      .toList();
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Padding(
                         padding: EdgeInsets.all(24),
