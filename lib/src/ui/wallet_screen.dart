@@ -1775,6 +1775,59 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     return _balance != null && amount != null && amount > _balance!;
   }
 
+  /// Applies a keypad tap to the amount (digits, one '.', '<' = backspace,
+  /// max two decimal places).
+  void _tapKey(String k) {
+    var t = _amount.text;
+    if (k == '<') {
+      if (t.isNotEmpty) t = t.substring(0, t.length - 1);
+    } else if (k == '.') {
+      if (t.contains('.')) return;
+      t = t.isEmpty ? '0.' : '$t.';
+    } else {
+      if (t.contains('.') && t.split('.')[1].length >= 2) return;
+      if (t == '0') t = '';
+      t += k;
+    }
+    setState(() => _amount.text = t);
+  }
+
+  /// Venmo-style 3×4 numeric keypad.
+  Widget _keypad() {
+    return Column(
+      children: [
+        for (final row in const [
+          ['1', '2', '3'],
+          ['4', '5', '6'],
+          ['7', '8', '9'],
+          ['.', '0', '<'],
+        ])
+          Row(
+            children: [
+              for (final k in row)
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _tapKey(k),
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      height: 52,
+                      child: Center(
+                        child: k == '<'
+                            ? const Icon(Icons.backspace_outlined, size: 22)
+                            : Text(k,
+                                style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
   Future<void> _send() async {
     final amount = num.tryParse(_amount.text.trim());
     if (_recipient == null || amount == null || amount <= 0) {
@@ -1884,26 +1937,38 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _amount,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                  labelText: 'Amount',
-                  prefixIcon: const Icon(Icons.attach_money),
-                  helperText: _balance != null
-                      ? 'Available: ${_money(_balance!, _currency)}'
-                      : null,
-                  errorText: _overBalance
-                      ? 'More than your available balance'
-                      : null,
-                  border: const OutlineInputBorder()),
+            // Venmo-style amount entry: big centered display over a keypad.
+            Text(
+              '$_currency ${_amount.text.isEmpty ? '0' : _amount.text}',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 42,
+                  fontWeight: FontWeight.bold,
+                  color: _overBalance
+                      ? Theme.of(context).colorScheme.error
+                      : null),
             ),
+            const SizedBox(height: 2),
+            Text(
+              _overBalance
+                  ? 'More than your available balance'
+                  : _balance != null
+                      ? 'Available: ${_money(_balance!, _currency)}'
+                      : '',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: _overBalance
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.outline),
+            ),
+            const SizedBox(height: 8),
+            _keypad(),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
+              alignment: WrapAlignment.center,
               children: [
                 for (final p in _presets)
                   ActionChip(
