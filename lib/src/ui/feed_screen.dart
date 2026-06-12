@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import 'app_drawer.dart';
 import 'common.dart';
+import 'feed_prefs.dart';
 import 'compose_screen.dart';
 import 'hashtag_screen.dart';
 import 'messages_screen.dart';
@@ -40,14 +41,39 @@ class _FeedScreenState extends State<FeedScreen> {
   void initState() {
     super.initState();
     _load();
+    // Open on the preferred tab once prefs load, and re-filter on changes.
+    if (feedPrefs.isLoaded && feedPrefs.defaultTab == 'following') {
+      _tab = 1;
+      _load();
+    }
+    feedPrefs.addListener(_onPrefsChanged);
     feedScrollSignal.addListener(_onScrollToTop);
     // Poll for newer posts so a "new posts" pill can appear.
     _poll = Timer.periodic(const Duration(seconds: 45), (_) => _checkNew());
   }
 
+  bool _appliedDefaultTab = false;
+
+  void _onPrefsChanged() {
+    if (!mounted) return;
+    // First load may arrive after initState: apply the starting tab once.
+    if (!_appliedDefaultTab && feedPrefs.isLoaded) {
+      _appliedDefaultTab = true;
+      if (feedPrefs.defaultTab == 'following' && _tab == 0) {
+        setState(() {
+          _tab = 1;
+          _load();
+        });
+        return;
+      }
+    }
+    setState(_load); // re-filter with the new preferences
+  }
+
   @override
   void dispose() {
     _poll?.cancel();
+    feedPrefs.removeListener(_onPrefsChanged);
     feedScrollSignal.removeListener(_onScrollToTop);
     _scrollController.dispose();
     super.dispose();
@@ -88,8 +114,16 @@ class _FeedScreenState extends State<FeedScreen> {
     _hasNewPosts = false;
     final base = _tab == 1 ? api.feed.homeFeed() : api.feed.exploreFeed();
     _feed = base.then(_orderFeed).then((list) async {
-      _topPostId = list.isEmpty ? null : list.first.id;
-      return _interleaveAd(list);
+      // User feed preferences (Customize feed).
+      var out = list;
+      if (feedPrefs.hideReposts) {
+        out = out.where((p) => p.repostOf == null).toList();
+      }
+      if (feedPrefs.hideSponsored) {
+        out = out.where((p) => !p.promoted).toList();
+      }
+      _topPostId = out.isEmpty ? null : out.first.id;
+      return feedPrefs.hideSponsored ? out : await _interleaveAd(out);
     });
     _stories = api.stories.tray();
     _trending = api.feed.trendingHashtags();
@@ -221,7 +255,8 @@ class _FeedScreenState extends State<FeedScreen> {
                                     : _StoryTray(
                                         future: _stories, onAdd: _addStory),
                               ),
-                              _TrendingStrip(future: _trending),
+                              if (feedPrefs.showTrending)
+                                _TrendingStrip(future: _trending),
                               if (posts.isEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 48),
@@ -414,6 +449,15 @@ class _FeedScreenState extends State<FeedScreen> {
                   _tabChip('Explore', 0),
                   const SizedBox(width: 8),
                   _tabChip('Following', 1),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.tune, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Customize feed',
+                    onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const FeedPrefsScreen())),
+                  ),
                 ],
               ),
             ),
