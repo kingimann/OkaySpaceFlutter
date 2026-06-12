@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'common.dart';
 
@@ -65,9 +66,20 @@ class _CashOutScreenState extends State<CashOutScreen> {
       final url = res['url'] ?? res['onboarding_url'] ?? res['account_link'];
       if (!mounted) return;
       if (url != null) {
-        Clipboard.setData(ClipboardData(text: '$url'));
-        showInfo(context,
-            'Onboarding link copied — open it in a browser to finish setup.');
+        // Open Stripe onboarding directly; clipboard is the fallback.
+        final opened = await launchUrl(Uri.parse('$url'),
+            mode: LaunchMode.externalApplication);
+        if (!mounted) return;
+        if (!opened) {
+          await Clipboard.setData(ClipboardData(text: '$url'));
+          if (mounted) {
+            showInfo(context,
+                'Onboarding link copied — open it in a browser to finish setup.');
+          }
+        } else {
+          showInfo(context,
+              'Finish the Stripe onboarding, then pull to refresh here.');
+        }
       } else {
         showInfo(context, 'Payout setup started.');
       }
@@ -83,11 +95,22 @@ class _CashOutScreenState extends State<CashOutScreen> {
     setState(() => _busy = true);
     try {
       final res = await api.payments.startIdentity();
-      final url = res['url'] ?? res['verification_url'] ?? res['client_secret'];
+      final url = res['url'] ?? res['verification_url'];
       if (!mounted) return;
-      if (url != null) {
-        Clipboard.setData(ClipboardData(text: '$url'));
-        showInfo(context, 'Verification link copied — open it to continue.');
+      if (url != null && '$url'.startsWith('http')) {
+        final opened = await launchUrl(Uri.parse('$url'),
+            mode: LaunchMode.externalApplication);
+        if (!mounted) return;
+        if (!opened) {
+          await Clipboard.setData(ClipboardData(text: '$url'));
+          if (mounted) {
+            showInfo(
+                context, 'Verification link copied — open it to continue.');
+          }
+        } else {
+          showInfo(context,
+              'Finish the verification, then pull to refresh here.');
+        }
       } else {
         showInfo(context, 'Identity verification started.');
       }
