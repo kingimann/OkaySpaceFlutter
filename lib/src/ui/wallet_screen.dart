@@ -202,6 +202,7 @@ class _WalletScreenState extends State<WalletScreen> {
             padding: const EdgeInsets.all(16),
             children: [
               _balanceCard(w, scheme),
+              ..._quickSendRow(w),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -343,6 +344,63 @@ class _WalletScreenState extends State<WalletScreen> {
         ],
       ),
     );
+  }
+
+  /// People the user has sent money to recently (unique, newest first).
+  List<({String id, String name})> _quickRecipients(WalletSummary w) {
+    final seen = <String>{};
+    final out = <({String id, String name})>[];
+    for (final t in [...w.sent, ...w.recent.where((t) => t.amount < 0)]) {
+      final id = t.counterpartyId;
+      if (id == null || id.isEmpty || !seen.add(id)) continue;
+      out.add((id: id, name: t.counterpartyName ?? 'User'));
+      if (out.length >= 10) break;
+    }
+    return out;
+  }
+
+  /// A horizontal strip of recent recipients for one-tap repeat sends.
+  List<Widget> _quickSendRow(WalletSummary w) {
+    final people = _quickRecipients(w);
+    if (people.isEmpty) return const [];
+    return [
+      const SizedBox(height: 16),
+      Text('Quick send',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      SizedBox(
+        height: 86,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: people.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 12),
+          itemBuilder: (context, i) {
+            final p = people[i];
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _push(SendMoneyScreen(
+                  recipient: PublicUser(userId: p.id, name: p.name))),
+              child: SizedBox(
+                width: 60,
+                child: Column(
+                  children: [
+                    Avatar(name: p.name, radius: 24),
+                    const SizedBox(height: 6),
+                    Text(p.name.split(' ').first,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    ];
   }
 
   /// Creator earnings split by source (tips / subscriptions / ads).
