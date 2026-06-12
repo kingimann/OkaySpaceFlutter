@@ -73,11 +73,13 @@ class _PayQrScreenState extends State<PayQrScreen> {
         showInfo(context, 'No matching user found.');
         return;
       }
-      Navigator.of(context).push(MaterialPageRoute(
+      final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
           builder: (_) => SendMoneyScreen(
               recipient: recipient,
               initialAmount: amount,
               initialNote: note)));
+      // Bubble the payment up so the wallet refreshes its balance/feed.
+      if (changed == true && mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) showError(context, e);
     }

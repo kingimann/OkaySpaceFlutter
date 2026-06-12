@@ -269,8 +269,12 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Future<void> _reload() async {
+    if (!mounted) return;
     setState(_load);
-    await _summary;
+    // The FutureBuilder surfaces errors; don't rethrow into RefreshIndicator.
+    try {
+      await _summary;
+    } catch (_) {}
   }
 
   Future<void> _push(Widget screen) async {
@@ -280,7 +284,11 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Future<void> _changeCurrency() async {
-    final w = await _summary;
+    // Fall back to USD if the summary hasn't loaded; the sheet still works.
+    var current = 'USD';
+    try {
+      current = (await _summary).currency;
+    } catch (_) {}
     if (!mounted) return;
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -294,14 +302,14 @@ class _WalletScreenState extends State<WalletScreen> {
             for (final c in const ['USD', 'CAD', 'EUR', 'GBP', 'NGN', 'INR'])
               ListTile(
                 title: Text(c),
-                trailing: c == w.currency ? const Icon(Icons.check) : null,
+                trailing: c == current ? const Icon(Icons.check) : null,
                 onTap: () => Navigator.pop(context, c),
               ),
           ],
         ),
       ),
     );
-    if (picked == null || picked == w.currency) return;
+    if (picked == null || picked == current) return;
     try {
       await api.wallet.setCurrency(picked);
       await _reload();
@@ -380,8 +388,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   _transfers,
                   (m) =>
                       m['_incoming'] == true &&
-                      _pick(m, ['status'], 'pending').toLowerCase() ==
-                          'pending'),
+                      _pick(m, ['status']).toLowerCase() == 'pending'),
             ],
           ),
         ),
@@ -411,7 +418,9 @@ class _WalletScreenState extends State<WalletScreen> {
       child: FutureBuilder<WalletSummary>(
         future: _summary,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          // Skeleton only on first load; refreshes keep the data on screen.
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return _skeleton(Theme.of(context).colorScheme);
           }
           if (snapshot.hasError) {
@@ -710,7 +719,9 @@ class _WalletScreenState extends State<WalletScreen> {
     final out = [..._favorites];
     for (final t in [...w.sent, ...w.recent.where((t) => t.amount < 0)]) {
       final id = t.counterpartyId;
-      if (id == null || id.isEmpty || !seen.add(id)) continue;
+      if (id == null || id.isEmpty || id == currentUserId || !seen.add(id)) {
+        continue;
+      }
       out.add((id: id, name: t.counterpartyName ?? 'User'));
       if (out.length >= 12) break;
     }
@@ -882,7 +893,8 @@ class _TransferTile extends StatelessWidget {
     final id = _pick(transfer, ['id', 'transfer_id', 'tid']);
     final amount = num.tryParse(_pick(transfer, ['amount'], '0')) ?? 0;
     final currency = _pick(transfer, ['currency'], 'USD');
-    final status = _pick(transfer, ['status'], 'pending');
+    // Missing status must read as non-actionable, not pending.
+    final status = _pick(transfer, ['status']);
     final toUserId = _pick(transfer, ['to_user_id', 'recipient_id']);
     final incoming = transfer['_incoming'] as bool? ??
         (currentUserId != null && toUserId == currentUserId);
@@ -899,7 +911,8 @@ class _TransferTile extends StatelessWidget {
     Future<void> act(Future<void> Function() op, String ok) async {
       try {
         await op();
-        if (context.mounted) showInfo(context, ok);
+        if (!context.mounted) return;
+        showInfo(context, ok);
         onChanged();
       } catch (e) {
         if (context.mounted) showError(context, e);
@@ -917,7 +930,10 @@ class _TransferTile extends StatelessWidget {
       title: Text(
           incoming ? 'From $who' : 'To $who',
           style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text('${_money(amount, currency)} · $status'),
+      subtitle: Text([
+        _money(amount, currency),
+        if (status.isNotEmpty) status,
+      ].join(' · ')),
       trailing: incoming && pending
           ? Row(
               mainAxisSize: MainAxisSize.min,
@@ -978,7 +994,8 @@ class _RequestTile extends StatelessWidget {
     Future<void> act(Future<void> Function() op, String ok) async {
       try {
         await op();
-        if (context.mounted) showInfo(context, ok);
+        if (!context.mounted) return;
+        showInfo(context, ok);
         onChanged();
       } catch (e) {
         if (context.mounted) showError(context, e);
@@ -1012,8 +1029,19 @@ class _RequestTile extends StatelessWidget {
                 FilledButton(
                   style:
                       FilledButton.styleFrom(minimumSize: const Size(0, 40)),
-                  onPressed: () =>
-                      act(() => api.wallet.payRequest(id), 'Paid $who'),
+                  onPressed: () async {
+                    // The transfer may require a security answer.
+                    final answer = await promptText(context,
+                        title: 'Security answer',
+                        hint: 'Leave blank if you haven\'t set one',
+                        action: 'Pay');
+                    if (answer == null || !context.mounted) return;
+                    final a = answer.trim();
+                    await act(
+                        () => api.wallet
+                            .payRequest(id, answer: a.isEmpty ? null : a),
+                        'Paid $who');
+                  },
                   child: const Text('Pay'),
                 ),
               ],
@@ -1325,7 +1353,9 @@ class _TxnTile extends StatelessWidget {
         ? const Color(0xFF22C55E)
         : Theme.of(context).colorScheme.error;
     final scheme = Theme.of(context).colorScheme;
-    final canResend = !incoming && txn.counterpartyId != null;
+    final canResend = !incoming &&
+        txn.counterpartyId != null &&
+        txn.counterpartyId != currentUserId;
 
     Widget detail(String label, String value) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -1919,7 +1949,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
       await api.wallet.sendMoney(
         toUserId: _recipient!.userId,
         amount: amount,
-        answer: _answer.text,
+        answer: _answer.text.trim(),
         note: note,
       );
       if (mounted) {

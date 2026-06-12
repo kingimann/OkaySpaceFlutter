@@ -40,16 +40,24 @@ class _SplitBillScreenState extends State<SplitBillScreen> {
 
   num? get _total => num.tryParse(_amount.text.trim());
 
-  /// Each person's share of the total (null until the form is valid).
-  num? get _share {
+  /// Each person's share in cents, allocated so the shares sum exactly to
+  /// the total: everyone gets the floor, and the leftover cents go one each
+  /// to the first few people. Empty until the form is valid.
+  List<int> get _shareCents {
     final total = _total;
-    if (total == null || total <= 0 || _people.isEmpty) return null;
-    return total / (_people.length + (_includeMe ? 1 : 0));
+    if (total == null || total <= 0 || _people.isEmpty) return const [];
+    final n = _people.length + (_includeMe ? 1 : 0);
+    final totalCents = (total * 100).round();
+    final base = totalCents ~/ n;
+    final extra = totalCents % n;
+    return [
+      for (var i = 0; i < _people.length; i++) base + (i < extra ? 1 : 0),
+    ];
   }
 
   Future<void> _send() async {
-    final share = _share;
-    if (share == null) {
+    final shares = _shareCents;
+    if (shares.isEmpty) {
       showInfo(context, 'Pick people and a valid total.');
       return;
     }
@@ -57,10 +65,10 @@ class _SplitBillScreenState extends State<SplitBillScreen> {
     setState(() => _busy = true);
     var sent = 0;
     try {
-      for (final p in _people) {
+      for (var i = 0; i < _people.length; i++) {
         await api.wallet.requestMoney(
-          toUserId: p.userId,
-          amount: num.parse(share.toStringAsFixed(2)),
+          toUserId: _people[i].userId,
+          amount: shares[i] / 100,
           note: note.isEmpty ? 'Bill split' : note,
         );
         sent++;
@@ -82,7 +90,13 @@ class _SplitBillScreenState extends State<SplitBillScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final share = _share;
+    final shares = _shareCents;
+    // Shares can differ by a cent; show the range when they do.
+    final shareLabel = shares.isEmpty
+        ? ''
+        : shares.first == shares.last
+            ? (shares.first / 100).toStringAsFixed(2)
+            : '${(shares.last / 100).toStringAsFixed(2)}–${(shares.first / 100).toStringAsFixed(2)}';
 
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Split a bill')),
@@ -185,7 +199,7 @@ class _SplitBillScreenState extends State<SplitBillScreen> {
                   hintText: 'e.g. Dinner on Friday',
                   border: OutlineInputBorder()),
             ),
-            if (share != null) ...[
+            if (shares.isNotEmpty) ...[
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(14),
@@ -199,7 +213,7 @@ class _SplitBillScreenState extends State<SplitBillScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        '${share.toStringAsFixed(2)} each · ${_people.length} '
+                        '$shareLabel each · ${_people.length} '
                         'request${_people.length == 1 ? '' : 's'}'
                         '${_includeMe ? ' (your share stays with you)' : ''}',
                         style: const TextStyle(fontWeight: FontWeight.w600),
@@ -211,7 +225,7 @@ class _SplitBillScreenState extends State<SplitBillScreen> {
             ],
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: _busy || share == null ? null : _send,
+              onPressed: _busy || shares.isEmpty ? null : _send,
               icon: _busy
                   ? const SizedBox(
                       height: 18,
