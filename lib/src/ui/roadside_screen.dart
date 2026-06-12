@@ -62,6 +62,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
   double _radiusKm = 50;
 
   late Future<List<RoadsideRequest>> _mine;
+  late Future<dynamic> _active;
   late Future<List<RoadsideRequest>> _nearby;
   late Future<List<RoadsideRequest>> _helping;
   late Future<List<RoadsideRequest>> _history;
@@ -74,6 +75,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
 
   void _load() {
     _mine = api.roadside.mine();
+    _active = api.roadside.active().catchError((_) => null);
     _nearby = api.roadside.nearby(lat: _lat, lng: _lng, radiusKm: _radiusKm);
     _helping = api.roadside.helping();
     _history = api.roadside.history();
@@ -123,7 +125,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
         body: MaxWidth(
           child: TabBarView(
             children: [
-              _list(_mine, 'No roadside requests.\nTap “Request help” if you’re stuck.'),
+              _mineTab(),
               _nearbyTab(),
               _list(_helping, "You're not helping with any requests."),
               _list(_history, 'No past requests.'),
@@ -131,6 +133,83 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// My requests, with the live request (if any) as a hero card up top.
+  Widget _mineTab() {
+    return Column(
+      children: [
+        FutureBuilder<dynamic>(
+          future: _active,
+          builder: (context, snap) {
+            final d = snap.data;
+            final m = d is Map
+                ? (d['request'] is Map ? d['request'] as Map : d)
+                : null;
+            if (m == null || '${m['id'] ?? ''}'.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            final r = RoadsideRequest.fromJson(Map<String, dynamic>.from(m));
+            final color = _statusColor(r.status);
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Material(
+                borderRadius: BorderRadius.circular(16),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _open(r),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [color, darken(color, 0.25)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(_serviceIcon(r.service),
+                            color: Colors.white, size: 30),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Active: ${_serviceLabel(r.service)}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16)),
+                              Text(
+                                  r.arrived
+                                      ? 'Your helper has arrived'
+                                      : r.enRoute
+                                          ? 'Help is on the way'
+                                          : r.status.toLowerCase() ==
+                                                  'accepted'
+                                              ? 'A helper accepted — waiting to depart'
+                                              : 'Waiting for a helper…',
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, color: Colors.white),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        Expanded(
+          child: _list(_mine,
+              'No roadside requests.\nTap “Request help” if you’re stuck.'),
+        ),
+      ],
     );
   }
 
@@ -729,10 +808,34 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
 
   Future<List<Map<String, dynamic>>>? _geoResults;
   Timer? _geoDebounce;
+
+  /// Service price table from /roadside/quote (best-effort).
+  Map<String, dynamic> _quote = const {};
   bool _manualCoords = false;
   String _fuelType = 'regular';
   String _payment = 'wallet';
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    api.roadside.quote().then((d) {
+      if (mounted && d is Map) {
+        setState(() => _quote = Map<String, dynamic>.from(d));
+      }
+    }).catchError((_) {});
+  }
+
+  /// The quoted price for [service], hunting through common payload shapes.
+  num? _priceFor(String service) {
+    dynamic v = _quote[service] ??
+        (_quote['prices'] is Map ? (_quote['prices'] as Map)[service] : null) ??
+        (_quote['services'] is Map
+            ? (_quote['services'] as Map)[service]
+            : null);
+    if (v is Map) v = v['price'] ?? v['total'] ?? v['amount'];
+    return v is num ? v : num.tryParse('$v');
+  }
 
   @override
   void dispose() {
@@ -1073,6 +1176,31 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                 border: OutlineInputBorder(),
               ),
             ),
+            if (_priceFor(_service) != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.request_quote_outlined,
+                        color: scheme.primary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Estimated price: \$${_priceFor(_service)!.toStringAsFixed(2)}'
+                        ' — final total may vary',
+                        style:
+                            const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _busy || !located ? null : _submit,
