@@ -76,8 +76,11 @@ class SpendingLimits extends ChangeNotifier {
     return DateTime(now.year, now.month, now.day);
   }
 
-  static DateTime _weekStart() =>
-      _todayStart().subtract(Duration(days: DateTime.now().weekday - 1));
+  static DateTime _weekStart() {
+    final now = DateTime.now();
+    // Date arithmetic (not Duration) so DST transitions can't shift the day.
+    return DateTime(now.year, now.month, now.day - (now.weekday - 1));
+  }
 
   static DateTime _monthStart() {
     final now = DateTime.now();

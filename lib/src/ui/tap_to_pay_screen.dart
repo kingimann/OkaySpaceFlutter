@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../okayspace_api.dart' show User;
 import '../core/nfc_pay.dart';
 import 'common.dart';
 import 'wallet_screen.dart';
@@ -23,6 +24,10 @@ class _TapToPayScreenState extends State<TapToPayScreen> {
   late final Future<bool> _available = nfcAvailable();
   bool _changed = false;
 
+  /// True while the waiting sheet is on top. _hideWaiting must only pop when
+  /// the sheet really is there — a bare canPop() would pop this screen.
+  bool _sheetOpen = false;
+
   @override
   void dispose() {
     nfcCancel();
@@ -30,8 +35,9 @@ class _TapToPayScreenState extends State<TapToPayScreen> {
   }
 
   /// Shows the "hold your phone near…" waiting sheet (Android has no system
-  /// NFC UI; iOS shows its own on top). Returns when dismissed.
+  /// NFC UI; iOS shows its own on top). Dismissing it cancels the session.
   void _showWaiting(String message) {
+    _sheetOpen = true;
     showModalBottomSheet<void>(
       context: context,
       isDismissible: true,
@@ -55,53 +61,75 @@ class _TapToPayScreenState extends State<TapToPayScreen> {
           ),
         ),
       ),
-    ).whenComplete(nfcCancel);
+    ).whenComplete(() {
+      _sheetOpen = false;
+      nfcCancel();
+    });
   }
 
   void _hideWaiting() {
-    if (mounted && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
+    if (mounted && _sheetOpen) Navigator.of(context).pop();
   }
 
   /// Scans a tag and pays whoever it belongs to.
   Future<void> _tapToPay() async {
     _showWaiting('Hold your phone near the pay tag');
+    final Uri? uri;
     try {
-      final uri = await nfcReadUri();
+      uri = await nfcReadUri();
+    } on NfcCancelled {
       _hideWaiting();
-      if (!mounted) return;
-      final userId = uri?.queryParameters['user'];
-      if (uri == null || userId == null || userId.isEmpty) {
-        showInfo(context, 'That tag doesn\'t carry OkaySpace pay info.');
-        return;
-      }
+      return;
+    } catch (e) {
+      _hideWaiting();
+      if (mounted) showError(context, e);
+      return;
+    }
+    _hideWaiting();
+    if (!mounted) return;
+    final userId = uri?.queryParameters['user'];
+    if (uri == null || userId == null || userId.isEmpty) {
+      showInfo(context, 'That tag doesn\'t carry OkaySpace pay info.');
+      return;
+    }
+    // The sheet is gone now; errors past this point must not pop anything.
+    final amount = uri.queryParameters['amount'];
+    final note = uri.queryParameters['note'];
+    try {
       final recipient = await api.users.publicProfile(userId);
       if (!mounted) return;
       final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
         builder: (_) => SendMoneyScreen(
           recipient: recipient,
-          initialAmount: uri.queryParameters['amount'],
-          initialNote: uri.queryParameters['note'],
+          initialAmount: amount,
+          initialNote: note,
         ),
       ));
       if (changed == true) _changed = true;
     } catch (e) {
-      _hideWaiting();
       if (mounted) showError(context, e);
     }
   }
 
   /// Writes the user's pay link to a physical tag.
   Future<void> _writeMyTag() async {
+    // Fetch the profile before the sheet exists so a failure can't pop it.
+    final User me;
     try {
-      final me = await api.auth.me();
-      if (!mounted) return;
-      _showWaiting('Hold your phone near a writable NFC tag');
+      me = await api.auth.me();
+    } catch (e) {
+      if (mounted) showError(context, e);
+      return;
+    }
+    if (!mounted) return;
+    _showWaiting('Hold your phone near a writable NFC tag');
+    try {
       await nfcWriteUri(
           'okayspace://pay?user=${me.userId}&name=${Uri.encodeComponent(me.name)}');
       _hideWaiting();
       if (mounted) showInfo(context, 'Pay tag written — tap it to get paid');
+    } on NfcCancelled {
+      _hideWaiting();
     } catch (e) {
       _hideWaiting();
       if (mounted) showError(context, e);

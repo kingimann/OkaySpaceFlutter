@@ -9,6 +9,7 @@ import '../../okayspace_api.dart';
 import 'cashout_screen.dart';
 import 'common.dart';
 import 'pay_qr_screen.dart';
+import 'spending_limits.dart';
 import 'split_bill_screen.dart';
 import 'tap_to_pay_screen.dart';
 import 'wallet_insights_screen.dart';
@@ -246,18 +247,21 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   // Pending counts for the tab badges, kept across refreshes so the badges
-  // don't blink to zero while the lists reload.
+  // don't blink to zero while the lists reload. The generation token keeps
+  // an out-of-order older fetch from overwriting a newer count.
   int _pendingRequests = 0;
   int _pendingTransfers = 0;
+  int _loadGen = 0;
 
   void _load() {
+    final gen = ++_loadGen;
     _summary = api.wallet.summary();
     _requests = api.wallet.moneyRequests().then(_moneyList);
     _transfers = api.wallet.transfers().then(_moneyList);
     () async {
       try {
         final items = await _requests;
-        if (mounted) {
+        if (mounted && gen == _loadGen) {
           setState(() => _pendingRequests =
               items.where((m) => m['_incoming'] == true).length);
         }
@@ -266,7 +270,7 @@ class _WalletScreenState extends State<WalletScreen> {
     () async {
       try {
         final items = await _transfers;
-        if (mounted) {
+        if (mounted && gen == _loadGen) {
           setState(() => _pendingTransfers = items
               .where((m) =>
                   m['_incoming'] == true &&
@@ -277,10 +281,14 @@ class _WalletScreenState extends State<WalletScreen> {
     }();
   }
 
+  /// Set once the user edits favorites, so a late storage read can't clobber
+  /// their change.
+  bool _favsTouched = false;
+
   Future<void> _loadFavorites() async {
     try {
       final raw = await _favStorage.read(key: _favoritesKey);
-      if (raw == null || !mounted) return;
+      if (raw == null || !mounted || _favsTouched) return;
       final list = jsonDecode(raw);
       if (list is List) {
         setState(() {
@@ -297,6 +305,7 @@ class _WalletScreenState extends State<WalletScreen> {
   bool _isFavorite(String id) => _favorites.any((f) => f.id == id);
 
   Future<void> _toggleFavorite(({String id, String name}) person) async {
+    _favsTouched = true;
     setState(() {
       _favorites = _isFavorite(person.id)
           ? _favorites.where((f) => f.id != person.id).toList()
@@ -318,10 +327,13 @@ class _WalletScreenState extends State<WalletScreen> {
   Future<void> _reload() async {
     if (!mounted) return;
     setState(_load);
-    // The FutureBuilder surfaces errors; don't rethrow into RefreshIndicator.
-    try {
-      await _summary;
-    } catch (_) {}
+    // Hold the refresh indicator until all three fetches settle; the
+    // FutureBuilders surface their own errors, so swallow them here.
+    await Future.wait<void>([
+      _summary.then<void>((_) {}).catchError((_) {}),
+      _requests.then<void>((_) {}).catchError((_) {}),
+      _transfers.then<void>((_) {}).catchError((_) {}),
+    ]);
   }
 
   Future<void> _push(Widget screen) async {
@@ -505,7 +517,10 @@ class _WalletScreenState extends State<WalletScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              _BudgetCard(summary: w, hideAmounts: _hideBalance),
+              SpendingLimitsCard(
+                  txns: w.recent,
+                  currency: w.currency,
+                  hideAmounts: _hideBalance),
               if (w.tipsTotal > 0 ||
                   w.subsTotal > 0 ||
                   w.adsTotal > 0 ||
@@ -1116,13 +1131,41 @@ class _RequestTile extends StatelessWidget {
                   style:
                       FilledButton.styleFrom(minimumSize: const Size(0, 40)),
                   onPressed: () async {
-                    // The transfer may require a security answer.
-                    final answer = await promptText(context,
-                        title: 'Security answer',
-                        hint: 'Leave blank if you haven\'t set one',
-                        action: 'Pay');
+                    // The transfer may require a security answer. A blank
+                    // answer is a valid choice (no question set), so this
+                    // dialog distinguishes Pay-with-blank from Cancel.
+                    final controller = TextEditingController();
+                    final String? answer;
+                    try {
+                      answer = await showDialog<String>(
+                        context: context,
+                        builder: (dialogContext) => AlertDialog(
+                          title: const Text('Security answer'),
+                          content: TextField(
+                            controller: controller,
+                            autofocus: true,
+                            obscureText: true,
+                            decoration: const InputDecoration(
+                                hintText:
+                                    'Leave blank if you haven\'t set one',
+                                border: OutlineInputBorder()),
+                          ),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(dialogContext),
+                                child: const Text('Cancel')),
+                            FilledButton(
+                                onPressed: () => Navigator.pop(
+                                    dialogContext, controller.text.trim()),
+                                child: const Text('Pay')),
+                          ],
+                        ),
+                      );
+                    } finally {
+                      controller.dispose();
+                    }
                     if (answer == null || !context.mounted) return;
-                    final a = answer.trim();
+                    final a = answer;
                     await act(
                         () => api.wallet
                             .payRequest(id, answer: a.isEmpty ? null : a),
@@ -1138,202 +1181,6 @@ class _RequestTile extends StatelessWidget {
                   act(() => api.wallet.cancelRequest(id), 'Cancelled'),
               child: const Text('Cancel'),
             ),
-    );
-  }
-}
-
-/// A monthly spending budget, kept on-device. Spend-to-date is computed from
-/// this month's outgoing transactions in the wallet summary.
-class _BudgetCard extends StatefulWidget {
-  const _BudgetCard({required this.summary, this.hideAmounts = false});
-
-  final WalletSummary summary;
-  final bool hideAmounts;
-
-  @override
-  State<_BudgetCard> createState() => _BudgetCardState();
-}
-
-class _BudgetCardState extends State<_BudgetCard> {
-  static const _storageKey = 'okayspace.wallet_budget';
-  static const _storage = FlutterSecureStorage();
-  static const _presets = [50, 100, 200, 500, 1000];
-
-  num? _budget;
-  bool _loaded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _storage.read(key: _storageKey).then((v) {
-      if (mounted) {
-        setState(() {
-          _budget = v == null ? null : num.tryParse(v);
-          _loaded = true;
-        });
-      }
-    }).catchError((_) {
-      if (mounted) setState(() => _loaded = true);
-    });
-  }
-
-  Future<void> _save(num? budget) async {
-    setState(() => _budget = budget);
-    try {
-      if (budget == null) {
-        await _storage.delete(key: _storageKey);
-      } else {
-        await _storage.write(key: _storageKey, value: '$budget');
-      }
-    } catch (_) {/* best effort */}
-  }
-
-  num get _monthSpend {
-    final now = DateTime.now();
-    return widget.summary.recent
-        .where((t) =>
-            t.amount < 0 &&
-            t.createdAt != null &&
-            t.createdAt!.year == now.year &&
-            t.createdAt!.month == now.month)
-        .fold<num>(0, (a, t) => a + t.amount.abs());
-  }
-
-  Future<void> _edit() async {
-    final picked = await showModalBottomSheet<num?>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Monthly spending budget',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  for (final p in _presets)
-                    ChoiceChip(
-                      label: Text('$p'),
-                      selected: _budget == p,
-                      onSelected: (_) => Navigator.pop(sheetContext, p),
-                    ),
-                  if (_budget != null)
-                    ActionChip(
-                      avatar: const Icon(Icons.close, size: 16),
-                      label: const Text('Remove budget'),
-                      onPressed: () => Navigator.pop(sheetContext, -1),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (picked == null) return;
-    await _save(picked == -1 ? null : picked);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_loaded) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
-    final w = widget.summary;
-    final budget = _budget;
-
-    if (budget == null || budget <= 0) {
-      return Material(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: _edit,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(Icons.savings_outlined, color: scheme.primary),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text('Set a monthly spending budget',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-                Icon(Icons.chevron_right, color: scheme.outline),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final spent = _monthSpend;
-    final frac = (spent / budget).clamp(0.0, 1.0);
-    final over = spent > budget;
-    final near = !over && spent >= budget * 0.8;
-    final color = over
-        ? scheme.error
-        : near
-            ? const Color(0xFFF59E0B)
-            : scheme.primary;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: over ? Border.all(color: scheme.error) : null,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.savings_outlined, color: color, size: 20),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('Monthly budget',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              InkWell(
-                onTap: _edit,
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(Icons.tune, size: 18, color: scheme.outline),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(5),
-            child: LinearProgressIndicator(
-              value: frac,
-              minHeight: 8,
-              backgroundColor: scheme.surfaceContainerHighest,
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            widget.hideAmounts
-                ? '••••'
-                : over
-                    ? '${_money(spent, w.currency)} spent — '
-                        '${_money(spent - budget, w.currency)} over budget'
-                    : '${_money(spent, w.currency)} of '
-                        '${_money(budget, w.currency)} spent this month',
-            style: TextStyle(
-                color: over ? scheme.error : scheme.outline, fontSize: 12),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1589,7 +1436,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
 
   Future<void> _topUp() async {
     final amount = num.tryParse(_amount.text.trim());
-    if (amount == null || amount <= 0) {
+    if (amount == null || !amount.isFinite || amount <= 0) {
       showInfo(context, 'Enter a valid amount.');
       return;
     }
@@ -1673,6 +1520,9 @@ class TopUpHistoryScreen extends StatefulWidget {
 class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
   late Future<List<Map<String, dynamic>>> _topups;
 
+  /// Set when a top-up was cancelled, so the wallet reloads on pop.
+  bool _changed = false;
+
   @override
   void initState() {
     super.initState();
@@ -1688,6 +1538,7 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
       await api.wallet.cancelTopup(id);
       if (mounted) {
         showInfo(context, 'Top-up cancelled');
+        _changed = true;
         setState(_load);
       }
     } catch (e) {
@@ -1697,7 +1548,12 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) Navigator.of(context).pop(_changed);
+      },
+      child: Scaffold(
       appBar: const OkayAppBar(title: Text('Top-up history')),
       body: MaxWidth(
         child: AsyncList<Map<String, dynamic>>(
@@ -1732,6 +1588,7 @@ class _TopUpHistoryScreenState extends State<TopUpHistoryScreen> {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -1749,6 +1606,10 @@ class WalletActivityScreen extends StatefulWidget {
 class _WalletActivityScreenState extends State<WalletActivityScreen> {
   late Future<List<WalletTxn>> _activity = _fetch();
 
+  /// Set when something here changed the wallet (e.g. send-again), so the
+  /// overview reloads when this screen pops.
+  bool _changed = false;
+
   Future<List<WalletTxn>> _fetch() async {
     final raw = await api.wallet.activity();
     final maps = _mapList(raw, 'activity');
@@ -1756,16 +1617,27 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
   }
 
   Future<void> _reload() async {
+    if (!mounted) return;
     setState(() => _activity = _fetch());
     try {
       await _activity;
     } catch (_) {}
   }
 
+  void _onChanged() {
+    _changed = true;
+    _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) Navigator.of(context).pop(_changed);
+      },
+      child: Scaffold(
       appBar: const OkayAppBar(title: Text('All activity')),
       body: MaxWidth(
         child: RefreshIndicator(
@@ -1813,7 +1685,7 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
                             letterSpacing: 0.4)),
                   ));
                 }
-                children.add(_TxnTile(txn: t, onChanged: _reload));
+                children.add(_TxnTile(txn: t, onChanged: _onChanged));
               }
               return ListView(
                 padding: const EdgeInsets.all(16),
@@ -1822,6 +1694,7 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
             },
           ),
         ),
+      ),
       ),
     );
   }
@@ -2026,13 +1899,18 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     }).catchError((_) {});
   }
 
-  /// Past transactions with the selected recipient, newest first.
-  List<WalletTxn> get _betweenUs => _recipient == null
-      ? const []
-      : _recentTxns
-          .where((t) => t.counterpartyId == _recipient!.userId)
-          .take(3)
-          .toList();
+  /// Past transactions with the selected recipient, newest first, deduped by
+  /// id (recent + sent can overlap in the summary payload).
+  List<WalletTxn> get _betweenUs {
+    if (_recipient == null) return const [];
+    final seen = <String>{};
+    return _recentTxns
+        .where((t) =>
+            t.counterpartyId == _recipient!.userId &&
+            (t.id == null || seen.add(t.id!)))
+        .take(3)
+        .toList();
+  }
 
   @override
   void dispose() {
@@ -2109,13 +1987,40 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
 
   Future<void> _send() async {
     final amount = num.tryParse(_amount.text.trim());
-    if (_recipient == null || amount == null || amount <= 0) {
+    if (_recipient == null ||
+        amount == null ||
+        !amount.isFinite ||
+        amount <= 0) {
       showInfo(context, 'Pick a recipient and a valid amount.');
       return;
     }
     if (_overBalance) {
       showInfo(context, 'That\'s more than your available balance.');
       return;
+    }
+    // Self-imposed spending limits: warn before crossing one, but let the
+    // user override — it's their own cap.
+    final exceeded = spendingLimits.wouldExceed(_recentTxns, amount);
+    if (exceeded != null) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Spending limit reached'),
+          content: Text(
+              'This payment takes ${exceeded.label.toLowerCase()}\'s spending '
+              'to ${formatMoney(exceeded.spent + amount, _currency)} of your '
+              '${formatMoney(exceeded.limit, _currency)} limit. Send anyway?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Send anyway')),
+          ],
+        ),
+      );
+      if (go != true || !mounted) return;
     }
     final note = _note.text.trim().isEmpty ? null : _note.text.trim();
     final confirmed = await _confirmPayment(context,
@@ -2386,7 +2291,7 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
 
   Future<void> _request() async {
     final amount = num.tryParse(_amount.text.trim());
-    if (_from == null || amount == null || amount <= 0) {
+    if (_from == null || amount == null || !amount.isFinite || amount <= 0) {
       showInfo(context, 'Pick someone and a valid amount.');
       return;
     }

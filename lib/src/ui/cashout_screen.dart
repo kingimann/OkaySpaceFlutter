@@ -17,6 +17,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
   Map<String, dynamic> _status = const {};
   bool _loading = true;
   bool _busy = false;
+  bool _error = false;
 
   @override
   void initState() {
@@ -33,11 +34,13 @@ class _CashOutScreenState extends State<CashOutScreen> {
   Future<void> _load() async {
     // Full-screen spinner only before the first payload; refreshes keep the
     // current UI (so pull-to-refresh isn't torn down mid-gesture).
-    if (_status.isEmpty) setState(() => _loading = true);
+    if (_status.isEmpty && !_error) setState(() => _loading = true);
     try {
       _status = await api.payments.payoutStatus();
+      _error = false;
     } catch (_) {
-      if (_status.isEmpty) _status = const {};
+      // A failed load must read as an error, not as a $0 balance.
+      if (_status.isEmpty) _error = true;
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -112,7 +115,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
 
   Future<void> _cashout() async {
     final amount = _entered;
-    if (amount == null || amount < 5) {
+    if (amount == null || !amount.isFinite || amount < 5) {
       showInfo(context, 'Minimum cash-out is \$5.00.');
       return;
     }
@@ -142,7 +145,12 @@ class _CashOutScreenState extends State<CashOutScreen> {
       appBar: const OkayAppBar(title: Text('Cash out')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : MaxWidth(
+          : _error && _status.isEmpty
+              ? CenteredMessage(
+                  message: 'Couldn\'t load your payout status.',
+                  icon: Icons.error_outline,
+                  onRetry: _load)
+              : MaxWidth(
               child: RefreshIndicator(
                 onRefresh: _load,
                 child: ListView(
