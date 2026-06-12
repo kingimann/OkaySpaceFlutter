@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -207,16 +209,60 @@ class _WalletScreenState extends State<WalletScreen> {
   /// Recent-activity direction filter: 'all' | 'in' | 'out'.
   String _txnFilter = 'all';
 
+  /// Pinned quick-send favorites (persisted on-device), shown first.
+  static const _favoritesKey = 'okayspace.wallet_favorites';
+  static const _favStorage = FlutterSecureStorage();
+  List<({String id, String name})> _favorites = const [];
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadFavorites();
   }
 
   void _load() {
     _summary = api.wallet.summary();
     _requests = api.wallet.moneyRequests().then(_moneyList);
     _transfers = api.wallet.transfers().then(_moneyList);
+  }
+
+  Future<void> _loadFavorites() async {
+    try {
+      final raw = await _favStorage.read(key: _favoritesKey);
+      if (raw == null || !mounted) return;
+      final list = jsonDecode(raw);
+      if (list is List) {
+        setState(() {
+          _favorites = [
+            for (final e in list)
+              if (e is Map && e['id'] is String)
+                (id: e['id'] as String, name: '${e['name'] ?? 'User'}'),
+          ];
+        });
+      }
+    } catch (_) {/* start fresh */}
+  }
+
+  bool _isFavorite(String id) => _favorites.any((f) => f.id == id);
+
+  Future<void> _toggleFavorite(({String id, String name}) person) async {
+    setState(() {
+      _favorites = _isFavorite(person.id)
+          ? _favorites.where((f) => f.id != person.id).toList()
+          : [..._favorites, person];
+    });
+    try {
+      await _favStorage.write(
+        key: _favoritesKey,
+        value: jsonEncode(
+            [for (final f in _favorites) {'id': f.id, 'name': f.name}]),
+      );
+    } catch (_) {/* best effort */}
+    if (mounted) {
+      showInfo(context,
+          _isFavorite(person.id) ? 'Pinned to quick send' : 'Unpinned');
+    }
   }
 
   Future<void> _reload() async {
@@ -596,15 +642,16 @@ class _WalletScreenState extends State<WalletScreen> {
     }
   }
 
-  /// People the user has sent money to recently (unique, newest first).
+  /// Quick-send people: pinned favorites first, then recent recipients
+  /// (unique, newest first).
   List<({String id, String name})> _quickRecipients(WalletSummary w) {
-    final seen = <String>{};
-    final out = <({String id, String name})>[];
+    final seen = <String>{for (final f in _favorites) f.id};
+    final out = [..._favorites];
     for (final t in [...w.sent, ...w.recent.where((t) => t.amount < 0)]) {
       final id = t.counterpartyId;
       if (id == null || id.isEmpty || !seen.add(id)) continue;
       out.add((id: id, name: t.counterpartyName ?? 'User'));
-      if (out.length >= 10) break;
+      if (out.length >= 12) break;
     }
     return out;
   }
@@ -629,15 +676,34 @@ class _WalletScreenState extends State<WalletScreen> {
           separatorBuilder: (_, __) => const SizedBox(width: 12),
           itemBuilder: (context, i) {
             final p = people[i];
+            final pinned = _isFavorite(p.id);
             return InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: () => _push(SendMoneyScreen(
                   recipient: PublicUser(userId: p.id, name: p.name))),
+              // Long-press pins/unpins the person to the front of the row.
+              onLongPress: () => _toggleFavorite(p),
               child: SizedBox(
                 width: 60,
                 child: Column(
                   children: [
-                    Avatar(name: p.name, radius: 24),
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Avatar(name: p.name, radius: 24),
+                        if (pinned)
+                          const Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: CircleAvatar(
+                              radius: 9,
+                              backgroundColor: Color(0xFFF59E0B),
+                              child:
+                                  Icon(Icons.star, size: 12, color: Colors.white),
+                            ),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 6),
                     Text(p.name.split(' ').first,
                         maxLines: 1,
