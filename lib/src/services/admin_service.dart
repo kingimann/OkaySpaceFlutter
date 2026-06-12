@@ -208,5 +208,7 @@ class AdminService {
   // --- Integrations -------------------------------------------------------
 
   Future<dynamic> integrations({bool? live, String? only}) =>
-      _client.getJson('/admin/integrations', query: {'live': live, 'only': only});
+      // The backend validates `live` as an integer (0/1), not a bool string.
+      _client.getJson('/admin/integrations',
+          query: {'live': live == null ? null : (live ? 1 : 0), 'only': only});
 }

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -116,6 +117,10 @@ class _MapScreenState extends State<MapScreen> {
   // Top/bottom chrome auto-hides (animated, via the global bars controller)
   // while the user pans or zooms the map.
   Timer? _chromeTimer;
+
+  // The last search result: a visible pin + result card with directions.
+  LatLng? _searchPin;
+  String? _searchLabel;
 
   // Multi-stop route (waypoints) + straight-line directions target.
   bool _routing = false;
@@ -354,8 +359,15 @@ class _MapScreenState extends State<MapScreen> {
       showInfo(context, 'Could not locate that place.');
       return;
     }
-    setState(() => _center = LatLng(dLat, dLng));
-    _controller.move(_center, 12);
+    setState(() {
+      _center = LatLng(dLat, dLng);
+      _searchPin = _center;
+      _searchLabel =
+          '${r['name'] ?? r['full_address'] ?? r['display_name'] ?? 'Result'}';
+    });
+    // Addresses deserve a street-level zoom; a bare camera move with no pin
+    // looked like the search did nothing.
+    _controller.move(_center, 15);
     _loadAll();
   }
 
@@ -1419,6 +1431,17 @@ class _MapScreenState extends State<MapScreen> {
                 label: pl.title),
     ];
 
+    if (_searchPin != null) {
+      markers.add(Marker(
+        point: _searchPin!,
+        width: 40,
+        height: 40,
+        alignment: Alignment.topCenter,
+        child: const Icon(Icons.location_pin,
+            color: Color(0xFFEF4444), size: 40),
+      ));
+    }
+
     final shownMarkers = _clusterMarkers(markers);
     final radiusMetres = _radiusKm * 1000;
 
@@ -1700,6 +1723,44 @@ class _MapScreenState extends State<MapScreen> {
                       : () => setState(_areaPoints.clear)),
             ),
 
+          // Search result card: name + real directions hand-off.
+          if (_searchPin != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: widget.embedded ? 90 : 100,
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.place, color: Color(0xFFEF4444)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(_searchLabel ?? 'Search result',
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.directions_outlined, size: 18),
+                        label: const Text('Directions'),
+                        onPressed: () => launchUrl(
+                          Uri.parse(
+                              'https://www.google.com/maps/dir/?api=1&destination=${_searchPin!.latitude},${_searchPin!.longitude}'),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => setState(() {
+                          _searchPin = null;
+                          _searchLabel = null;
+                        }),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
