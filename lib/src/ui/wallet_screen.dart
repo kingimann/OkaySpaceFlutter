@@ -191,7 +191,11 @@ List<Map<String, dynamic>> _moneyList(dynamic data) {
 
 /// Wallet: balance, earnings, transactions, money requests and transfers.
 class WalletScreen extends StatefulWidget {
-  const WalletScreen({super.key});
+  const WalletScreen({super.key, this.embedded = false});
+
+  /// True when hosted inside the home shell, whose floating bottom nav pill
+  /// overlays the body — the FAB is lifted above it.
+  final bool embedded;
 
   @override
   State<WalletScreen> createState() => _WalletScreenState();
@@ -386,12 +390,16 @@ class _WalletScreenState extends State<WalletScreen> {
             children: [_overview(), _requestsTab(), _transfersTab()],
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          backgroundColor: _venmoBlue,
-          foregroundColor: Colors.white,
-          onPressed: _payOrRequest,
-          label: const Text('Pay or Request',
-              style: TextStyle(fontWeight: FontWeight.bold)),
+        floatingActionButton: Padding(
+          // Clear the home shell's floating nav pill when embedded.
+          padding: EdgeInsets.only(bottom: widget.embedded ? 76 : 0),
+          child: FloatingActionButton.extended(
+            backgroundColor: _venmoBlue,
+            foregroundColor: Colors.white,
+            onPressed: _payOrRequest,
+            label: const Text('Pay or Request',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ),
       ),
     );
