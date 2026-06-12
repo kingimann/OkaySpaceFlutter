@@ -137,67 +137,154 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
+  /// Selected bottom-nav tab: Home / Requests / Transfers / Me.
+  int _tab = 0;
+  late final Future<User> _meUser = api.auth.me();
+
+  /// A nav icon carrying a count badge of items matching [needsAction].
+  Widget _badgedIcon(IconData icon,
+      Future<List<Map<String, dynamic>>> future,
+      bool Function(Map<String, dynamic>) needsAction) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        final count = (snapshot.data ?? const []).where(needsAction).length;
+        if (count == 0) return Icon(icon);
+        return Badge.count(count: count, child: Icon(icon));
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: OkayAppBar(
-          title: const Text('Wallet'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.qr_code),
-              tooltip: 'Pay by QR',
-              onPressed: () => _push(const PayQrScreen()),
-            ),
-            PopupMenuButton<String>(
-              onSelected: (v) {
-                if (v == 'cashout') _push(const CashOutScreen());
-                if (v == 'currency') _changeCurrency();
-                if (v == 'security') _security();
-                if (v == 'topups') _push(const TopUpHistoryScreen());
-                if (v == 'insights') _push(const WalletInsightsScreen());
-                if (v == 'history') _push(const TransferHistoryScreen());
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'insights', child: Text('Insights')),
-                PopupMenuItem(value: 'cashout', child: Text('Cash out')),
-                PopupMenuItem(value: 'currency', child: Text('Change currency')),
-                PopupMenuItem(value: 'security', child: Text('Transfer security')),
-                PopupMenuItem(value: 'topups', child: Text('Top-up history')),
-                PopupMenuItem(
-                    value: 'history', child: Text('Transfer history')),
-              ],
-            ),
-          ],
-          bottom: TabBar(
-            tabs: [
-              const Tab(text: 'Overview'),
-              _countedTab('Requests', _requests,
+    return Scaffold(
+      appBar: OkayAppBar(
+          title: Text(const ['Wallet', 'Requests', 'Transfers', 'Me'][_tab])),
+      body: MaxWidth(
+        child: switch (_tab) {
+          1 => _requestsTab(),
+          2 => _transfersTab(),
+          3 => _meTab(),
+          _ => _overview(),
+        },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _venmoBlue,
+        foregroundColor: Colors.white,
+        onPressed: _payOrRequest,
+        label: const Text('Pay or Request',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        indicatorColor: _venmoBlue.withValues(alpha: 0.18),
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: [
+          const NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'Home'),
+          NavigationDestination(
+              icon: _badgedIcon(Icons.request_quote_outlined, _requests,
                   (m) => m['_incoming'] == true),
-              _countedTab(
-                  'Transfers',
+              label: 'Requests'),
+          NavigationDestination(
+              icon: _badgedIcon(
+                  Icons.swap_horiz,
                   _transfers,
                   (m) =>
                       m['_incoming'] == true &&
                       _pick(m, ['status'], 'pending').toLowerCase() ==
                           'pending'),
-            ],
-          ),
-        ),
-        body: MaxWidth(
-          child: TabBarView(
-            children: [_overview(), _requestsTab(), _transfersTab()],
-          ),
-        ),
-        floatingActionButton: FloatingActionButton.extended(
-          backgroundColor: _venmoBlue,
-          foregroundColor: Colors.white,
-          onPressed: _payOrRequest,
-          label: const Text('Pay or Request',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-        ),
+              label: 'Transfers'),
+          const NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Me'),
+        ],
       ),
+    );
+  }
+
+  /// Venmo-style Me tab: profile header with the pay QR shortcut, then the
+  /// wallet's settings and tools (previously hidden in the overflow menu).
+  Widget _meTab() {
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        FutureBuilder<User>(
+          future: _meUser,
+          builder: (context, snap) {
+            final u = snap.data;
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+              child: Row(
+                children: [
+                  Avatar(url: u?.picture, name: u?.name ?? '?', radius: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(u?.name ?? '…',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 17)),
+                        if (u != null)
+                          Text(u.handle,
+                              style: TextStyle(
+                                  color: scheme.outline, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.qr_code, color: _venmoBlue),
+                    tooltip: 'My pay QR',
+                    onPressed: () => _push(const PayQrScreen()),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        for (final (icon, label, onTap) in <(IconData, String, VoidCallback)>[
+          (Icons.qr_code, 'My pay QR', () => _push(const PayQrScreen())),
+          (
+            Icons.insights_outlined,
+            'Insights',
+            () => _push(const WalletInsightsScreen())
+          ),
+          (
+            Icons.payments_outlined,
+            'Cash out',
+            () => _push(const CashOutScreen())
+          ),
+          (
+            Icons.add_card_outlined,
+            'Top-up history',
+            () => _push(const TopUpHistoryScreen())
+          ),
+          (
+            Icons.history,
+            'Transfer history',
+            () => _push(const TransferHistoryScreen())
+          ),
+          (Icons.currency_exchange, 'Change currency', _changeCurrency),
+          (Icons.lock_outline, 'Transfer security', _security),
+        ])
+          ListTile(
+            leading: Icon(icon, color: _venmoBlue),
+            title: Text(label),
+            trailing: Icon(Icons.chevron_right, color: scheme.outline),
+            onTap: onTap,
+          ),
+      ],
     );
   }
 
@@ -414,26 +501,6 @@ class _WalletScreenState extends State<WalletScreen> {
       case 'qr':
         await _push(const PayQrScreen());
     }
-  }
-
-  /// A tab whose label carries a count badge of items matching [needsAction].
-  Widget _countedTab(String label, Future<List<Map<String, dynamic>>> future,
-      bool Function(Map<String, dynamic>) needsAction) {
-    return Tab(
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: future,
-        builder: (context, snapshot) {
-          final count =
-              (snapshot.data ?? const []).where(needsAction).length;
-          if (count == 0) return Text(label);
-          return Badge.count(
-            count: count,
-            offset: const Offset(14, -4),
-            child: Text(label),
-          );
-        },
-      ),
-    );
   }
 
   /// People the user has sent money to recently (unique, newest first).
