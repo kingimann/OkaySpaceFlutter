@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../core/cloudinary_api.dart';
 import 'common.dart';
 
 /// Manage the user's business storefront: create, edit, or close it.
@@ -101,11 +102,14 @@ class _BusinessScreenState extends State<BusinessScreen> {
         'policies': _policies.text.trim(),
       };
       if (_newLogo != null) {
-        patch['logo'] = 'data:image/jpeg;base64,${base64Encode(_newLogo!)}';
+        patch['logo'] =
+            await cloudinaryUploadImage(_newLogo!, folder: 'business') ??
+                'data:image/jpeg;base64,${base64Encode(_newLogo!)}';
       }
       if (_newBanner != null) {
         patch['banner'] =
-            'data:image/jpeg;base64,${base64Encode(_newBanner!)}';
+            await cloudinaryUploadImage(_newBanner!, folder: 'business') ??
+                'data:image/jpeg;base64,${base64Encode(_newBanner!)}';
       }
       await api.marketplace.upsertBusiness(patch);
       if (mounted) {

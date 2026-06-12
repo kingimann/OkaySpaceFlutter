@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../okayspace_api.dart';
 import '../core/mapbox_api.dart';
+import '../core/cloudinary_api.dart';
 import 'common.dart';
 
 /// Compose and publish a new post with optional photo attachments.
@@ -414,10 +415,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
   Future<void> _post() async {
     setState(() => _posting = true);
     try {
-      final media = _photos
-          .map((b) => PostMedia(type: 'image', base64: base64Encode(b)))
-          .toList();
-
+      // Validate the poll before any uploads start.
       PollCreate? poll;
       if (_poll) {
         final opts = _options
@@ -433,6 +431,15 @@ class _ComposeScreenState extends State<ComposeScreen> {
           options: opts.map(PollOptionCreate.new).toList(),
           endsAt: DateTime.now().add(_duration),
         );
+      }
+
+      // Host photos on Cloudinary when configured; inline base64 otherwise.
+      final media = <PostMedia>[];
+      for (final b in _photos) {
+        final url = await cloudinaryUploadImage(b, folder: 'posts');
+        media.add(url != null
+            ? PostMedia(type: 'image', url: url)
+            : PostMedia(type: 'image', base64: base64Encode(b)));
       }
 
       await api.feed.createPost(PostCreate(

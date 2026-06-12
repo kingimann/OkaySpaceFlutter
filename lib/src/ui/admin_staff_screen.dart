@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
 
 import 'admin_settings_screen.dart';
+import '../core/cloudinary_api.dart';
 import 'common.dart';
 
 List<Map<String, dynamic>> _asMapList(dynamic data, [String? key]) {
@@ -730,7 +731,8 @@ class _AdminRoadsideCallFormScreenState
         if (_photos.isNotEmpty)
           'photos': [
             for (final b in _photos)
-              'data:image/jpeg;base64,${base64Encode(b)}',
+              await cloudinaryUploadImage(b, folder: 'roadside') ??
+                  'data:image/jpeg;base64,${base64Encode(b)}',
           ],
         'is_test': widget.isTest,
       });

@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../okayspace_api.dart';
 import '../core/device_location.dart';
 import '../core/mapbox_api.dart';
+import '../core/cloudinary_api.dart';
 import 'common.dart';
 
 const _services = <(String, String, IconData)>[
@@ -1231,7 +1232,8 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
         photos: [
           for (final b in _photos)
-            'data:image/jpeg;base64,${base64Encode(b)}',
+            await cloudinaryUploadImage(b, folder: 'roadside') ??
+                'data:image/jpeg;base64,${base64Encode(b)}',
         ],
         destName: _service == 'tow' ? _dropName : null,
         destLatitude: _service == 'tow' ? _dropLat : null,

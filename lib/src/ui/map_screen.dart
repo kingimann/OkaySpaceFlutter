@@ -510,7 +510,7 @@ class _MapScreenState extends State<MapScreen> {
               }
               setSheet(() => busy = true);
               try {
-                final r = await geocodePlaces(q);
+                final r = await geocodePlaces(q, near: _center);
                 if (!c.mounted) return;
                 _addRecent(q);
                 if (r.isEmpty) {
@@ -711,7 +711,7 @@ class _MapScreenState extends State<MapScreen> {
     try {
       double? dLat, dLng;
       String destName = destQuery;
-      final places = await geocodePlaces(destQuery);
+      final places = await geocodePlaces(destQuery, near: _center);
       if (places.isNotEmpty) {
         final r = places.first;
         destName = '${r['name'] ?? r['display_name'] ?? destQuery}';
