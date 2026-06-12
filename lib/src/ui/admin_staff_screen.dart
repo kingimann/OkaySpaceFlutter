@@ -443,6 +443,35 @@ class _AdminSupportScreenState extends State<AdminSupportScreen> {
   String _filter = 'open';
   late Future<List<Map<String, dynamic>>> _tickets = _fetch();
 
+  /// Selected ticket ids while in bulk-select mode (long-press to start).
+  final Set<String> _selected = {};
+  bool _bulkBusy = false;
+
+  Future<void> _bulkSetStatus(String status) async {
+    final ids = _selected.toList();
+    setState(() => _bulkBusy = true);
+    var done = 0;
+    try {
+      for (final id in ids) {
+        await api.support.setStatus(id, status);
+        done++;
+      }
+      if (mounted) showInfo(context, 'Marked $done $status');
+    } catch (e) {
+      if (mounted) {
+        showError(context, done > 0 ? '$done of ${ids.length} updated — $e' : e);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _bulkBusy = false;
+          _selected.clear();
+        });
+        _reload();
+      }
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _fetch() => api.admin
       .supportTickets(status: _filter == 'all' ? null : _filter)
       .then(_asMapList);
@@ -473,7 +502,30 @@ class _AdminSupportScreenState extends State<AdminSupportScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: const OkayAppBar(title: Text('Support queue')),
+      appBar: OkayAppBar(
+        title: Text(_selected.isEmpty
+            ? 'Support queue'
+            : '${_selected.length} selected'),
+        actions: [
+          if (_selected.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.task_alt),
+              tooltip: 'Mark resolved',
+              onPressed: _bulkBusy ? null : () => _bulkSetStatus('resolved'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.archive_outlined),
+              tooltip: 'Mark closed',
+              onPressed: _bulkBusy ? null : () => _bulkSetStatus('closed'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: 'Cancel selection',
+              onPressed: () => setState(_selected.clear),
+            ),
+          ],
+        ],
+      ),
       body: MaxWidth(
         child: Column(
           children: [
@@ -507,9 +559,22 @@ class _AdminSupportScreenState extends State<AdminSupportScreen> {
                   itemBuilder: (context, i) {
                     final t = tickets[i];
                     final status = _s(t, ['status'], 'open');
+                    final id = _s(t, ['id', 'ticket_id']);
                     final when =
                         DateTime.tryParse(_s(t, ['created_at', 'updated_at']));
                     return ListTile(
+                      selected: _selected.contains(id),
+                      leading: _selected.isEmpty
+                          ? null
+                          : Checkbox(
+                              value: _selected.contains(id),
+                              onChanged: (_) => setState(() =>
+                                  _selected.contains(id)
+                                      ? _selected.remove(id)
+                                      : _selected.add(id)),
+                            ),
+                      onLongPress: () =>
+                          setState(() => _selected.add(id)),
                       title: Text(_s(t, ['subject'], 'Ticket'),
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                       subtitle: Text(
@@ -532,7 +597,11 @@ class _AdminSupportScreenState extends State<AdminSupportScreen> {
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold)),
                       ),
-                      onTap: () => _open(t),
+                      onTap: _selected.isEmpty
+                          ? () => _open(t)
+                          : () => setState(() => _selected.contains(id)
+                              ? _selected.remove(id)
+                              : _selected.add(id)),
                     );
                   },
                 ),

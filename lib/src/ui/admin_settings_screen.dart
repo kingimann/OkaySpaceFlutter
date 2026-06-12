@@ -36,7 +36,7 @@ Future<bool> adminConfirm(BuildContext context, String title, String message,
 /// Quick stats strip on the hub: revenue, open tickets, pending roadside
 /// verifications. Each value is best-effort — failures render as '—'.
 class _HubStats extends StatefulWidget {
-  const _HubStats();
+  const _HubStats({super.key});
 
   @override
   State<_HubStats> createState() => _HubStatsState();
@@ -122,13 +122,21 @@ class _HubStatsState extends State<_HubStats> {
 /// Admin settings hub: every staff tool, grouped by area. Admins see all
 /// groups; mods see only the Staff group. The backend enforces roles
 /// server-side regardless of what's shown here.
-class AdminSettingsScreen extends StatelessWidget {
+class AdminSettingsScreen extends StatefulWidget {
   const AdminSettingsScreen({super.key, required this.user});
 
   final User user;
 
-  bool get _isAdmin => user.role == 'admin';
-  bool get _isStaff => _isAdmin || user.role == 'mod';
+  @override
+  State<AdminSettingsScreen> createState() => _AdminSettingsScreenState();
+}
+
+class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
+  /// Bumped on pull-to-refresh to re-create the stats strip.
+  int _statsGen = 0;
+
+  bool get _isAdmin => widget.user.role == 'admin';
+  bool get _isStaff => _isAdmin || widget.user.role == 'mod';
 
   @override
   Widget build(BuildContext context) {
@@ -171,10 +179,13 @@ class AdminSettingsScreen extends StatelessWidget {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Admin settings')),
       body: MaxWidth(
-        child: ListView(
+        child: RefreshIndicator(
+          onRefresh: () async => setState(() => _statsGen++),
+          child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
             if (_isAdmin) ...[
-              const _HubStats(),
+              _HubStats(key: ValueKey(_statsGen)),
               group('Moderation', [
                 (
                   Icons.manage_accounts_outlined,
@@ -246,6 +257,7 @@ class AdminSettingsScreen extends StatelessWidget {
             ]),
             const SizedBox(height: 24),
           ],
+        ),
         ),
       ),
     );
