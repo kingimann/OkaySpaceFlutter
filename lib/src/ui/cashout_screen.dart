@@ -295,6 +295,28 @@ class _CashOutScreenState extends State<CashOutScreen> {
                           onTap: _busy ? null : _setup,
                         ),
                       ),
+                      // Debit cards (instant payouts) are added in the Stripe
+                      // Express dashboard; connect.stripe.com/express_login
+                      // works for every connected account, no backend needed.
+                      Card(
+                        child: ListTile(
+                          leading: Icon(Icons.credit_card_outlined,
+                              color: scheme.primary),
+                          title: const Text('Add a debit card'),
+                          subtitle: const Text(
+                              'Instant payouts — sign in to your Stripe '
+                              'Express dashboard to add one'),
+                          trailing: Icon(Icons.open_in_new,
+                              size: 18, color: scheme.outline),
+                          onTap: _busy
+                              ? null
+                              : () => launchUrl(
+                                    Uri.parse(
+                                        'https://connect.stripe.com/express_login'),
+                                    mode: LaunchMode.externalApplication,
+                                  ),
+                        ),
+                      ),
                       const SizedBox(height: 16),
                       const Text('Amount to cash out',
                           style: TextStyle(fontWeight: FontWeight.w600)),
