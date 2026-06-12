@@ -61,6 +61,9 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
   /// Nearby search radius, adjustable from the Nearby tab.
   double _radiusKm = 50;
 
+  /// Nearby presentation: list or map.
+  bool _nearbyMap = false;
+
   late Future<List<RoadsideRequest>> _mine;
   late Future<dynamic> _active;
   late Future<List<RoadsideRequest>> _nearby;
@@ -240,12 +243,81 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
                     }),
                   ),
                 ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(_nearbyMap ? Icons.view_list : Icons.map_outlined,
+                    size: 20),
+                visualDensity: VisualDensity.compact,
+                tooltip: _nearbyMap ? 'List view' : 'Map view',
+                onPressed: () => setState(() => _nearbyMap = !_nearbyMap),
+              ),
             ],
           ),
         ),
         Expanded(
-            child: _list(_nearby, 'No open requests nearby right now.')),
+          child: _nearbyMap
+              ? _nearbyMapView()
+              : _list(_nearby, 'No open requests nearby right now.'),
+        ),
       ],
+    );
+  }
+
+  /// Nearby requests as pins on a map; tapping a pin opens the request.
+  Widget _nearbyMapView() {
+    return FutureBuilder<List<RoadsideRequest>>(
+      future: _nearby,
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final items = snap.data!;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: FlutterMap(
+              options: const MapOptions(
+                initialCenter: LatLng(_lat, _lng),
+                initialZoom: 10,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'ca.okayspace.app',
+                ),
+                MarkerLayer(markers: [
+                  for (final r in items)
+                    Marker(
+                      point: LatLng(r.latitude, r.longitude),
+                      width: 44,
+                      height: 44,
+                      child: GestureDetector(
+                        onTap: () => _open(r),
+                        child: Column(children: [
+                          Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: _statusColor(r.status),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: Colors.white, width: 1.5),
+                            ),
+                            child: Icon(_serviceIcon(r.service),
+                                size: 16, color: Colors.white),
+                          ),
+                          const Icon(Icons.arrow_drop_down,
+                              size: 16, color: Colors.black54),
+                        ]),
+                      ),
+                    ),
+                ]),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
