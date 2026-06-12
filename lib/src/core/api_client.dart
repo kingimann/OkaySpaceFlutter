@@ -50,8 +50,9 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, dynamic>? query,
+    Map<String, String>? headers,
   }) =>
-      _send('POST', path, body: body, query: query);
+      _send('POST', path, body: body, query: query, extraHeaders: headers);
 
   Future<dynamic> patchJson(
     String path, {
@@ -79,11 +80,13 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, dynamic>? query,
+    Map<String, String>? extraHeaders,
   }) async {
     final encoded = body == null ? null : jsonEncode(body);
     final headers = <String, String>{
       'Accept': 'application/json',
       if (encoded != null) 'Content-Type': 'application/json',
+      ...?extraHeaders,
     };
     final token = await tokenStore.read();
     if (token != null && token.isNotEmpty) {
