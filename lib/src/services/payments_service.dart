@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../core/api_client.dart';
 import '../models/json.dart';
 
@@ -16,6 +18,21 @@ class PaymentsService {
   /// Public payment configuration (e.g. Stripe publishable key).
   Future<Map<String, dynamic>> config() async =>
       _map(await _client.getJson('/payments/config'));
+
+  /// Feature discovery: which rails/components/kinds this backend supports
+  /// (stripe_rails, instant_payouts, checkout_kinds, embedded_components…).
+  Future<Map<String, dynamic>> capabilities() async =>
+      _map(await _client.getJson('/capabilities'));
+
+  /// A fresh idempotency key: one per logical money operation, so a
+  /// timed-out retry can never double-move funds.
+  static String newIdempotencyKey() {
+    final r = Random.secure();
+    return [
+      for (var i = 0; i < 16; i++)
+        r.nextInt(256).toRadixString(16).padLeft(2, '0')
+    ].join();
+  }
 
   /// Starts a hosted checkout session and returns its URL/id.
   Future<Map<String, dynamic>> checkout(Map<String, dynamic> body) async =>
@@ -91,24 +108,35 @@ class PaymentsService {
   Future<dynamic> stripeTransactions() =>
       _client.getJson('/stripe/transactions');
 
-  /// Sends money to another user over Stripe.
+  /// Sends money to another user over Stripe. A fresh idempotency key is
+  /// minted per call so transport retries can't double-send.
   Future<Map<String, dynamic>> stripeTransfer({
     required String toUserId,
     required num amount,
     String? note,
+    String? idempotencyKey,
   }) async =>
-      _map(await _client.postJson('/stripe/transfer', body: {
-        'to_user_id': toUserId,
-        'amount': amount,
-        if (note != null) 'note': note,
-      }));
+      _map(await _client.postJson('/stripe/transfer',
+          body: {
+            'to_user_id': toUserId,
+            'amount': amount,
+            if (note != null) 'note': note,
+          },
+          headers: {
+            'Idempotency-Key': idempotencyKey ?? newIdempotencyKey()
+          }));
 
   /// Pays out to the user's bank/debit card. [instant] uses Stripe Instant
   /// Payouts (debit card required; Stripe charges its instant fee).
   Future<Map<String, dynamic>> stripePayout(
-          {required num amount, bool instant = false}) async =>
+          {required num amount,
+          bool instant = false,
+          String? idempotencyKey}) async =>
       _map(await _client.postJson('/stripe/payout',
-          body: {'amount': amount, 'instant': instant}));
+          body: {'amount': amount, 'instant': instant},
+          headers: {
+            'Idempotency-Key': idempotencyKey ?? newIdempotencyKey()
+          }));
 
   // --- Developer API billing ----------------------------------------------
 

@@ -179,7 +179,20 @@ class _CashOutScreenState extends State<CashOutScreen> {
         _min = cfg['cashout_min'] is num ? cfg['cashout_min'] as num : _min;
       });
     } catch (_) {/* keep defaults */}
+    // Feature discovery: hide the Instant toggle on backends without
+    // Stripe Instant Payouts (stays visible if the probe fails).
+    try {
+      final caps = await api.payments.capabilities();
+      if (mounted && caps['instant_payouts'] == false) {
+        setState(() {
+          _instantAllowed = false;
+          _instant = false;
+        });
+      }
+    } catch (_) {/* capabilities endpoint optional */}
   }
+
+  bool _instantAllowed = true;
 
   num? get _entered => num.tryParse(_amount.text.trim());
 
@@ -423,17 +436,18 @@ class _CashOutScreenState extends State<CashOutScreen> {
                         ),
                       ],
                       const SizedBox(height: 8),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Instant to debit card'),
-                        subtitle: const Text(
-                            'Minutes instead of 1–2 business days '
-                            '(Stripe instant fee applies)'),
-                        value: _instant,
-                        onChanged: _busy
-                            ? null
-                            : (v) => setState(() => _instant = v),
-                      ),
+                      if (_instantAllowed)
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Instant to debit card'),
+                          subtitle: const Text(
+                              'Minutes instead of 1–2 business days '
+                              '(Stripe instant fee applies)'),
+                          value: _instant,
+                          onChanged: _busy
+                              ? null
+                              : (v) => setState(() => _instant = v),
+                        ),
                       const SizedBox(height: 8),
                       FilledButton.icon(
                         onPressed: _busy ? null : _cashout,
