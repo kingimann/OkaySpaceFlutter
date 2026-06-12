@@ -161,6 +161,13 @@ class _CashOutScreenState extends State<CashOutScreen> {
       showInfo(context, 'That\'s more than your available balance.');
       return;
     }
+    // The backend config doesn't guarantee fee < min; never let a cash-out
+    // through where the fee eats the whole amount.
+    if (amount <= _fee) {
+      showInfo(context,
+          'Amount must be more than the $_symbol${_fee.toStringAsFixed(2)} fee.');
+      return;
+    }
     setState(() => _busy = true);
     try {
       await api.payments.cashout({'amount': amount});
@@ -305,6 +312,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
                               ? 'More than your available balance'
                               : null,
                           helperText: (_entered ?? 0) >= _min &&
+                                  (_entered ?? 0) > _fee &&
                                   !_overAvailable
                               ? "You'll receive "
                                   '$_symbol${(_entered! - _fee).toStringAsFixed(2)} '
