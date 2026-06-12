@@ -214,6 +214,10 @@ class _WalletScreenState extends State<WalletScreen> {
   /// Recent-activity direction filter: 'all' | 'in' | 'out'.
   String _txnFilter = 'all';
 
+  /// Free-text transaction search; non-null while the search field is open.
+  final _txnSearch = TextEditingController();
+  bool _searching = false;
+
   /// Pinned quick-send favorites (persisted on-device), shown first.
   static const _favoritesKey = 'okayspace.wallet_favorites';
   static const _favStorage = FlutterSecureStorage();
@@ -224,6 +228,12 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     _load();
     _loadFavorites();
+  }
+
+  @override
+  void dispose() {
+    _txnSearch.dispose();
+    super.dispose();
   }
 
   void _load() {
@@ -433,10 +443,15 @@ class _WalletScreenState extends State<WalletScreen> {
           }
           final w = snapshot.data!;
           final scheme = Theme.of(context).colorScheme;
+          final query = _searching ? _txnSearch.text.trim().toLowerCase() : '';
+          bool matches(WalletTxn t) =>
+              query.isEmpty ||
+              [t.counterpartyName, t.note, t.type]
+                  .any((s) => s != null && s.toLowerCase().contains(query));
           final txns = switch (_txnFilter) {
-            'in' => w.recent.where((t) => t.amount >= 0).toList(),
-            'out' => w.recent.where((t) => t.amount < 0).toList(),
-            _ => w.recent,
+            'in' => w.recent.where((t) => t.amount >= 0 && matches(t)).toList(),
+            'out' => w.recent.where((t) => t.amount < 0 && matches(t)).toList(),
+            _ => w.recent.where(matches).toList(),
           };
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -484,6 +499,16 @@ class _WalletScreenState extends State<WalletScreen> {
                             .titleMedium
                             ?.copyWith(fontWeight: FontWeight.bold)),
                   ),
+                  IconButton(
+                    icon: Icon(_searching ? Icons.search_off : Icons.search,
+                        size: 20),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: _searching ? 'Close search' : 'Search activity',
+                    onPressed: () => setState(() {
+                      _searching = !_searching;
+                      if (!_searching) _txnSearch.clear();
+                    }),
+                  ),
                   for (final (id, label) in const [
                     ('all', 'All'),
                     ('in', 'In'),
@@ -500,14 +525,32 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                 ],
               ),
+              if (_searching)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: TextField(
+                    controller: _txnSearch,
+                    autofocus: true,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Search by name, note, or type',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 4),
               if (txns.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 32),
                   child: Center(
-                      child: Text(_txnFilter == 'all'
-                          ? 'No transactions yet.'
-                          : 'Nothing ${_txnFilter == 'in' ? 'incoming' : 'outgoing'} yet.')),
+                      child: Text(query.isNotEmpty
+                          ? 'No matches for "${_txnSearch.text.trim()}".'
+                          : _txnFilter == 'all'
+                              ? 'No transactions yet.'
+                              : 'Nothing ${_txnFilter == 'in' ? 'incoming' : 'outgoing'} yet.')),
                 )
               else
                 // Venmo-style: transactions grouped under month headers.
