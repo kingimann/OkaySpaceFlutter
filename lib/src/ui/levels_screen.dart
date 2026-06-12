@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import '../core/points_ledger.dart';
 import 'common.dart';
 import 'gamification.dart';
+import 'points_breakdown_screen.dart';
 
 /// Points & Levels: current standing, progress to the next level, the tier
 /// ladder, and how points are earned.
@@ -75,7 +77,49 @@ class LevelsScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          // Live entry into the per-activity points breakdown.
+          AnimatedBuilder(
+            animation: pointsLedger,
+            builder: (context, _) {
+              final online = pointsLedger.onlinePointsToday;
+              return Material(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const PointsBreakdownScreen())),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.insights, color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text("What's earning you points",
+                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                              Text(
+                                  online > 0
+                                      ? '+$online from online time today · tap to see the breakdown'
+                                      : 'See which activities earn you the most',
+                                  style: TextStyle(
+                                      color: scheme.outline, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: scheme.outline),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
           if (next != null)
             Text('Next tier: ${next.name} at level ${next.minLevel}',
                 style: TextStyle(color: scheme.outline)),

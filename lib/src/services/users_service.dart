@@ -1,4 +1,5 @@
 import '../core/api_client.dart';
+import '../core/points_ledger.dart';
 import '../models/json.dart';
 import '../models/post.dart';
 import '../models/public_user.dart';
@@ -57,6 +58,7 @@ class UsersService {
   /// Toggles following a user.
   Future<void> follow(String userId) async {
     await _client.postJson('/users/$userId/follow');
+    pointsLedger.award('social', PointsLedger.socialPoints);
   }
 
   /// Pokes a user.

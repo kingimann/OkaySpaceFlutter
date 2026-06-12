@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../core/points_ledger.dart';
 import 'app_drawer.dart';
 import 'common.dart';
 import 'communities_screen.dart';
@@ -26,9 +29,12 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late String _currentId = navController.value.first;
   final Set<String> _visited = {};
+
+  // Banks foreground time as points (small, daily-capped) while signed in.
+  Timer? _onlineTimer;
 
   @override
   void initState() {
@@ -37,13 +43,31 @@ class _HomeShellState extends State<HomeShell> {
     _visited.add(_currentId);
     homeTabSignal.addListener(_onTabSignal);
     navController.addListener(_onNavChanged);
+    // Start banking online-time points.
+    WidgetsBinding.instance.addObserver(this);
+    pointsLedger.noteActive();
+    _onlineTimer =
+        Timer.periodic(const Duration(seconds: 60), (_) => pointsLedger.accrue());
   }
 
   @override
   void dispose() {
     homeTabSignal.removeListener(_onTabSignal);
     navController.removeListener(_onNavChanged);
+    _onlineTimer?.cancel();
+    pointsLedger.noteInactive();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      pointsLedger.noteActive();
+    } else {
+      // Bank whatever foreground time accrued, then pause counting.
+      pointsLedger.noteInactive();
+    }
   }
 
   void _onTabSignal() {

@@ -14,20 +14,37 @@ class PointsTier {
   final Color color;
 }
 
-/// The named tier ladder, Newcomer → Mythic, keyed by the level the tier
+/// The named tier ladder, Newcomer → Celestial, keyed by the level the tier
 /// begins at. The backend's per-user `level_title` stays authoritative for the
-/// current label; this ladder powers the progression view.
+/// current label; this ladder powers the progression view. Tiers must stay in
+/// ascending `minLevel` order — `tierForLevel`/`nextTierAfter` rely on it.
 const kPointsTiers = <PointsTier>[
   PointsTier('Newcomer', 1, Icons.spa_outlined, Color(0xFF9CA3AF)),
-  PointsTier('Explorer', 2, Icons.explore_outlined, Color(0xFF22C55E)),
-  PointsTier('Contributor', 5, Icons.volunteer_activism_outlined,
+  PointsTier('Rookie', 2, Icons.emoji_nature_outlined, Color(0xFF84CC16)),
+  PointsTier('Explorer', 3, Icons.explore_outlined, Color(0xFF22C55E)),
+  PointsTier('Wanderer', 5, Icons.hiking_outlined, Color(0xFF10B981)),
+  PointsTier('Scout', 7, Icons.travel_explore_outlined, Color(0xFF14B8A6)),
+  PointsTier('Contributor', 10, Icons.volunteer_activism_outlined,
       Color(0xFF06B6D4)),
-  PointsTier('Regular', 10, Icons.local_fire_department, Color(0xFF3B82F6)),
-  PointsTier('Veteran', 20, Icons.military_tech_outlined, Color(0xFF8B5CF6)),
-  PointsTier('Expert', 35, Icons.workspace_premium_outlined, Color(0xFFD946EF)),
-  PointsTier('Master', 50, Icons.stars_outlined, Color(0xFFF59E0B)),
-  PointsTier('Legend', 75, Icons.auto_awesome, Color(0xFFEF4444)),
-  PointsTier('Mythic', 100, Icons.diamond_outlined, Color(0xFF14B8A6)),
+  PointsTier('Regular', 14, Icons.local_fire_department, Color(0xFF0EA5E9)),
+  PointsTier('Enthusiast', 18, Icons.bolt_outlined, Color(0xFF3B82F6)),
+  PointsTier('Trailblazer', 23, Icons.flag_outlined, Color(0xFF6366F1)),
+  PointsTier('Veteran', 28, Icons.military_tech_outlined, Color(0xFF8B5CF6)),
+  PointsTier('Specialist', 34, Icons.tune_outlined, Color(0xFFA855F7)),
+  PointsTier('Expert', 40, Icons.workspace_premium_outlined, Color(0xFFD946EF)),
+  PointsTier('Virtuoso', 47, Icons.piano_outlined, Color(0xFFEC4899)),
+  PointsTier('Master', 55, Icons.stars_outlined, Color(0xFFF59E0B)),
+  PointsTier('Grandmaster', 64, Icons.shield_moon_outlined, Color(0xFFF97316)),
+  PointsTier('Champion', 74, Icons.emoji_events_outlined, Color(0xFFFB923C)),
+  PointsTier('Hero', 85, Icons.shield_outlined, Color(0xFFEF4444)),
+  PointsTier('Legend', 97, Icons.auto_awesome, Color(0xFFDC2626)),
+  PointsTier('Icon', 110, Icons.star_outline, Color(0xFFBE123C)),
+  PointsTier('Mythic', 125, Icons.diamond_outlined, Color(0xFF14B8A6)),
+  PointsTier('Immortal', 145, Icons.all_inclusive_outlined, Color(0xFF0D9488)),
+  PointsTier('Ascendant', 170, Icons.rocket_launch_outlined, Color(0xFF6D28D9)),
+  PointsTier('Transcendent', 200, Icons.brightness_7_outlined,
+      Color(0xFF7C3AED)),
+  PointsTier('Celestial', 250, Icons.public_outlined, Color(0xFFEAB308)),
 ];
 
 /// The tier a given level falls into.
@@ -151,16 +168,53 @@ final kAchievements = <Achievement>[
   Achievement('level_50', 'Mastery', 'Reached level 50',
       Icons.workspace_premium_outlined, _gold, (s) => s.level >= 50,
       progress: (s) => _frac(s.level, 50)),
-  Achievement('mythic', 'Mythic', 'Reached level 100',
-      Icons.diamond_outlined, const Color(0xFF14B8A6), (s) => s.level >= 100,
-      progress: (s) => _frac(s.level, 100)),
+  Achievement('champion', 'Champion', 'Reached level 75',
+      Icons.emoji_events_outlined, _gold, (s) => s.level >= 75,
+      progress: (s) => _frac(s.level, 75)),
+  Achievement('mythic', 'Mythic', 'Reached level 125',
+      Icons.diamond_outlined, const Color(0xFF14B8A6), (s) => s.level >= 125,
+      progress: (s) => _frac(s.level, 125)),
+  Achievement('immortal', 'Immortal', 'Reached level 145',
+      Icons.all_inclusive_outlined, const Color(0xFF0D9488),
+      (s) => s.level >= 145, progress: (s) => _frac(s.level, 145)),
+  Achievement('celestial', 'Celestial', 'Reached level 250',
+      Icons.public_outlined, _gold, (s) => s.level >= 250,
+      progress: (s) => _frac(s.level, 250)),
 ];
+
+/// Display metadata for a locally-tracked point source (keyed by the id used
+/// in [PointsLedger.bySource]).
+class PointSource {
+  const PointSource(this.id, this.label, this.icon, this.color);
+  final String id;
+  final String label;
+  final IconData icon;
+  final Color color;
+}
+
+/// Known point sources, in a sensible display order. Unknown ids fall back to
+/// a generic "Activity" row in the breakdown.
+const kPointSources = <PointSource>[
+  PointSource('online', 'Online time', Icons.schedule_outlined, _cyan),
+  PointSource('posts', 'Posts & replies', Icons.post_add_outlined, _blue),
+  PointSource('reactions', 'Reactions', Icons.favorite_border, _rose),
+  PointSource('social', 'Connections', Icons.people_outline, _green),
+];
+
+/// Looks up display metadata for a source id.
+PointSource pointSourceFor(String id) => kPointSources.firstWhere(
+      (s) => s.id == id,
+      orElse: () => PointSource(id,
+          id.isEmpty ? 'Activity' : '${id[0].toUpperCase()}${id.substring(1)}',
+          Icons.bolt_outlined, _violet),
+    );
 
 /// How points are earned (display-only guidance).
 const kPointWays = <(IconData, String, String)>[
   (Icons.post_add_outlined, 'Post & reply', 'Share posts and join threads'),
   (Icons.favorite_border, 'Get reactions', 'Likes and reposts on your posts'),
   (Icons.people_outline, 'Grow your circle', 'Followers and friends'),
+  (Icons.schedule_outlined, 'Spend time here', 'A little for being online each day'),
   (Icons.local_fire_department_outlined, 'Stay active', 'Daily activity streaks'),
   (Icons.verified_outlined, 'Verify', 'Verify your email, phone & ID'),
 ];

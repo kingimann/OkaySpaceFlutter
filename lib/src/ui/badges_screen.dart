@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -12,6 +13,91 @@ class BadgesScreen extends StatelessWidget {
   final User user;
   final Map<String, dynamic> stats;
 
+  /// Badge detail popup: criterion, earned/progress, and a share action.
+  void _showBadge(
+      BuildContext context, Achievement a, bool isEarned, GamificationStats s) {
+    final scheme = Theme.of(context).colorScheme;
+    final prog = a.progress != null ? a.progress!(s) : null;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: (isEarned ? a.color : scheme.outlineVariant)
+                      .withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(a.icon,
+                    size: 40,
+                    color: isEarned ? a.color : scheme.outlineVariant),
+              ),
+              const SizedBox(height: 12),
+              Text(a.name,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 18)),
+              const SizedBox(height: 4),
+              Text(a.description,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: scheme.outline)),
+              const SizedBox(height: 16),
+              if (isEarned)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: a.color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.check_circle, size: 16, color: a.color),
+                    const SizedBox(width: 6),
+                    Text('Earned',
+                        style: TextStyle(
+                            color: a.color, fontWeight: FontWeight.bold)),
+                  ]),
+                )
+              else if (prog != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: prog,
+                    minHeight: 8,
+                    backgroundColor: scheme.surfaceContainerHighest,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text('${(prog * 100).round()}% there',
+                    style: TextStyle(color: scheme.outline, fontSize: 12)),
+              ] else
+                Text('Locked', style: TextStyle(color: scheme.outline)),
+              const SizedBox(height: 16),
+              if (isEarned)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.ios_share, size: 18),
+                  label: const Text('Share'),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(
+                        text:
+                            'I earned the “${a.name}” badge on OkaySpace! 🏅 ${a.description}.'));
+                    Navigator.pop(context);
+                    showInfo(context, 'Badge copied to share');
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -23,7 +109,9 @@ class BadgesScreen extends StatelessWidget {
     Widget tile(Achievement a, bool isEarned) {
       final color = isEarned ? a.color : scheme.outlineVariant;
       final prog = !isEarned && a.progress != null ? a.progress!(s) : null;
-      return Container(
+      return GestureDetector(
+        onTap: () => _showBadge(context, a, isEarned, s),
+        child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isEarned
@@ -74,6 +162,7 @@ class BadgesScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 10.5, color: scheme.outline)),
           ],
         ),
+      ),
       );
     }
 
