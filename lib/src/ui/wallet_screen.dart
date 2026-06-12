@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../okayspace_api.dart';
 import 'cashout_screen.dart';
@@ -10,6 +11,9 @@ import 'wallet_insights_screen.dart';
 
 String _money(num amount, String currency) =>
     '$currency ${amount.toStringAsFixed(2)}';
+
+/// Venmo's signature blue, used for the primary payment actions.
+const _venmoBlue = Color(0xFF008CFF);
 
 /// Reads the first non-empty string from [keys] in [m].
 String _pick(Map<String, dynamic> m, List<String> keys, [String fallback = '']) {
@@ -133,53 +137,154 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
+  /// Selected bottom-nav tab: Home / Requests / Transfers / Me.
+  int _tab = 0;
+  late final Future<User> _meUser = api.auth.me();
+
+  /// A nav icon carrying a count badge of items matching [needsAction].
+  Widget _badgedIcon(IconData icon,
+      Future<List<Map<String, dynamic>>> future,
+      bool Function(Map<String, dynamic>) needsAction) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        final count = (snapshot.data ?? const []).where(needsAction).length;
+        if (count == 0) return Icon(icon);
+        return Badge.count(count: count, child: Icon(icon));
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: OkayAppBar(
-          title: const Text('Wallet'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.qr_code),
-              tooltip: 'Pay by QR',
-              onPressed: () => _push(const PayQrScreen()),
-            ),
-            PopupMenuButton<String>(
-              onSelected: (v) {
-                if (v == 'cashout') _push(const CashOutScreen());
-                if (v == 'currency') _changeCurrency();
-                if (v == 'security') _security();
-                if (v == 'topups') _push(const TopUpHistoryScreen());
-                if (v == 'insights') _push(const WalletInsightsScreen());
-                if (v == 'history') _push(const TransferHistoryScreen());
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'insights', child: Text('Insights')),
-                PopupMenuItem(value: 'cashout', child: Text('Cash out')),
-                PopupMenuItem(value: 'currency', child: Text('Change currency')),
-                PopupMenuItem(value: 'security', child: Text('Transfer security')),
-                PopupMenuItem(value: 'topups', child: Text('Top-up history')),
-                PopupMenuItem(
-                    value: 'history', child: Text('Transfer history')),
-              ],
-            ),
-          ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Overview'),
-              Tab(text: 'Requests'),
-              Tab(text: 'Transfers'),
-            ],
-          ),
-        ),
-        body: MaxWidth(
-          child: TabBarView(
-            children: [_overview(), _requestsTab(), _transfersTab()],
-          ),
-        ),
+    return Scaffold(
+      appBar: OkayAppBar(
+          title: Text(const ['Wallet', 'Requests', 'Transfers', 'Me'][_tab])),
+      body: MaxWidth(
+        child: switch (_tab) {
+          1 => _requestsTab(),
+          2 => _transfersTab(),
+          3 => _meTab(),
+          _ => _overview(),
+        },
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _venmoBlue,
+        foregroundColor: Colors.white,
+        onPressed: _payOrRequest,
+        label: const Text('Pay or Request',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        indicatorColor: _venmoBlue.withValues(alpha: 0.18),
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: [
+          const NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'Home'),
+          NavigationDestination(
+              icon: _badgedIcon(Icons.request_quote_outlined, _requests,
+                  (m) => m['_incoming'] == true),
+              label: 'Requests'),
+          NavigationDestination(
+              icon: _badgedIcon(
+                  Icons.swap_horiz,
+                  _transfers,
+                  (m) =>
+                      m['_incoming'] == true &&
+                      _pick(m, ['status'], 'pending').toLowerCase() ==
+                          'pending'),
+              label: 'Transfers'),
+          const NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Me'),
+        ],
+      ),
+    );
+  }
+
+  /// Venmo-style Me tab: profile header with the pay QR shortcut, then the
+  /// wallet's settings and tools (previously hidden in the overflow menu).
+  Widget _meTab() {
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        FutureBuilder<User>(
+          future: _meUser,
+          builder: (context, snap) {
+            final u = snap.data;
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+              child: Row(
+                children: [
+                  Avatar(url: u?.picture, name: u?.name ?? '?', radius: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(u?.name ?? '…',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 17)),
+                        if (u != null)
+                          Text(u.handle,
+                              style: TextStyle(
+                                  color: scheme.outline, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.qr_code, color: _venmoBlue),
+                    tooltip: 'My pay QR',
+                    onPressed: () => _push(const PayQrScreen()),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        for (final (icon, label, onTap) in <(IconData, String, VoidCallback)>[
+          (Icons.qr_code, 'My pay QR', () => _push(const PayQrScreen())),
+          (
+            Icons.insights_outlined,
+            'Insights',
+            () => _push(const WalletInsightsScreen())
+          ),
+          (
+            Icons.payments_outlined,
+            'Cash out',
+            () => _push(const CashOutScreen())
+          ),
+          (
+            Icons.add_card_outlined,
+            'Top-up history',
+            () => _push(const TopUpHistoryScreen())
+          ),
+          (
+            Icons.history,
+            'Transfer history',
+            () => _push(const TransferHistoryScreen())
+          ),
+          (Icons.currency_exchange, 'Change currency', _changeCurrency),
+          (Icons.lock_outline, 'Transfer security', _security),
+        ])
+          ListTile(
+            leading: Icon(icon, color: _venmoBlue),
+            title: Text(label),
+            trailing: Icon(Icons.chevron_right, color: scheme.outline),
+            onTap: onTap,
+          ),
+      ],
     );
   }
 
@@ -232,6 +337,8 @@ class _WalletScreenState extends State<WalletScreen> {
                           color: const Color(0xFFF43F5E))),
                 ],
               ),
+              const SizedBox(height: 16),
+              _BudgetCard(summary: w, hideAmounts: _hideBalance),
               if (w.tipsTotal > 0 ||
                   w.subsTotal > 0 ||
                   w.adsTotal > 0 ||
@@ -284,36 +391,24 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
+  /// Venmo-style balance header: flat bordered card, big amount, and
+  /// Add money / Cash out side by side.
   Widget _balanceCard(WalletSummary w, ColorScheme scheme) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [scheme.primary, darken(scheme.primary, 0.22)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.primary.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.account_balance_wallet,
-                  color: Colors.white.withValues(alpha: 0.9), size: 20),
-              const SizedBox(width: 8),
               Expanded(
-                child: Text('Available balance',
-                    style:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.85))),
+                child: Text('Wallet balance',
+                    style: TextStyle(color: scheme.outline, fontSize: 13)),
               ),
               InkWell(
                 onTap: () => setState(() => _hideBalance = !_hideBalance),
@@ -324,36 +419,88 @@ class _WalletScreenState extends State<WalletScreen> {
                       _hideBalance
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: scheme.outline,
                       size: 20),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
           Text(_hideBalance ? '••••••' : _money(w.balance, w.currency),
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
+              style:
+                  const TextStyle(fontSize: 34, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
           Row(
             children: [
-              _action('Add', Icons.add, () => _push(const AddMoneyScreen())),
+              Expanded(
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: _venmoBlue,
+                      foregroundColor: Colors.white),
+                  onPressed: () => _push(const AddMoneyScreen()),
+                  child: const Text('Add money'),
+                ),
+              ),
               const SizedBox(width: 10),
-              _action('Send', Icons.arrow_upward,
-                  () => _push(const SendMoneyScreen())),
-              const SizedBox(width: 10),
-              _action('Request', Icons.arrow_downward,
-                  () => _push(const RequestMoneyScreen())),
-              const SizedBox(width: 10),
-              _action('Split', Icons.call_split,
-                  () => _push(const SplitBillScreen())),
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: _venmoBlue,
+                      side: const BorderSide(color: _venmoBlue)),
+                  onPressed: () => _push(const CashOutScreen()),
+                  child: const Text('Cash out'),
+                ),
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  /// The Venmo-signature primary action: one button for pay/request/split/QR.
+  Future<void> _payOrRequest() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (id, icon, title, sub) in const [
+              ('pay', Icons.arrow_upward, 'Pay', 'Send money to someone'),
+              ('request', Icons.arrow_downward, 'Request',
+                  'Ask someone to pay you'),
+              ('split', Icons.call_split, 'Split a bill',
+                  'Divide a total across friends'),
+              ('qr', Icons.qr_code, 'Scan or show QR',
+                  'Pay or get paid in person'),
+            ])
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _venmoBlue,
+                  child: Icon(icon, color: Colors.white),
+                ),
+                title: Text(title,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(sub),
+                onTap: () => Navigator.pop(sheetContext, id),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'pay':
+        await _push(const SendMoneyScreen());
+      case 'request':
+        await _push(const RequestMoneyScreen());
+      case 'split':
+        await _push(const SplitBillScreen());
+      case 'qr':
+        await _push(const PayQrScreen());
+    }
   }
 
   /// People the user has sent money to recently (unique, newest first).
@@ -456,33 +603,6 @@ class _WalletScreenState extends State<WalletScreen> {
             row(Icons.campaign_outlined, const Color(0xFF0EA5E9), 'Ads',
                 w.adsTotal),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _action(String label, IconData icon, VoidCallback onTap) {
-    return Expanded(
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(14),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Column(
-              children: [
-                Icon(icon, color: Colors.white, size: 22),
-                const SizedBox(height: 4),
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
         ),
       ),
     );
@@ -688,6 +808,202 @@ class _RequestTile extends StatelessWidget {
   }
 }
 
+/// A monthly spending budget, kept on-device. Spend-to-date is computed from
+/// this month's outgoing transactions in the wallet summary.
+class _BudgetCard extends StatefulWidget {
+  const _BudgetCard({required this.summary, this.hideAmounts = false});
+
+  final WalletSummary summary;
+  final bool hideAmounts;
+
+  @override
+  State<_BudgetCard> createState() => _BudgetCardState();
+}
+
+class _BudgetCardState extends State<_BudgetCard> {
+  static const _storageKey = 'okayspace.wallet_budget';
+  static const _storage = FlutterSecureStorage();
+  static const _presets = [50, 100, 200, 500, 1000];
+
+  num? _budget;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _storage.read(key: _storageKey).then((v) {
+      if (mounted) {
+        setState(() {
+          _budget = v == null ? null : num.tryParse(v);
+          _loaded = true;
+        });
+      }
+    }).catchError((_) {
+      if (mounted) setState(() => _loaded = true);
+    });
+  }
+
+  Future<void> _save(num? budget) async {
+    setState(() => _budget = budget);
+    try {
+      if (budget == null) {
+        await _storage.delete(key: _storageKey);
+      } else {
+        await _storage.write(key: _storageKey, value: '$budget');
+      }
+    } catch (_) {/* best effort */}
+  }
+
+  num get _monthSpend {
+    final now = DateTime.now();
+    return widget.summary.recent
+        .where((t) =>
+            t.amount < 0 &&
+            t.createdAt != null &&
+            t.createdAt!.year == now.year &&
+            t.createdAt!.month == now.month)
+        .fold<num>(0, (a, t) => a + t.amount.abs());
+  }
+
+  Future<void> _edit() async {
+    final picked = await showModalBottomSheet<num?>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Monthly spending budget',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final p in _presets)
+                    ChoiceChip(
+                      label: Text('$p'),
+                      selected: _budget == p,
+                      onSelected: (_) => Navigator.pop(sheetContext, p),
+                    ),
+                  if (_budget != null)
+                    ActionChip(
+                      avatar: const Icon(Icons.close, size: 16),
+                      label: const Text('Remove budget'),
+                      onPressed: () => Navigator.pop(sheetContext, -1),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await _save(picked == -1 ? null : picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final w = widget.summary;
+    final budget = _budget;
+
+    if (budget == null || budget <= 0) {
+      return Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _edit,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.savings_outlined, color: scheme.primary),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text('Set a monthly spending budget',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                Icon(Icons.chevron_right, color: scheme.outline),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final spent = _monthSpend;
+    final frac = (spent / budget).clamp(0.0, 1.0);
+    final over = spent > budget;
+    final near = !over && spent >= budget * 0.8;
+    final color = over
+        ? scheme.error
+        : near
+            ? const Color(0xFFF59E0B)
+            : scheme.primary;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: over ? Border.all(color: scheme.error) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.savings_outlined, color: color, size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Monthly budget',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              InkWell(
+                onTap: _edit,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.tune, size: 18, color: scheme.outline),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: LinearProgressIndicator(
+              value: frac,
+              minHeight: 8,
+              backgroundColor: scheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.hideAmounts
+                ? '••••'
+                : over
+                    ? '${_money(spent, w.currency)} spent — '
+                        '${_money(spent - budget, w.currency)} over budget'
+                    : '${_money(spent, w.currency)} of '
+                        '${_money(budget, w.currency)} spent this month',
+            style: TextStyle(
+                color: over ? scheme.error : scheme.outline, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatCard extends StatelessWidget {
   const _StatCard(
       {required this.label,
@@ -743,26 +1059,40 @@ class _TxnTile extends StatelessWidget {
     final incoming = txn.amount >= 0;
     final color =
         incoming ? const Color(0xFF22C55E) : Theme.of(context).colorScheme.error;
+    // Venmo-style: person-first title, note + relative time underneath.
+    final who = txn.counterpartyName;
+    final title = who != null
+        ? (incoming ? '$who paid you' : 'You paid $who')
+        : (txn.type ?? 'Transaction');
+    final sub = [
+      if (txn.note != null && txn.note!.isNotEmpty)
+        txn.note!
+      else if (who != null && txn.type != null)
+        txn.type!,
+      if (txn.createdAt != null) shortAgo(txn.createdAt!),
+    ].join(' · ');
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       onTap: () => _showDetails(context),
-      leading: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.14),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(incoming ? Icons.south_west : Icons.north_east,
-            size: 20, color: color),
-      ),
-      title: Text(txn.type ?? 'Transaction',
-          style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(txn.note ?? txn.counterpartyName ?? ''),
+      leading: who != null
+          ? Avatar(name: who, radius: 21)
+          : Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(incoming ? Icons.south_west : Icons.north_east,
+                  size: 20, color: color),
+            ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: sub.isEmpty ? null : Text(sub),
       trailing: Text(
         hideAmount
             ? '••••'
-            : '${incoming ? '+' : '−'}${_money(txn.amount.abs(), txn.currency)}',
+            : '${incoming ? '+' : '−'} ${_money(txn.amount.abs(), txn.currency)}',
         style: TextStyle(
             color: color, fontWeight: FontWeight.bold, fontSize: 15),
       ),
@@ -841,7 +1171,9 @@ class _TxnTile extends StatelessWidget {
                     '${txn.createdAt!.toLocal()}'.split('.').first),
               if (txn.id != null) detail('Reference', txn.id!),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
                 children: [
                   if (txn.id != null)
                     OutlinedButton.icon(
@@ -849,14 +1181,17 @@ class _TxnTile extends StatelessWidget {
                       label: const Text('Copy reference'),
                       onPressed: () => Navigator.pop(sheetContext, 'copy'),
                     ),
-                  if (canResend) ...[
-                    const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                    label: const Text('Share receipt'),
+                    onPressed: () => Navigator.pop(sheetContext, 'receipt'),
+                  ),
+                  if (canResend)
                     FilledButton.icon(
                       icon: const Icon(Icons.send, size: 16),
                       label: const Text('Send again'),
                       onPressed: () => Navigator.pop(sheetContext, 'resend'),
                     ),
-                  ],
                 ],
               ),
             ],
@@ -868,6 +1203,20 @@ class _TxnTile extends StatelessWidget {
     if (action == 'copy' && txn.id != null) {
       await Clipboard.setData(ClipboardData(text: txn.id!));
       if (context.mounted) showInfo(context, 'Reference copied');
+    } else if (action == 'receipt') {
+      final lines = [
+        'OkaySpace receipt',
+        '${txn.type ?? 'Transaction'}: '
+            '${incoming ? '+' : '−'}${_money(txn.amount.abs(), txn.currency)}',
+        if (txn.counterpartyName != null)
+          '${incoming ? 'From' : 'To'}: ${txn.counterpartyName}',
+        if (txn.note != null && txn.note!.isNotEmpty) 'Note: ${txn.note}',
+        if (txn.createdAt != null)
+          'Date: ${'${txn.createdAt!.toLocal()}'.split('.').first}',
+        if (txn.id != null) 'Reference: ${txn.id}',
+      ];
+      await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+      if (context.mounted) showInfo(context, 'Receipt copied to share');
     } else if (action == 'resend' && canResend) {
       final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
         builder: (_) => SendMoneyScreen(
@@ -1203,10 +1552,15 @@ class _SecurityDialogState extends State<_SecurityDialog> {
 /// Send money: search a recipient, then enter amount, note and the security
 /// answer required by the transfer.
 class SendMoneyScreen extends StatefulWidget {
-  const SendMoneyScreen({super.key, this.recipient});
+  const SendMoneyScreen(
+      {super.key, this.recipient, this.initialAmount, this.initialNote});
 
   /// Optional preselected recipient (e.g. from a scanned pay QR).
   final PublicUser? recipient;
+
+  /// Optional amount/note prefill (e.g. embedded in a pay QR).
+  final String? initialAmount;
+  final String? initialNote;
 
   @override
   State<SendMoneyScreen> createState() => _SendMoneyScreenState();
@@ -1214,8 +1568,8 @@ class SendMoneyScreen extends StatefulWidget {
 
 class _SendMoneyScreenState extends State<SendMoneyScreen> {
   final _search = TextEditingController();
-  final _amount = TextEditingController();
-  final _note = TextEditingController();
+  late final _amount = TextEditingController(text: widget.initialAmount);
+  late final _note = TextEditingController(text: widget.initialNote);
   final _answer = TextEditingController();
 
   Future<List<PublicUser>>? _results;
@@ -1549,6 +1903,18 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
                   labelText: 'Amount',
                   prefixIcon: Icon(Icons.attach_money),
                   border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in const [5, 10, 20, 50, 100])
+                  ActionChip(
+                    label: Text('$p'),
+                    onPressed: () => setState(() => _amount.text = '$p'),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
             TextField(

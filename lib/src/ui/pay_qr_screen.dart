@@ -19,11 +19,29 @@ class PayQrScreen extends StatefulWidget {
 
 class _PayQrScreenState extends State<PayQrScreen> {
   late final Future<User> _me = api.auth.me();
+  final _amount = TextEditingController();
+  final _note = TextEditingController();
 
-  String _payload(User u) =>
-      'okayspace://pay?user=${u.userId}&name=${Uri.encodeComponent(u.name)}';
+  @override
+  void dispose() {
+    _amount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
 
-  /// Parses a pay code/link and opens Send Money for that user.
+  /// The QR payload; a requested amount/note ride along when set.
+  String _payload(User u) {
+    final amount = num.tryParse(_amount.text.trim());
+    final note = _note.text.trim();
+    return [
+      'okayspace://pay?user=${u.userId}&name=${Uri.encodeComponent(u.name)}',
+      if (amount != null && amount > 0) '&amount=$amount',
+      if (note.isNotEmpty) '&note=${Uri.encodeComponent(note)}',
+    ].join();
+  }
+
+  /// Parses a pay code/link and opens Send Money for that user, carrying any
+  /// amount/note embedded in the code.
   Future<void> _paySomeone() async {
     final code = await promptText(context,
         title: 'Pay someone',
@@ -31,10 +49,14 @@ class _PayQrScreenState extends State<PayQrScreen> {
         action: 'Continue');
     if (code == null) return;
     String? userId;
+    String? amount;
+    String? note;
     final trimmed = code.trim();
     final uri = Uri.tryParse(trimmed);
     if (uri != null && uri.queryParameters['user'] != null) {
       userId = uri.queryParameters['user'];
+      amount = uri.queryParameters['amount'];
+      note = uri.queryParameters['note'];
     }
     try {
       PublicUser? recipient;
@@ -52,7 +74,10 @@ class _PayQrScreenState extends State<PayQrScreen> {
         return;
       }
       Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => SendMoneyScreen(recipient: recipient)));
+          builder: (_) => SendMoneyScreen(
+              recipient: recipient,
+              initialAmount: amount,
+              initialNote: note)));
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -112,11 +137,45 @@ class _PayQrScreenState extends State<PayQrScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Text('Scan to pay me on OkaySpace',
+                      Text(
+                          num.tryParse(_amount.text.trim()) != null &&
+                                  num.parse(_amount.text.trim()) > 0
+                              ? 'Scan to pay me ${_amount.text.trim()}'
+                              : 'Scan to pay me on OkaySpace',
                           style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.9))),
                     ],
                   ),
+                ),
+                const SizedBox(height: 16),
+                // Optional requested amount/note baked into the QR.
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _amount,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Request amount (optional)',
+                          prefixIcon: Icon(Icons.attach_money),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _note,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Note (optional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(

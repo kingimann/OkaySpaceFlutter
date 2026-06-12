@@ -93,10 +93,22 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
   }
 
+  /// Flat fee charged per cash-out.
+  static const num _fee = 1.99;
+
+  num? get _entered => num.tryParse(_amount.text.trim());
+
+  bool get _overAvailable =>
+      _available > 0 && (_entered ?? 0) > _available;
+
   Future<void> _cashout() async {
-    final amount = num.tryParse(_amount.text.trim());
+    final amount = _entered;
     if (amount == null || amount < 5) {
       showInfo(context, 'Minimum cash-out is \$5.00.');
+      return;
+    }
+    if (_overAvailable) {
+      showInfo(context, 'That\'s more than your available balance.');
       return;
     }
     setState(() => _busy = true);
@@ -213,14 +225,40 @@ class _CashOutScreenState extends State<CashOutScreen> {
                         controller: _amount,
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.attach_money),
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.attach_money),
                           hintText: '0.00',
-                          border: OutlineInputBorder(),
-                          helperText:
-                              '\$5 minimum · \$1.99 flat fee · instant to debit card',
+                          border: const OutlineInputBorder(),
+                          errorText: _overAvailable
+                              ? 'More than your available balance'
+                              : null,
+                          helperText: (_entered ?? 0) >= 5 && !_overAvailable
+                              ? "You'll receive $_currency "
+                                  '${(_entered! - _fee).toStringAsFixed(2)} '
+                                  'after the \$1.99 fee'
+                              : '\$5 minimum · \$1.99 flat fee · instant to debit card',
                         ),
                       ),
+                      if (_available >= 5) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final (label, frac) in const [
+                              ('25%', 0.25),
+                              ('50%', 0.5),
+                              ('Max', 1.0)
+                            ])
+                              ActionChip(
+                                label: Text(label),
+                                onPressed: () => setState(() => _amount.text =
+                                    (_available * frac).toStringAsFixed(2)),
+                              ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       FilledButton.icon(
                         onPressed: _busy ? null : _cashout,
