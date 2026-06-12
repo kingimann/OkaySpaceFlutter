@@ -619,7 +619,10 @@ class _WalletScreenState extends State<WalletScreen> {
             ],
           ),
           const SizedBox(height: 4),
-          Text(_hideBalance ? '••••••' : _money(w.balance, w.currency),
+          Text(
+              _hideBalance
+                  ? '••••••'
+                  : '\$${w.balance.toStringAsFixed(2)}',
               style:
                   const TextStyle(fontSize: 34, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
