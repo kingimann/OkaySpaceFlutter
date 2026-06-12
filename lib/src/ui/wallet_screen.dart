@@ -214,7 +214,8 @@ class WalletScreen extends StatefulWidget {
   State<WalletScreen> createState() => _WalletScreenState();
 }
 
-class _WalletScreenState extends State<WalletScreen> {
+class _WalletScreenState extends State<WalletScreen>
+    with WidgetsBindingObserver {
   late Future<WalletSummary> _summary;
   late Future<List<Map<String, dynamic>>> _requests;
   late Future<List<Map<String, dynamic>>> _transfers;
@@ -248,10 +249,24 @@ class _WalletScreenState extends State<WalletScreen> {
         setState(() => _pinLocked = true);
       }
     });
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Re-engage the PIN lock whenever the app leaves the foreground.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.paused) return;
+    walletLock.enabled.then((enabled) {
+      if (enabled && mounted) {
+        walletLock.relock();
+        setState(() => _pinLocked = true);
+      }
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _txnSearch.dispose();
     super.dispose();
   }
