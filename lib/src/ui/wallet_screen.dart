@@ -1222,6 +1222,25 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   late PublicUser? _recipient = widget.recipient;
   bool _busy = false;
 
+  /// Available balance, fetched for the overdraft hint (null while loading).
+  num? _balance;
+  String _currency = 'USD';
+
+  static const _presets = [5, 10, 20, 50, 100];
+
+  @override
+  void initState() {
+    super.initState();
+    api.wallet.summary().then((w) {
+      if (mounted) {
+        setState(() {
+          _balance = w.balance;
+          _currency = w.currency;
+        });
+      }
+    }).catchError((_) {});
+  }
+
   @override
   void dispose() {
     _search.dispose();
@@ -1237,10 +1256,19 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     setState(() => _results = api.users.search(q));
   }
 
+  bool get _overBalance {
+    final amount = num.tryParse(_amount.text.trim());
+    return _balance != null && amount != null && amount > _balance!;
+  }
+
   Future<void> _send() async {
     final amount = num.tryParse(_amount.text.trim());
     if (_recipient == null || amount == null || amount <= 0) {
       showInfo(context, 'Pick a recipient and a valid amount.');
+      return;
+    }
+    if (_overBalance) {
+      showInfo(context, 'That\'s more than your available balance.');
       return;
     }
     setState(() => _busy = true);
@@ -1333,10 +1361,35 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
               controller: _amount,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
                   labelText: 'Amount',
-                  prefixIcon: Icon(Icons.attach_money),
-                  border: OutlineInputBorder()),
+                  prefixIcon: const Icon(Icons.attach_money),
+                  helperText: _balance != null
+                      ? 'Available: ${_money(_balance!, _currency)}'
+                      : null,
+                  errorText: _overBalance
+                      ? 'More than your available balance'
+                      : null,
+                  border: const OutlineInputBorder()),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in _presets)
+                  ActionChip(
+                    label: Text('$p'),
+                    onPressed: () => setState(() => _amount.text = '$p'),
+                  ),
+                if (_balance != null && _balance! > 0)
+                  ActionChip(
+                    label: const Text('Max'),
+                    onPressed: () => setState(
+                        () => _amount.text = _balance!.toStringAsFixed(2)),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
             TextField(
