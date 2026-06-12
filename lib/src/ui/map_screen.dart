@@ -447,16 +447,23 @@ class _MapScreenState extends State<MapScreen> {
     _loadAll();
   }
 
-  /// Fetches a driving route (OSRM) through [points] and draws it with a
-  /// distance/time summary.
+  /// Fetches a driving route through [points] and draws it with a
+  /// distance/time summary. Uses Mapbox Directions (live traffic) when the
+  /// token is configured, falling back to the public OSRM server.
   Future<void> _fetchDriveRoute(List<LatLng> points) async {
     if (points.length < 2) return;
     try {
       final coordsParam =
           points.map((p) => '${p.longitude},${p.latitude}').join(';');
       final res = await Dio().get<Map<String, dynamic>>(
-        'https://router.project-osrm.org/route/v1/driving/$coordsParam',
-        queryParameters: {'overview': 'full', 'geometries': 'geojson'},
+        _hasMapbox
+            ? 'https://api.mapbox.com/directions/v5/mapbox/driving-traffic/$coordsParam'
+            : 'https://router.project-osrm.org/route/v1/driving/$coordsParam',
+        queryParameters: {
+          'overview': 'full',
+          'geometries': 'geojson',
+          if (_hasMapbox) 'access_token': _mapboxToken,
+        },
       );
       final routes = res.data?['routes'];
       if (routes is! List || routes.isEmpty) {
@@ -474,7 +481,8 @@ class _MapScreenState extends State<MapScreen> {
           for (final c in coords)
             LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
         ];
-        _routeSummary = '${km.toStringAsFixed(1)} km · ~$mins min drive';
+        _routeSummary = '${km.toStringAsFixed(1)} km · ~$mins min drive'
+            '${_hasMapbox ? ' (live traffic)' : ''}';
       });
     } catch (e) {
       if (mounted) showError(context, e);
