@@ -68,7 +68,8 @@ class PointsLedger extends ChangeNotifier {
   final Map<String, int> _bySource = {};
   // Recent point events, newest last (kept ≤ _maxEvents).
   final List<PointEvent> _events = [];
-  // Points earned per day (day key → total), kept ~2 weeks for the recap.
+  // Points earned per day (day key → total), kept ~6 weeks for the weekly
+  // recap and monthly heatmap.
   final Map<String, int> _dailyTotals = {};
   // Daily points goal and a one-shot flag set when today's goal is reached.
   int _dailyGoal = 20;
@@ -89,6 +90,16 @@ class PointsLedger extends ChangeNotifier {
   // flag set when one was just spent.
   int _streakFreezes = 0;
   bool _pendingFreezeUsed = false;
+
+  // All-time personal records (persisted): the best single day, the largest
+  // single credit, distinct days with any points, and lifetime claim counts.
+  int _bestDayPoints = 0;
+  String _bestDayDate = '';
+  int _biggestGain = 0;
+  String _biggestGainSource = '';
+  int _daysActive = 0;
+  int _questsClaimedTotal = 0;
+  int _challengesClaimedTotal = 0;
 
   // Highest backend level seen on this device (-1 = not yet known), used to
   // detect a level-up and celebrate it once.
@@ -128,17 +139,28 @@ class PointsLedger extends ChangeNotifier {
     if (_events.length > _maxEvents) {
       _events.removeRange(0, _events.length - _maxEvents);
     }
-    // Per-day totals for the weekly recap (kept ~2 weeks, day keys sort
-    // chronologically because they're zero-padded yyyy-mm-dd).
+    // Per-day totals for the recaps (day keys sort chronologically because
+    // they're zero-padded yyyy-mm-dd).
     final today = _today;
     final before = _dailyTotals[today] ?? 0;
     _dailyTotals[today] = before + amount;
     if (before < _dailyGoal && before + amount >= _dailyGoal) {
       _pendingGoalReached = true;
     }
-    if (_dailyTotals.length > 16) {
+    // All-time records.
+    if (before == 0) _daysActive += 1;
+    if (before + amount > _bestDayPoints) {
+      _bestDayPoints = before + amount;
+      _bestDayDate = today;
+    }
+    if (amount > _biggestGain) {
+      _biggestGain = amount;
+      _biggestGainSource = source;
+    }
+    // Kept ~6 weeks so the monthly heatmap always has a full month.
+    if (_dailyTotals.length > 42) {
       final keys = _dailyTotals.keys.toList()..sort();
-      for (final k in keys.take(_dailyTotals.length - 16)) {
+      for (final k in keys.take(_dailyTotals.length - 42)) {
         _dailyTotals.remove(k);
       }
     }
@@ -162,6 +184,9 @@ class PointsLedger extends ChangeNotifier {
 
   /// Points earned so far today.
   int get pointsToday => _dailyTotals[_today] ?? 0;
+
+  /// Points earned on [day] (0 if none tracked or outside retention).
+  int pointsOn(DateTime day) => _dailyTotals[_dayKey(day)] ?? 0;
 
   /// The user's daily points goal.
   int get dailyGoal => _dailyGoal;
@@ -277,9 +302,27 @@ class PointsLedger extends ChangeNotifier {
     _rolloverIfNeeded();
     if (_claimedQuests.contains(questId) || reward <= 0) return false;
     _claimedQuests.add(questId);
+    _questsClaimedTotal += 1;
     award('quests', reward);
     return true;
   }
+
+  /// All-time personal records, tracked on this device.
+  int get bestDayPoints => _bestDayPoints;
+
+  /// The day [bestDayPoints] was earned (yyyy-mm-dd), or '' if none yet.
+  String get bestDayDate => _bestDayDate;
+
+  /// The largest single credit ever recorded, and its source.
+  int get biggestGain => _biggestGain;
+  String get biggestGainSource => _biggestGainSource;
+
+  /// Distinct days on which any points were earned.
+  int get daysActive => _daysActive;
+
+  /// Lifetime counts of claimed daily quests and weekly challenges.
+  int get questsClaimedTotal => _questsClaimedTotal;
+  int get challengesClaimedTotal => _challengesClaimedTotal;
 
   /// How many times [source] was awarded since Monday.
   int actionsThisWeek(String source) {
@@ -323,6 +366,7 @@ class PointsLedger extends ChangeNotifier {
     _rolloverIfNeeded();
     if (_claimedChallenges.contains(challengeId) || reward <= 0) return false;
     _claimedChallenges.add(challengeId);
+    _challengesClaimedTotal += 1;
     award('challenges', reward);
     return true;
   }
@@ -442,6 +486,14 @@ class PointsLedger extends ChangeNotifier {
           if (cc is List) {
             _claimedChallenges.addAll(cc.whereType<String>());
           }
+          _bestDayPoints = (m['bestDayPoints'] as num?)?.toInt() ?? 0;
+          _bestDayDate = (m['bestDayDate'] as String?) ?? '';
+          _biggestGain = (m['biggestGain'] as num?)?.toInt() ?? 0;
+          _biggestGainSource = (m['biggestGainSource'] as String?) ?? '';
+          _daysActive = (m['daysActive'] as num?)?.toInt() ?? 0;
+          _questsClaimedTotal = (m['questsClaimed'] as num?)?.toInt() ?? 0;
+          _challengesClaimedTotal =
+              (m['challengesClaimed'] as num?)?.toInt() ?? 0;
           final dt = m['dailyTotals'];
           if (dt is Map) {
             dt.forEach((k, v) {
@@ -464,6 +516,18 @@ class PointsLedger extends ChangeNotifier {
         }
       }
     } catch (_) {/* start fresh */}
+    // Seed records from existing history the first time this version runs.
+    if (_daysActive == 0) {
+      _daysActive = _dailyTotals.values.where((v) => v > 0).length;
+    }
+    if (_bestDayPoints == 0) {
+      _dailyTotals.forEach((day, pts) {
+        if (pts > _bestDayPoints) {
+          _bestDayPoints = pts;
+          _bestDayDate = day;
+        }
+      });
+    }
     _rolloverIfNeeded();
     _loaded = true;
     _touchStreak(); // count this session's day once persisted state is known
@@ -491,6 +555,13 @@ class PointsLedger extends ChangeNotifier {
           'challengeWeek': _challengeWeek,
           'weekActions': _weekActions,
           'claimedChallenges': _claimedChallenges.toList(),
+          'bestDayPoints': _bestDayPoints,
+          'bestDayDate': _bestDayDate,
+          'biggestGain': _biggestGain,
+          'biggestGainSource': _biggestGainSource,
+          'daysActive': _daysActive,
+          'questsClaimed': _questsClaimedTotal,
+          'challengesClaimed': _challengesClaimedTotal,
           'dailyTotals': _dailyTotals,
           'dailyGoal': _dailyGoal,
           'events': [
