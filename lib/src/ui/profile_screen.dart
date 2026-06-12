@@ -18,6 +18,7 @@ import 'friends_screen.dart';
 import 'hashtag_screen.dart';
 import 'level_up.dart';
 import 'linked_text.dart';
+import 'wallet_screen.dart';
 import 'leaderboard_screen.dart';
 import 'levels_screen.dart';
 import 'messages_screen.dart';
@@ -770,6 +771,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onPressed: _message,
                     icon: const Icon(Icons.chat_bubble_outline),
                     label: const Text('Message'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF008CFF),
+                        foregroundColor: Colors.white),
+                    onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => SendMoneyScreen(recipient: u))),
+                    icon: const Icon(Icons.attach_money, size: 18),
+                    label: const Text('Pay'),
                   ),
                 ),
               ],
