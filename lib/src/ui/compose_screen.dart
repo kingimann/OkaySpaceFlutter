@@ -127,6 +127,131 @@ class _ComposeScreenState extends State<ComposeScreen> {
     _storage.delete(key: _draftKey).ignore();
   }
 
+  // --- Saved drafts (multiple, user-managed) -------------------------------
+  static const _draftsKey = 'okayspace.post_drafts';
+
+  Future<List<Map<String, dynamic>>> _readDrafts() async {
+    try {
+      final raw = await _storage.read(key: _draftsKey);
+      final list = raw == null ? null : jsonDecode(raw);
+      if (list is List) {
+        return list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> _writeDrafts(List<Map<String, dynamic>> drafts) async {
+    try {
+      await _storage.write(
+          key: _draftsKey, value: jsonEncode(drafts.take(20).toList()));
+    } catch (_) {/* best effort */}
+  }
+
+  Future<void> _saveAsDraft() async {
+    final t = _text.text.trim();
+    if (t.isEmpty) return;
+    final drafts = await _readDrafts();
+    drafts.insert(0, {'t': t, 'at': DateTime.now().millisecondsSinceEpoch});
+    await _writeDrafts(drafts);
+    if (mounted) {
+      _text.clear();
+      _clearDraft();
+      setState(() {});
+      showInfo(context, 'Saved to drafts');
+    }
+  }
+
+  Future<void> _openDrafts() async {
+    final drafts = await _readDrafts();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheet) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text('Drafts',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                trailing: _text.text.trim().isEmpty
+                    ? null
+                    : TextButton.icon(
+                        icon: const Icon(Icons.save_outlined, size: 18),
+                        label: const Text('Save current'),
+                        onPressed: () async {
+                          Navigator.pop(sheetContext);
+                          await _saveAsDraft();
+                        },
+                      ),
+              ),
+              if (drafts.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No drafts yet.'),
+                )
+              else
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final d in drafts)
+                        ListTile(
+                          title: Text('${d['t']}',
+                              maxLines: 2, overflow: TextOverflow.ellipsis),
+                          subtitle: d['at'] is num
+                              ? Text(shortAgo(
+                                  DateTime.fromMillisecondsSinceEpoch(
+                                      (d['at'] as num).toInt())))
+                              : null,
+                          trailing: IconButton(
+                            icon: Icon(Icons.delete_outline,
+                                size: 20,
+                                color: Theme.of(sheetContext)
+                                    .colorScheme
+                                    .error),
+                            onPressed: () async {
+                              drafts.remove(d);
+                              await _writeDrafts(drafts);
+                              setSheet(() {});
+                            },
+                          ),
+                          onTap: () async {
+                            // Loading replaces the buffer; keep the current
+                            // text safe by saving it as a draft first.
+                            final current = _text.text.trim();
+                            Navigator.pop(sheetContext);
+                            if (current.isNotEmpty && current != d['t']) {
+                              final keep = await _readDrafts();
+                              keep.insert(0, {
+                                't': current,
+                                'at': DateTime.now().millisecondsSinceEpoch
+                              });
+                              await _writeDrafts(keep);
+                            }
+                            drafts.remove(d);
+                            await _writeDrafts(drafts);
+                            if (mounted) {
+                              setState(() => _text.text = '${d['t']}');
+                            }
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _draftTimer?.cancel();
@@ -334,6 +459,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
       appBar: OkayAppBar(
         title: const Text('New post'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.drafts_outlined),
+            tooltip: 'Drafts',
+            onPressed: _openDrafts,
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: FilledButton(
