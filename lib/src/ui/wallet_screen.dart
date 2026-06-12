@@ -12,6 +12,9 @@ import 'wallet_insights_screen.dart';
 String _money(num amount, String currency) =>
     '$currency ${amount.toStringAsFixed(2)}';
 
+/// Venmo's signature blue, used for the primary payment actions.
+const _venmoBlue = Color(0xFF008CFF);
+
 /// Reads the first non-empty string from [keys] in [m].
 String _pick(Map<String, dynamic> m, List<String> keys, [String fallback = '']) {
   for (final k in keys) {
@@ -187,6 +190,13 @@ class _WalletScreenState extends State<WalletScreen> {
             children: [_overview(), _requestsTab(), _transfersTab()],
           ),
         ),
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: _venmoBlue,
+          foregroundColor: Colors.white,
+          onPressed: _payOrRequest,
+          label: const Text('Pay or Request',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
       ),
     );
   }
@@ -294,36 +304,24 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
+  /// Venmo-style balance header: flat bordered card, big amount, and
+  /// Add money / Cash out side by side.
   Widget _balanceCard(WalletSummary w, ColorScheme scheme) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [scheme.primary, darken(scheme.primary, 0.22)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.primary.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.account_balance_wallet,
-                  color: Colors.white.withValues(alpha: 0.9), size: 20),
-              const SizedBox(width: 8),
               Expanded(
-                child: Text('Available balance',
-                    style:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.85))),
+                child: Text('Wallet balance',
+                    style: TextStyle(color: scheme.outline, fontSize: 13)),
               ),
               InkWell(
                 onTap: () => setState(() => _hideBalance = !_hideBalance),
@@ -334,36 +332,88 @@ class _WalletScreenState extends State<WalletScreen> {
                       _hideBalance
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: scheme.outline,
                       size: 20),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
           Text(_hideBalance ? '••••••' : _money(w.balance, w.currency),
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
+              style:
+                  const TextStyle(fontSize: 34, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
           Row(
             children: [
-              _action('Add', Icons.add, () => _push(const AddMoneyScreen())),
+              Expanded(
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: _venmoBlue,
+                      foregroundColor: Colors.white),
+                  onPressed: () => _push(const AddMoneyScreen()),
+                  child: const Text('Add money'),
+                ),
+              ),
               const SizedBox(width: 10),
-              _action('Send', Icons.arrow_upward,
-                  () => _push(const SendMoneyScreen())),
-              const SizedBox(width: 10),
-              _action('Request', Icons.arrow_downward,
-                  () => _push(const RequestMoneyScreen())),
-              const SizedBox(width: 10),
-              _action('Split', Icons.call_split,
-                  () => _push(const SplitBillScreen())),
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: _venmoBlue,
+                      side: const BorderSide(color: _venmoBlue)),
+                  onPressed: () => _push(const CashOutScreen()),
+                  child: const Text('Cash out'),
+                ),
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  /// The Venmo-signature primary action: one button for pay/request/split/QR.
+  Future<void> _payOrRequest() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (id, icon, title, sub) in const [
+              ('pay', Icons.arrow_upward, 'Pay', 'Send money to someone'),
+              ('request', Icons.arrow_downward, 'Request',
+                  'Ask someone to pay you'),
+              ('split', Icons.call_split, 'Split a bill',
+                  'Divide a total across friends'),
+              ('qr', Icons.qr_code, 'Scan or show QR',
+                  'Pay or get paid in person'),
+            ])
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _venmoBlue,
+                  child: Icon(icon, color: Colors.white),
+                ),
+                title: Text(title,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(sub),
+                onTap: () => Navigator.pop(sheetContext, id),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'pay':
+        await _push(const SendMoneyScreen());
+      case 'request':
+        await _push(const RequestMoneyScreen());
+      case 'split':
+        await _push(const SplitBillScreen());
+      case 'qr':
+        await _push(const PayQrScreen());
+    }
   }
 
   /// A tab whose label carries a count badge of items matching [needsAction].
@@ -486,33 +536,6 @@ class _WalletScreenState extends State<WalletScreen> {
             row(Icons.campaign_outlined, const Color(0xFF0EA5E9), 'Ads',
                 w.adsTotal),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _action(String label, IconData icon, VoidCallback onTap) {
-    return Expanded(
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(14),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Column(
-              children: [
-                Icon(icon, color: Colors.white, size: 22),
-                const SizedBox(height: 4),
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
         ),
       ),
     );
@@ -969,26 +992,40 @@ class _TxnTile extends StatelessWidget {
     final incoming = txn.amount >= 0;
     final color =
         incoming ? const Color(0xFF22C55E) : Theme.of(context).colorScheme.error;
+    // Venmo-style: person-first title, note + relative time underneath.
+    final who = txn.counterpartyName;
+    final title = who != null
+        ? (incoming ? '$who paid you' : 'You paid $who')
+        : (txn.type ?? 'Transaction');
+    final sub = [
+      if (txn.note != null && txn.note!.isNotEmpty)
+        txn.note!
+      else if (who != null && txn.type != null)
+        txn.type!,
+      if (txn.createdAt != null) shortAgo(txn.createdAt!),
+    ].join(' · ');
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       onTap: () => _showDetails(context),
-      leading: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.14),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(incoming ? Icons.south_west : Icons.north_east,
-            size: 20, color: color),
-      ),
-      title: Text(txn.type ?? 'Transaction',
-          style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(txn.note ?? txn.counterpartyName ?? ''),
+      leading: who != null
+          ? Avatar(name: who, radius: 21)
+          : Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(incoming ? Icons.south_west : Icons.north_east,
+                  size: 20, color: color),
+            ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: sub.isEmpty ? null : Text(sub),
       trailing: Text(
         hideAmount
             ? '••••'
-            : '${incoming ? '+' : '−'}${_money(txn.amount.abs(), txn.currency)}',
+            : '${incoming ? '+' : '−'} ${_money(txn.amount.abs(), txn.currency)}',
         style: TextStyle(
             color: color, fontWeight: FontWeight.bold, fontSize: 15),
       ),
