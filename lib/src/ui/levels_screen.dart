@@ -8,6 +8,7 @@ import 'daily_quests_screen.dart';
 import 'gamification.dart';
 import 'points_breakdown_screen.dart';
 import 'profile_decor.dart';
+import 'records_screen.dart';
 import 'rewards_screen.dart';
 import 'weekly_challenges_screen.dart';
 import 'weekly_recap_screen.dart';
@@ -344,6 +345,49 @@ class LevelsScreen extends StatelessWidget {
                               const Text('Weekly recap',
                                   style: TextStyle(fontWeight: FontWeight.w600)),
                               Text('$week points in the last 7 days',
+                                  style: TextStyle(
+                                      color: scheme.outline, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: scheme.outline),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          // Personal records entry.
+          AnimatedBuilder(
+            animation: pointsLedger,
+            builder: (context, _) {
+              final best = pointsLedger.bestDayPoints;
+              return Material(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const RecordsScreen())),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.emoji_events_outlined,
+                            color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Personal records',
+                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                              Text(
+                                  best > 0
+                                      ? 'Best day: $best points · see all your bests'
+                                      : 'Your all-time bests, all in one place',
                                   style: TextStyle(
                                       color: scheme.outline, fontSize: 12)),
                             ],
