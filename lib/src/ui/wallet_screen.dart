@@ -1040,7 +1040,9 @@ class _TxnTile extends StatelessWidget {
                     '${txn.createdAt!.toLocal()}'.split('.').first),
               if (txn.id != null) detail('Reference', txn.id!),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
                 children: [
                   if (txn.id != null)
                     OutlinedButton.icon(
@@ -1048,14 +1050,17 @@ class _TxnTile extends StatelessWidget {
                       label: const Text('Copy reference'),
                       onPressed: () => Navigator.pop(sheetContext, 'copy'),
                     ),
-                  if (canResend) ...[
-                    const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                    label: const Text('Share receipt'),
+                    onPressed: () => Navigator.pop(sheetContext, 'receipt'),
+                  ),
+                  if (canResend)
                     FilledButton.icon(
                       icon: const Icon(Icons.send, size: 16),
                       label: const Text('Send again'),
                       onPressed: () => Navigator.pop(sheetContext, 'resend'),
                     ),
-                  ],
                 ],
               ),
             ],
@@ -1067,6 +1072,20 @@ class _TxnTile extends StatelessWidget {
     if (action == 'copy' && txn.id != null) {
       await Clipboard.setData(ClipboardData(text: txn.id!));
       if (context.mounted) showInfo(context, 'Reference copied');
+    } else if (action == 'receipt') {
+      final lines = [
+        'OkaySpace receipt',
+        '${txn.type ?? 'Transaction'}: '
+            '${incoming ? '+' : '−'}${_money(txn.amount.abs(), txn.currency)}',
+        if (txn.counterpartyName != null)
+          '${incoming ? 'From' : 'To'}: ${txn.counterpartyName}',
+        if (txn.note != null && txn.note!.isNotEmpty) 'Note: ${txn.note}',
+        if (txn.createdAt != null)
+          'Date: ${'${txn.createdAt!.toLocal()}'.split('.').first}',
+        if (txn.id != null) 'Reference: ${txn.id}',
+      ];
+      await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+      if (context.mounted) showInfo(context, 'Receipt copied to share');
     } else if (action == 'resend' && canResend) {
       final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
         builder: (_) => SendMoneyScreen(
