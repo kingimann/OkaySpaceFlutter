@@ -81,5 +81,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NFCReaderUsageDescription</key>
+	<string>OkaySpace uses NFC to read and write pay tags so you can tap to pay people.</string>
 </dict>
 </plist>

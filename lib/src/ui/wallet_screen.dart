@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -9,6 +10,7 @@ import 'cashout_screen.dart';
 import 'common.dart';
 import 'pay_qr_screen.dart';
 import 'split_bill_screen.dart';
+import 'tap_to_pay_screen.dart';
 import 'wallet_insights_screen.dart';
 
 String _money(num amount, String currency) => formatMoney(amount, currency);
@@ -676,7 +678,7 @@ class _WalletScreenState extends State<WalletScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final (id, icon, title, sub) in const [
+            for (final (id, icon, title, sub) in [
               ('pay', Icons.arrow_upward, 'Pay', 'Send money to someone'),
               ('request', Icons.arrow_downward, 'Request',
                   'Ask someone to pay you'),
@@ -684,6 +686,10 @@ class _WalletScreenState extends State<WalletScreen> {
                   'Divide a total across friends'),
               ('qr', Icons.qr_code, 'Scan or show QR',
                   'Pay or get paid in person'),
+              // NFC only exists on the mobile builds.
+              if (!kIsWeb)
+                ('nfc', Icons.contactless, 'Tap to pay',
+                    'Hold your phone to a pay tag'),
             ])
               ListTile(
                 leading: CircleAvatar(
@@ -709,6 +715,8 @@ class _WalletScreenState extends State<WalletScreen> {
         await _push(const SplitBillScreen());
       case 'qr':
         await _push(const PayQrScreen());
+      case 'nfc':
+        await _push(const TapToPayScreen());
     }
   }
 
