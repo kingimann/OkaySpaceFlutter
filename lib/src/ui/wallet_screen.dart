@@ -15,6 +15,11 @@ String _money(num amount, String currency) =>
 /// Venmo's signature blue, used for the primary payment actions.
 const _venmoBlue = Color(0xFF008CFF);
 
+const _monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 /// Venmo-style confirmation: big amount over the recipient's avatar with one
 /// prominent blue button. Returns true when confirmed.
 Future<bool> _confirmPayment(
@@ -508,8 +513,37 @@ class _WalletScreenState extends State<WalletScreen> {
                           : 'Nothing ${_txnFilter == 'in' ? 'incoming' : 'outgoing'} yet.')),
                 )
               else
-                ...txns.map((t) => _TxnTile(
-                    txn: t, hideAmount: _hideBalance, onChanged: _reload)),
+                // Venmo-style: transactions grouped under month headers.
+                ...() {
+                  final now = DateTime.now();
+                  final widgets = <Widget>[];
+                  String? lastKey;
+                  for (final t in txns) {
+                    final d = t.createdAt;
+                    final key = d == null ? 'earlier' : '${d.year}-${d.month}';
+                    if (key != lastKey) {
+                      lastKey = key;
+                      final label = d == null
+                          ? 'Earlier'
+                          : d.year == now.year && d.month == now.month
+                              ? 'This month'
+                              : '${_monthNames[d.month - 1]}'
+                                  '${d.year == now.year ? '' : ' ${d.year}'}';
+                      widgets.add(Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+                        child: Text(label,
+                            style: TextStyle(
+                                color: scheme.outline,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.4)),
+                      ));
+                    }
+                    widgets.add(_TxnTile(
+                        txn: t, hideAmount: _hideBalance, onChanged: _reload));
+                  }
+                  return widgets;
+                }(),
             ],
           );
         },
