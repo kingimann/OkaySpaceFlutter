@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 // The shared client lives with the UI layer; pragmatic import for the
 // no-token fallback only.
 import '../ui/common.dart' show api;
+import 'foursquare_api.dart';
 import 'http_transport.dart';
 
 /// Mapbox is the app's sole mapping provider: tiles, geocoding, and
@@ -39,25 +40,32 @@ TileLayer mapboxTileLayer() => TileLayer(
     );
 
 /// Forward-geocodes [query] with the Mapbox Geocoding API, falling back to
-/// the backend geocoder only when no token is configured. Results use the
-/// same shape the UI already consumes: {name, full_address, lat, lng}.
-Future<List<Map<String, dynamic>>> geocodePlaces(String query) async {
+/// the backend geocoder only when no token is configured. When a Foursquare
+/// key is present, business/POI matches are appended (biased toward [near]).
+/// Results use the same shape the UI already consumes:
+/// {name, full_address, lat, lng}.
+Future<List<Map<String, dynamic>>> geocodePlaces(String query,
+    {LatLng? near}) async {
   if (!hasMapbox) return api.roadside.geocode(query);
+  final fsq = foursquarePlaces(query, near: near); // in parallel with Mapbox
   final data = await _getJson(
       'https://api.mapbox.com/geocoding/v5/mapbox.places/'
       '${Uri.encodeComponent(query)}.json'
-      '?access_token=$kMapboxToken&limit=6');
+      '?access_token=$kMapboxToken&limit=6'
+      '${near != null ? '&proximity=${near.longitude},${near.latitude}' : ''}');
   final features = data?['features'];
-  if (features is! List) return const [];
   return [
-    for (final f in features.whereType<Map>())
-      if (f['center'] is List && (f['center'] as List).length >= 2)
-        {
-          'name': f['text'] ?? f['place_name'] ?? 'Result',
-          'full_address': f['place_name'] ?? f['text'] ?? '',
-          'lng': ((f['center'] as List)[0] as num).toDouble(),
-          'lat': ((f['center'] as List)[1] as num).toDouble(),
-        },
+    if (features is List)
+      for (final f in features.whereType<Map>())
+        if (f['center'] is List && (f['center'] as List).length >= 2)
+          {
+            'name': f['text'] ?? f['place_name'] ?? 'Result',
+            'full_address': f['place_name'] ?? f['text'] ?? '',
+            'lng': ((f['center'] as List)[0] as num).toDouble(),
+            'lat': ((f['center'] as List)[1] as num).toDouble(),
+          },
+    // Businesses/POIs from Foursquare, after the address matches.
+    ...await fsq,
   ];
 }
 

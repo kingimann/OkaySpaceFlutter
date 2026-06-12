@@ -81,6 +81,9 @@ workflows:
             --build-number=$(($LATEST + 1)) \
             --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
             --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}" \
+            --dart-define=FOURSQUARE_KEY="${FOURSQUARE_KEY:-}" \
+            --dart-define=CLOUDINARY_CLOUD_NAME="${CLOUDINARY_CLOUD_NAME:-}" \
+            --dart-define=CLOUDINARY_UPLOAD_PRESET="${CLOUDINARY_UPLOAD_PRESET:-}" \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
@@ -159,11 +162,17 @@ workflows:
           flutter build apk --release \
             --dart-define=BUILD_STAMP="$BUILD_STAMP" \
             --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
-            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}"
+            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}" \
+            --dart-define=FOURSQUARE_KEY="${FOURSQUARE_KEY:-}" \
+            --dart-define=CLOUDINARY_CLOUD_NAME="${CLOUDINARY_CLOUD_NAME:-}" \
+            --dart-define=CLOUDINARY_UPLOAD_PRESET="${CLOUDINARY_UPLOAD_PRESET:-}"
           flutter build appbundle --release \
             --dart-define=BUILD_STAMP="$BUILD_STAMP" \
             --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
-            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}"
+            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}" \
+            --dart-define=FOURSQUARE_KEY="${FOURSQUARE_KEY:-}" \
+            --dart-define=CLOUDINARY_CLOUD_NAME="${CLOUDINARY_CLOUD_NAME:-}" \
+            --dart-define=CLOUDINARY_UPLOAD_PRESET="${CLOUDINARY_UPLOAD_PRESET:-}"
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - build/app/outputs/bundle/release/*.aab
@@ -211,7 +220,10 @@ workflows:
             --base-href "/OkaySpaceFlutter/" \
             --dart-define=BUILD_STAMP="$BUILD_STAMP" \
             --dart-define=MAPBOX_TOKEN="${MAPBOX_TOKEN:-}" \
-            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}"
+            --dart-define=STRIPE_TOPUP_LINK="${STRIPE_TOPUP_LINK:-}" \
+            --dart-define=FOURSQUARE_KEY="${FOURSQUARE_KEY:-}" \
+            --dart-define=CLOUDINARY_CLOUD_NAME="${CLOUDINARY_CLOUD_NAME:-}" \
+            --dart-define=CLOUDINARY_UPLOAD_PRESET="${CLOUDINARY_UPLOAD_PRESET:-}"
           cd build && zip -r web.zip web
     artifacts:
       - build/web.zip

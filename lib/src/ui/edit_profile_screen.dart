@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../okayspace_api.dart';
+import '../core/cloudinary_api.dart';
 import 'common.dart';
 import 'profile_decor.dart';
 
@@ -146,11 +147,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       }
       if (_newPicture != null) {
         patch['picture'] =
-            'data:image/jpeg;base64,${base64Encode(_newPicture!)}';
+            await cloudinaryUploadImage(_newPicture!, folder: 'avatars') ??
+                'data:image/jpeg;base64,${base64Encode(_newPicture!)}';
       }
       if (_newCover != null) {
         patch['cover_photo'] =
-            'data:image/jpeg;base64,${base64Encode(_newCover!)}';
+            await cloudinaryUploadImage(_newCover!, folder: 'covers') ??
+                'data:image/jpeg;base64,${base64Encode(_newCover!)}';
       }
       await api.auth.updateProfile(patch);
       if (mounted) Navigator.of(context).pop(true);

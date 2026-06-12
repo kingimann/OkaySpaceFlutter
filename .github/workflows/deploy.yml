@@ -48,7 +48,10 @@ jobs:
           MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
           # Stripe Payment Link for wallet top-ups (optional).
           STRIPE_TOPUP_LINK: ${{ secrets.STRIPE_TOPUP_LINK }}
-        run: flutter build web --release --base-href "/OkaySpaceFlutter/" --dart-define=BUILD_STAMP="$STAMP" --dart-define=MAPBOX_TOKEN="$MAPBOX_TOKEN" --dart-define=STRIPE_TOPUP_LINK="$STRIPE_TOPUP_LINK"
+          FOURSQUARE_KEY: ${{ secrets.FOURSQUARE_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+        run: flutter build web --release --base-href "/OkaySpaceFlutter/" --dart-define=BUILD_STAMP="$STAMP" --dart-define=MAPBOX_TOKEN="$MAPBOX_TOKEN" --dart-define=STRIPE_TOPUP_LINK="$STRIPE_TOPUP_LINK" --dart-define=FOURSQUARE_KEY="$FOURSQUARE_KEY" --dart-define=CLOUDINARY_CLOUD_NAME="$CLOUDINARY_CLOUD_NAME" --dart-define=CLOUDINARY_UPLOAD_PRESET="$CLOUDINARY_UPLOAD_PRESET"
 
       - name: Post-process (kill-switch, cache-bust, version, SPA fallback)
         run: |
