@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../okayspace_api.dart';
 import 'cashout_screen.dart';
@@ -232,6 +233,8 @@ class _WalletScreenState extends State<WalletScreen> {
                           color: const Color(0xFFF43F5E))),
                 ],
               ),
+              const SizedBox(height: 16),
+              _BudgetCard(summary: w, hideAmounts: _hideBalance),
               if (w.tipsTotal > 0 ||
                   w.subsTotal > 0 ||
                   w.adsTotal > 0 ||
@@ -684,6 +687,202 @@ class _RequestTile extends StatelessWidget {
                   act(() => api.wallet.cancelRequest(id), 'Cancelled'),
               child: const Text('Cancel'),
             ),
+    );
+  }
+}
+
+/// A monthly spending budget, kept on-device. Spend-to-date is computed from
+/// this month's outgoing transactions in the wallet summary.
+class _BudgetCard extends StatefulWidget {
+  const _BudgetCard({required this.summary, this.hideAmounts = false});
+
+  final WalletSummary summary;
+  final bool hideAmounts;
+
+  @override
+  State<_BudgetCard> createState() => _BudgetCardState();
+}
+
+class _BudgetCardState extends State<_BudgetCard> {
+  static const _storageKey = 'okayspace.wallet_budget';
+  static const _storage = FlutterSecureStorage();
+  static const _presets = [50, 100, 200, 500, 1000];
+
+  num? _budget;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _storage.read(key: _storageKey).then((v) {
+      if (mounted) {
+        setState(() {
+          _budget = v == null ? null : num.tryParse(v);
+          _loaded = true;
+        });
+      }
+    }).catchError((_) {
+      if (mounted) setState(() => _loaded = true);
+    });
+  }
+
+  Future<void> _save(num? budget) async {
+    setState(() => _budget = budget);
+    try {
+      if (budget == null) {
+        await _storage.delete(key: _storageKey);
+      } else {
+        await _storage.write(key: _storageKey, value: '$budget');
+      }
+    } catch (_) {/* best effort */}
+  }
+
+  num get _monthSpend {
+    final now = DateTime.now();
+    return widget.summary.recent
+        .where((t) =>
+            t.amount < 0 &&
+            t.createdAt != null &&
+            t.createdAt!.year == now.year &&
+            t.createdAt!.month == now.month)
+        .fold<num>(0, (a, t) => a + t.amount.abs());
+  }
+
+  Future<void> _edit() async {
+    final picked = await showModalBottomSheet<num?>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Monthly spending budget',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final p in _presets)
+                    ChoiceChip(
+                      label: Text('$p'),
+                      selected: _budget == p,
+                      onSelected: (_) => Navigator.pop(sheetContext, p),
+                    ),
+                  if (_budget != null)
+                    ActionChip(
+                      avatar: const Icon(Icons.close, size: 16),
+                      label: const Text('Remove budget'),
+                      onPressed: () => Navigator.pop(sheetContext, -1),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await _save(picked == -1 ? null : picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final w = widget.summary;
+    final budget = _budget;
+
+    if (budget == null || budget <= 0) {
+      return Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _edit,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.savings_outlined, color: scheme.primary),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text('Set a monthly spending budget',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                Icon(Icons.chevron_right, color: scheme.outline),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final spent = _monthSpend;
+    final frac = (spent / budget).clamp(0.0, 1.0);
+    final over = spent > budget;
+    final near = !over && spent >= budget * 0.8;
+    final color = over
+        ? scheme.error
+        : near
+            ? const Color(0xFFF59E0B)
+            : scheme.primary;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: over ? Border.all(color: scheme.error) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.savings_outlined, color: color, size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Monthly budget',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              InkWell(
+                onTap: _edit,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.tune, size: 18, color: scheme.outline),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: LinearProgressIndicator(
+              value: frac,
+              minHeight: 8,
+              backgroundColor: scheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.hideAmounts
+                ? '••••'
+                : over
+                    ? '${_money(spent, w.currency)} spent — '
+                        '${_money(spent - budget, w.currency)} over budget'
+                    : '${_money(spent, w.currency)} of '
+                        '${_money(budget, w.currency)} spent this month',
+            style: TextStyle(
+                color: over ? scheme.error : scheme.outline, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 }
