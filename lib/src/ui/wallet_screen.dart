@@ -167,11 +167,18 @@ class _WalletScreenState extends State<WalletScreen> {
               ],
             ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Overview'),
-              Tab(text: 'Requests'),
-              Tab(text: 'Transfers'),
+              const Tab(text: 'Overview'),
+              _countedTab('Requests', _requests,
+                  (m) => m['_incoming'] == true),
+              _countedTab(
+                  'Transfers',
+                  _transfers,
+                  (m) =>
+                      m['_incoming'] == true &&
+                      _pick(m, ['status'], 'pending').toLowerCase() ==
+                          'pending'),
             ],
           ),
         ),
@@ -355,6 +362,26 @@ class _WalletScreenState extends State<WalletScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// A tab whose label carries a count badge of items matching [needsAction].
+  Widget _countedTab(String label, Future<List<Map<String, dynamic>>> future,
+      bool Function(Map<String, dynamic>) needsAction) {
+    return Tab(
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: future,
+        builder: (context, snapshot) {
+          final count =
+              (snapshot.data ?? const []).where(needsAction).length;
+          if (count == 0) return Text(label);
+          return Badge.count(
+            count: count,
+            offset: const Offset(14, -4),
+            child: Text(label),
+          );
+        },
       ),
     );
   }
