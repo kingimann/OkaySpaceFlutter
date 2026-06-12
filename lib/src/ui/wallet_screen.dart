@@ -15,6 +15,11 @@ String _money(num amount, String currency) =>
 /// Venmo's signature blue, used for the primary payment actions.
 const _venmoBlue = Color(0xFF008CFF);
 
+const _monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 /// Venmo-style confirmation: big amount over the recipient's avatar with one
 /// prominent blue button. Returns true when confirmed.
 Future<bool> _confirmPayment(
@@ -263,154 +268,87 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  /// Selected bottom-nav tab: Home / Requests / Transfers / Me.
-  int _tab = 0;
-  late final Future<User> _meUser = api.auth.me();
-
-  /// A nav icon carrying a count badge of items matching [needsAction].
-  Widget _badgedIcon(IconData icon,
-      Future<List<Map<String, dynamic>>> future,
+  /// A tab whose label carries a count badge of items matching [needsAction].
+  Widget _countedTab(String label, Future<List<Map<String, dynamic>>> future,
       bool Function(Map<String, dynamic>) needsAction) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: future,
-      builder: (context, snapshot) {
-        final count = (snapshot.data ?? const []).where(needsAction).length;
-        if (count == 0) return Icon(icon);
-        return Badge.count(count: count, child: Icon(icon));
-      },
+    return Tab(
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: future,
+        builder: (context, snapshot) {
+          final count =
+              (snapshot.data ?? const []).where(needsAction).length;
+          if (count == 0) return Text(label);
+          return Badge.count(
+            count: count,
+            offset: const Offset(14, -4),
+            child: Text(label),
+          );
+        },
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: OkayAppBar(
-          title: Text(const ['Wallet', 'Requests', 'Transfers', 'Me'][_tab])),
-      body: MaxWidth(
-        child: switch (_tab) {
-          1 => _requestsTab(),
-          2 => _transfersTab(),
-          3 => _meTab(),
-          _ => _overview(),
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _venmoBlue,
-        foregroundColor: Colors.white,
-        onPressed: _payOrRequest,
-        label: const Text('Pay or Request',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        indicatorColor: _venmoBlue.withValues(alpha: 0.18),
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: [
-          const NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home),
-              label: 'Home'),
-          NavigationDestination(
-              icon: _badgedIcon(Icons.request_quote_outlined, _requests,
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: OkayAppBar(
+          title: const Text('Wallet'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.qr_code),
+              tooltip: 'Pay by QR',
+              onPressed: () => _push(const PayQrScreen()),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'cashout') _push(const CashOutScreen());
+                if (v == 'currency') _changeCurrency();
+                if (v == 'security') _security();
+                if (v == 'topups') _push(const TopUpHistoryScreen());
+                if (v == 'insights') _push(const WalletInsightsScreen());
+                if (v == 'history') _push(const TransferHistoryScreen());
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'insights', child: Text('Insights')),
+                PopupMenuItem(value: 'cashout', child: Text('Cash out')),
+                PopupMenuItem(value: 'currency', child: Text('Change currency')),
+                PopupMenuItem(value: 'security', child: Text('Transfer security')),
+                PopupMenuItem(value: 'topups', child: Text('Top-up history')),
+                PopupMenuItem(
+                    value: 'history', child: Text('Transfer history')),
+              ],
+            ),
+          ],
+          bottom: TabBar(
+            tabs: [
+              const Tab(text: 'Overview'),
+              _countedTab('Requests', _requests,
                   (m) => m['_incoming'] == true),
-              label: 'Requests'),
-          NavigationDestination(
-              icon: _badgedIcon(
-                  Icons.swap_horiz,
+              _countedTab(
+                  'Transfers',
                   _transfers,
                   (m) =>
                       m['_incoming'] == true &&
                       _pick(m, ['status'], 'pending').toLowerCase() ==
                           'pending'),
-              label: 'Transfers'),
-          const NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Me'),
-        ],
-      ),
-    );
-  }
-
-  /// Venmo-style Me tab: profile header with the pay QR shortcut, then the
-  /// wallet's settings and tools (previously hidden in the overflow menu).
-  Widget _meTab() {
-    final scheme = Theme.of(context).colorScheme;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        FutureBuilder<User>(
-          future: _meUser,
-          builder: (context, snap) {
-            final u = snap.data;
-            return Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: scheme.outlineVariant),
-              ),
-              child: Row(
-                children: [
-                  Avatar(url: u?.picture, name: u?.name ?? '?', radius: 28),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(u?.name ?? '…',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 17)),
-                        if (u != null)
-                          Text(u.handle,
-                              style: TextStyle(
-                                  color: scheme.outline, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.qr_code, color: _venmoBlue),
-                    tooltip: 'My pay QR',
-                    onPressed: () => _push(const PayQrScreen()),
-                  ),
-                ],
-              ),
-            );
-          },
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
-        for (final (icon, label, onTap) in <(IconData, String, VoidCallback)>[
-          (Icons.qr_code, 'My pay QR', () => _push(const PayQrScreen())),
-          (
-            Icons.insights_outlined,
-            'Insights',
-            () => _push(const WalletInsightsScreen())
+        body: MaxWidth(
+          child: TabBarView(
+            children: [_overview(), _requestsTab(), _transfersTab()],
           ),
-          (
-            Icons.payments_outlined,
-            'Cash out',
-            () => _push(const CashOutScreen())
-          ),
-          (
-            Icons.add_card_outlined,
-            'Top-up history',
-            () => _push(const TopUpHistoryScreen())
-          ),
-          (
-            Icons.history,
-            'Transfer history',
-            () => _push(const TransferHistoryScreen())
-          ),
-          (Icons.currency_exchange, 'Change currency', _changeCurrency),
-          (Icons.lock_outline, 'Transfer security', _security),
-        ])
-          ListTile(
-            leading: Icon(icon, color: _venmoBlue),
-            title: Text(label),
-            trailing: Icon(Icons.chevron_right, color: scheme.outline),
-            onTap: onTap,
-          ),
-      ],
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: _venmoBlue,
+          foregroundColor: Colors.white,
+          onPressed: _payOrRequest,
+          label: const Text('Pay or Request',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ),
     );
   }
 
@@ -508,8 +446,37 @@ class _WalletScreenState extends State<WalletScreen> {
                           : 'Nothing ${_txnFilter == 'in' ? 'incoming' : 'outgoing'} yet.')),
                 )
               else
-                ...txns.map((t) => _TxnTile(
-                    txn: t, hideAmount: _hideBalance, onChanged: _reload)),
+                // Venmo-style: transactions grouped under month headers.
+                ...() {
+                  final now = DateTime.now();
+                  final widgets = <Widget>[];
+                  String? lastKey;
+                  for (final t in txns) {
+                    final d = t.createdAt;
+                    final key = d == null ? 'earlier' : '${d.year}-${d.month}';
+                    if (key != lastKey) {
+                      lastKey = key;
+                      final label = d == null
+                          ? 'Earlier'
+                          : d.year == now.year && d.month == now.month
+                              ? 'This month'
+                              : '${_monthNames[d.month - 1]}'
+                                  '${d.year == now.year ? '' : ' ${d.year}'}';
+                      widgets.add(Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+                        child: Text(label,
+                            style: TextStyle(
+                                color: scheme.outline,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.4)),
+                      ));
+                    }
+                    widgets.add(_TxnTile(
+                        txn: t, hideAmount: _hideBalance, onChanged: _reload));
+                  }
+                  return widgets;
+                }(),
             ],
           );
         },
@@ -1741,6 +1708,59 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     return _balance != null && amount != null && amount > _balance!;
   }
 
+  /// Applies a keypad tap to the amount (digits, one '.', '<' = backspace,
+  /// max two decimal places).
+  void _tapKey(String k) {
+    var t = _amount.text;
+    if (k == '<') {
+      if (t.isNotEmpty) t = t.substring(0, t.length - 1);
+    } else if (k == '.') {
+      if (t.contains('.')) return;
+      t = t.isEmpty ? '0.' : '$t.';
+    } else {
+      if (t.contains('.') && t.split('.')[1].length >= 2) return;
+      if (t == '0') t = '';
+      t += k;
+    }
+    setState(() => _amount.text = t);
+  }
+
+  /// Venmo-style 3×4 numeric keypad.
+  Widget _keypad() {
+    return Column(
+      children: [
+        for (final row in const [
+          ['1', '2', '3'],
+          ['4', '5', '6'],
+          ['7', '8', '9'],
+          ['.', '0', '<'],
+        ])
+          Row(
+            children: [
+              for (final k in row)
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _tapKey(k),
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      height: 52,
+                      child: Center(
+                        child: k == '<'
+                            ? const Icon(Icons.backspace_outlined, size: 22)
+                            : Text(k,
+                                style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
   Future<void> _send() async {
     final amount = num.tryParse(_amount.text.trim());
     if (_recipient == null || amount == null || amount <= 0) {
@@ -1850,26 +1870,38 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _amount,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                  labelText: 'Amount',
-                  prefixIcon: const Icon(Icons.attach_money),
-                  helperText: _balance != null
-                      ? 'Available: ${_money(_balance!, _currency)}'
-                      : null,
-                  errorText: _overBalance
-                      ? 'More than your available balance'
-                      : null,
-                  border: const OutlineInputBorder()),
+            // Venmo-style amount entry: big centered display over a keypad.
+            Text(
+              '$_currency ${_amount.text.isEmpty ? '0' : _amount.text}',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 42,
+                  fontWeight: FontWeight.bold,
+                  color: _overBalance
+                      ? Theme.of(context).colorScheme.error
+                      : null),
             ),
+            const SizedBox(height: 2),
+            Text(
+              _overBalance
+                  ? 'More than your available balance'
+                  : _balance != null
+                      ? 'Available: ${_money(_balance!, _currency)}'
+                      : '',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: _overBalance
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.outline),
+            ),
+            const SizedBox(height: 8),
+            _keypad(),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
+              alignment: WrapAlignment.center,
               children: [
                 for (final p in _presets)
                   ActionChip(
