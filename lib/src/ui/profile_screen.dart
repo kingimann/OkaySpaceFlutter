@@ -9,6 +9,7 @@ import 'bookmarks_screen.dart';
 import 'business_screen.dart';
 import 'circles_screen.dart';
 import 'common.dart';
+import 'badges_screen.dart';
 import 'compose_screen.dart';
 import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
@@ -16,6 +17,7 @@ import 'friends_screen.dart';
 import 'hashtag_screen.dart';
 import 'linked_text.dart';
 import 'leaderboard_screen.dart';
+import 'levels_screen.dart';
 import 'messages_screen.dart';
 import 'post_tile.dart';
 import 'profile_decor.dart';
@@ -1500,9 +1502,32 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   case 'business':
                     Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const BusinessScreen()));
+                  case 'levels':
+                    if (u != null) {
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => LevelsScreen(user: u)));
+                    }
+                  case 'badges':
+                    if (u != null) {
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) =>
+                              BadgesScreen(user: u, stats: _stats)));
+                    }
                 }
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(
+                    value: 'levels',
+                    child: ListTile(
+                        leading: Icon(Icons.military_tech_outlined),
+                        title: Text('Points & levels'),
+                        contentPadding: EdgeInsets.zero)),
+                PopupMenuItem(
+                    value: 'badges',
+                    child: ListTile(
+                        leading: Icon(Icons.emoji_events_outlined),
+                        title: Text('Badges'),
+                        contentPadding: EdgeInsets.zero)),
                 PopupMenuItem(
                     value: 'customize',
                     child: ListTile(
@@ -1743,7 +1768,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: () => Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const LeaderboardScreen())),
+          .push(MaterialPageRoute(builder: (_) => LevelsScreen(user: u))),
       child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
