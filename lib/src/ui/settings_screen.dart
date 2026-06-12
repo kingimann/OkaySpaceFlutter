@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'admin_settings_screen.dart';
 import 'ads_screen.dart';
 import 'api_keys_screen.dart';
 import 'app.dart';
@@ -409,6 +410,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _categoryTile(
               'developer', Icons.code, 'Developer', 'API keys'),
         ]),
+        // Staff-only: the admin suite (the backend re-checks the role).
+        if (widget.user.role == 'admin' || widget.user.role == 'mod') ...[
+          const SizedBox(height: 12),
+          _card([
+            ListTile(
+              leading: const Icon(Icons.admin_panel_settings_outlined),
+              title: const Text('Admin settings'),
+              subtitle: const Text('Moderation, money, system & staff tools'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => AdminSettingsScreen(user: widget.user))),
+            ),
+          ]),
+        ],
         const SizedBox(height: 12),
         _card([
           ListTile(
