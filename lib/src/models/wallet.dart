@@ -24,17 +24,25 @@ class WalletTxn {
   final DateTime? createdAt;
   final Map<String, dynamic> raw;
 
-  factory WalletTxn.fromJson(Map<String, dynamic> json) => WalletTxn(
-        id: asStringOrNull(json['id']),
-        type: asStringOrNull(json['type']),
-        amount: asDoubleOrNull(json['amount']) ?? 0,
-        currency: asString(json['currency'], 'USD'),
-        note: asStringOrNull(json['note']),
-        counterpartyId: asStringOrNull(json['counterparty_id'] ?? json['from_user_id'] ?? json['to_user_id']),
-        counterpartyName: asStringOrNull(json['counterparty_name']),
-        createdAt: asDateOrNull(json['created_at']),
-        raw: json,
-      );
+  factory WalletTxn.fromJson(Map<String, dynamic> json) {
+    final amount = asDoubleOrNull(json['amount']) ?? 0;
+    // The counterparty is the *other* user: for outgoing money that's the
+    // recipient (to_user_id), for incoming it's the sender (from_user_id).
+    final other = amount < 0
+        ? json['to_user_id'] ?? json['from_user_id']
+        : json['from_user_id'] ?? json['to_user_id'];
+    return WalletTxn(
+      id: asStringOrNull(json['id']),
+      type: asStringOrNull(json['type']),
+      amount: amount,
+      currency: asString(json['currency'], 'USD'),
+      note: asStringOrNull(json['note']),
+      counterpartyId: asStringOrNull(json['counterparty_id'] ?? other),
+      counterpartyName: asStringOrNull(json['counterparty_name']),
+      createdAt: asDateOrNull(json['created_at']),
+      raw: json,
+    );
+  }
 }
 
 /// Summary of the authenticated user's wallet (earnings + spending).

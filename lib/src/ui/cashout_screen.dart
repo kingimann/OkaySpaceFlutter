@@ -31,11 +31,13 @@ class _CashOutScreenState extends State<CashOutScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    // Full-screen spinner only before the first payload; refreshes keep the
+    // current UI (so pull-to-refresh isn't torn down mid-gesture).
+    if (_status.isEmpty) setState(() => _loading = true);
     try {
       _status = await api.payments.payoutStatus();
     } catch (_) {
-      _status = const {};
+      if (_status.isEmpty) _status = const {};
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -99,8 +101,14 @@ class _CashOutScreenState extends State<CashOutScreen> {
 
   num? get _entered => num.tryParse(_amount.text.trim());
 
+  /// Whether the payload actually carried a balance (0 may mean "unknown").
+  bool get _knowsBalance =>
+      _status['available'] != null ||
+      _status['balance'] != null ||
+      _status['payout_balance'] != null;
+
   bool get _overAvailable =>
-      _available > 0 && (_entered ?? 0) > _available;
+      _knowsBalance && (_entered ?? 0) > _available;
 
   Future<void> _cashout() async {
     final amount = _entered;
