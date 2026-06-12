@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../okayspace_api.dart';
 import 'common.dart';
 import 'compose_screen.dart';
+import 'feed_prefs.dart';
 import 'linked_text.dart';
 import 'post_detail_screen.dart';
 import 'post_video.dart';
@@ -527,8 +528,30 @@ class _PostTileState extends State<PostTile> {
             LinkedText(post.text),
           ],
           if (post.media.isNotEmpty)
-            _MediaPreview(
-                media: post.media.first, extra: post.media.length - 1),
+            // Data saver (Customize feed): collapse media to a small tag.
+            feedPrefs.showMedia
+                ? _MediaPreview(
+                    media: post.media.first, extra: post.media.length - 1)
+                : Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(children: [
+                      Icon(
+                          post.media.first.isVideo
+                              ? Icons.videocam_outlined
+                              : Icons.image_outlined,
+                          size: 15,
+                          color: Theme.of(context).colorScheme.outline),
+                      const SizedBox(width: 4),
+                      Text(
+                          '${post.media.first.isVideo ? 'Video' : 'Photo'}'
+                          '${post.media.length > 1 ? ' +${post.media.length - 1}' : ''}'
+                          ' · tap to view',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color:
+                                  Theme.of(context).colorScheme.outline)),
+                    ]),
+                  ),
           if (post.quotedPost != null) ...[
             const SizedBox(height: 8),
             _QuotedPost(quoted: post.quotedPost!),

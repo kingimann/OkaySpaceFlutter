@@ -34,6 +34,40 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  /// Open tickets + pending verifications, badged on the Admin settings row.
+  int _staffPending = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStaffPending();
+  }
+
+  void _loadStaffPending() {
+    if (widget.user.role != 'admin' && widget.user.role != 'mod') return;
+    int count(dynamic d, String key) {
+      dynamic list = d;
+      if (d is Map) list = d[key] ?? d['items'] ?? d['results'];
+      return list is List ? list.length : 0;
+    }
+
+    Future.wait([
+      api.admin
+          .supportTickets(status: 'open')
+          .then((d) => count(d, 'tickets'))
+          .catchError((_) => 0),
+      api.admin
+          .roadsideVerifications()
+          .then((d) => count(d, 'verifications'))
+          .catchError((_) => 0),
+    ]).then((counts) {
+      final total = counts[0] + counts[1];
+      if (mounted && total != _staffPending) {
+        setState(() => _staffPending = total);
+      }
+    });
+  }
+
   late bool _private = widget.user.isPrivate;
   // raw values may be true/false/null; searchable defaults on, others off.
   late bool _searchable = widget.user.raw['searchable'] != false;
@@ -415,7 +449,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
           _card([
             ListTile(
-              leading: const Icon(Icons.admin_panel_settings_outlined),
+              leading: _staffPending > 0
+                  ? Badge.count(
+                      count: _staffPending,
+                      child: const Icon(Icons.admin_panel_settings_outlined))
+                  : const Icon(Icons.admin_panel_settings_outlined),
               title: const Text('Admin settings'),
               subtitle: const Text('Moderation, money, system & staff tools'),
               trailing: const Icon(Icons.chevron_right),

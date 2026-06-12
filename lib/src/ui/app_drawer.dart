@@ -66,12 +66,34 @@ class _AppDrawerState extends State<AppDrawer> {
   }
 
   /// Builds a sidebar shortcut row for a destination id (see [kAllSidebarDests]).
+  @override
+  void initState() {
+    super.initState();
+    _loadWalletPending();
+  }
+
+  /// Incoming money requests awaiting the user, badged on the Wallet row.
+  int _walletPending = 0;
+
+  void _loadWalletPending() {
+    api.wallet.moneyRequests().then((d) {
+      var c = 0;
+      if (d is Map && d['incoming'] is List) {
+        c = (d['incoming'] as List).length;
+      }
+      if (mounted && c != _walletPending) {
+        setState(() => _walletPending = c);
+      }
+    }).catchError((_) {});
+  }
+
   Widget _shortcutFor(String id) {
     final d = sidebarDestById(id);
     return _Shortcut(
       icon: d.icon,
       color: d.color,
       label: d.label,
+      badge: id == 'wallet' ? _walletPending : 0,
       onTap: () {
         switch (id) {
           case 'feed':
@@ -328,6 +350,7 @@ class _Shortcut extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.labelColor,
+    this.badge = 0,
   });
 
   final IconData icon;
@@ -335,21 +358,23 @@ class _Shortcut extends StatelessWidget {
   final String label;
   final Color? labelColor;
   final VoidCallback onTap;
+  final int badge;
 
   @override
   Widget build(BuildContext context) {
+    final leading = Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Icon(icon, color: color, size: 22),
+    );
     return ListTile(
       onTap: onTap,
       dense: true,
-      leading: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.18),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Icon(icon, color: color, size: 22),
-      ),
+      leading: badge > 0 ? Badge.count(count: badge, child: leading) : leading,
       title: Text(label,
           style: TextStyle(
               fontWeight: FontWeight.w600,

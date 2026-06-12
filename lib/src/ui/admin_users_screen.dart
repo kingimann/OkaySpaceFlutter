@@ -45,6 +45,17 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Timer? _debounce;
   late Future<List<Map<String, dynamic>>> _users = _fetch('');
 
+  /// Client-side list filter: 'all' | 'staff' | 'flagged'.
+  String _filter = 'all';
+
+  bool _matchesFilter(Map<String, dynamic> u) => switch (_filter) {
+        'staff' => _s(u, ['role'], 'user') != 'user',
+        'flagged' => u['banned'] == true ||
+            u['suspended'] == true ||
+            _s(u, ['suspended_until']).isNotEmpty,
+        _ => true,
+      };
+
   /// Set while the signed-in admin is unverified, enabling "Verify myself".
   String? _unverifiedSelfId;
 
@@ -138,9 +149,31 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: Row(
+                children: [
+                  for (final (id, label) in const [
+                    ('all', 'All'),
+                    ('staff', 'Staff'),
+                    ('flagged', 'Banned/Suspended')
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(label),
+                        selected: _filter == id,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => setState(() => _filter = id),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             Expanded(
               child: AsyncList<Map<String, dynamic>>(
-                future: _users,
+                future: _users.then(
+                    (all) => all.where(_matchesFilter).toList()),
                 emptyMessage: 'No users found.',
                 emptyIcon: Icons.person_search_outlined,
                 builder: (context, users) => ListView.separated(
@@ -796,6 +829,24 @@ class AdminAuditScreen extends StatefulWidget {
 
 class _AdminAuditScreenState extends State<AdminAuditScreen> {
   late Future<List<Map<String, dynamic>>> _log = _fetch();
+  final _query = TextEditingController();
+
+  bool _matches(Map<String, dynamic> e) {
+    final q = _query.text.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return [
+      _s(e, ['admin_name', 'admin']),
+      _s(e, ['action', 'type']),
+      _s(e, ['target_name', 'target', 'user_name']),
+      _s(e, ['detail', 'reason', 'note']),
+    ].any((v) => v.toLowerCase().contains(q));
+  }
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
 
   Future<List<Map<String, dynamic>>> _fetch() =>
       api.admin.auditLog(limit: 200).then((d) => _asMapList(d, 'entries'));
@@ -827,10 +878,27 @@ class _AdminAuditScreenState extends State<AdminAuditScreen> {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Admin · Activity log')),
       body: MaxWidth(
-        child: RefreshIndicator(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: TextField(
+                controller: _query,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Filter by admin, action, target, or reason',
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            Expanded(
+              child: RefreshIndicator(
           onRefresh: _reload,
           child: AsyncList<Map<String, dynamic>>(
-            future: _log,
+            future: _log.then((all) => all.where(_matches).toList()),
             emptyMessage: 'No admin activity yet.',
             emptyIcon: Icons.history,
             builder: (context, entries) => ListView.separated(
@@ -869,6 +937,9 @@ class _AdminAuditScreenState extends State<AdminAuditScreen> {
               },
             ),
           ),
+        ),
+            ),
+          ],
         ),
       ),
     );
