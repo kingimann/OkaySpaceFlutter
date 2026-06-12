@@ -9,6 +9,7 @@ import 'bookmarks_screen.dart';
 import 'business_screen.dart';
 import 'circles_screen.dart';
 import 'common.dart';
+import 'compose_screen.dart';
 import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
@@ -93,6 +94,49 @@ void showAvatarViewer(BuildContext context, String? url, String name) {
       ),
     ),
   ));
+}
+
+/// A profile bio that collapses long text behind a "Read more" toggle.
+class _ExpandableBio extends StatefulWidget {
+  const _ExpandableBio(this.text);
+  final String text;
+
+  @override
+  State<_ExpandableBio> createState() => _ExpandableBioState();
+}
+
+class _ExpandableBioState extends State<_ExpandableBio> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final long = widget.text.length > 160;
+    final toggle = GestureDetector(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(_expanded ? 'Show less' : 'Read more',
+            style: TextStyle(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13)),
+      ),
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!long || _expanded)
+          LinkedText(widget.text, textAlign: TextAlign.center)
+        else
+          Text(widget.text,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center),
+        if (long) toggle,
+      ],
+    );
+  }
 }
 
 /// Public profile of another user, with a follow toggle.
@@ -523,10 +567,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   /// Profile card mirroring My Profile: banner, avatar, name, level pill,
   /// info, stat cards and Follow/Message actions.
+  /// Interests for a public profile (typed field is absent; read from raw).
+  List<String> _publicInterests(PublicUser u) {
+    final v = u.raw['interests'];
+    return v is List
+        ? v.map((e) => '$e').where((s) => s.isNotEmpty).take(12).toList()
+        : const [];
+  }
+
+  /// Parses a hex accent colour from a public profile, falling back to primary.
+  Color _publicAccent(PublicUser u) {
+    final c = '${u.raw['accent_color'] ?? ''}'.replaceAll('#', '').trim();
+    final v = int.tryParse(c.length == 6 ? 'FF$c' : c, radix: 16);
+    return v != null ? Color(v) : Theme.of(context).colorScheme.primary;
+  }
+
   Widget _profileCard(PublicUser u) {
     final scheme = Theme.of(context).colorScheme;
     final levelTitle = '${u.raw['level_title'] ?? ''}';
     final location = '${u.raw['location'] ?? ''}';
+    final cover = '${u.raw['cover_photo'] ?? ''}';
+    final accent = _publicAccent(u);
     return Container(
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
@@ -539,13 +600,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
             clipBehavior: Clip.none,
             alignment: Alignment.topCenter,
             children: [
-              Container(
-                height: 100,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [scheme.primary, darken(scheme.primary, 0.25)],
+              GestureDetector(
+                onTap: cover.isEmpty
+                    ? null
+                    : () => showAvatarViewer(context, cover, u.name),
+                child: Container(
+                  height: 100,
+                  decoration: BoxDecoration(
+                    image: cover.isNotEmpty
+                        ? DecorationImage(
+                            image: NetworkImage(cover), fit: BoxFit.cover)
+                        : null,
+                    gradient: cover.isNotEmpty
+                        ? null
+                        : LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [accent, darken(accent, 0.25)],
+                          ),
                   ),
                 ),
               ),
@@ -558,7 +630,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: scheme.surfaceContainerLow,
-                      border: Border.all(color: scheme.primary, width: 2),
+                      border: Border.all(color: accent, width: 2),
                     ),
                     child: Avatar(url: u.picture, name: u.name, radius: 42),
                   ),
@@ -647,11 +719,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Text(location),
             ]),
           ],
+          if (_publicInterests(u).isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final t in _publicInterests(u))
+                    Chip(
+                        label: Text(t),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap),
+                ],
+              ),
+            ),
+          ],
           if (u.bio != null && u.bio!.isNotEmpty) ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: LinkedText(u.bio!, textAlign: TextAlign.center),
+              child: _ExpandableBio(u.bio!),
             ),
           ],
           const SizedBox(height: 16),
@@ -886,6 +977,52 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     if (mounted) _reload();
   }
 
+  /// A compact privacy summary card linking to Settings (§4 privacy card).
+  Widget _privacyCard(User u) {
+    final scheme = Theme.of(context).colorScheme;
+    final private = u.isPrivate;
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openSettings(u),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(private ? Icons.lock_outline : Icons.public,
+                  color: scheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(private ? 'Private account' : 'Public account',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(
+                        private
+                            ? 'Only approved followers can see your posts'
+                            : 'Anyone can see your posts and profile',
+                        style: TextStyle(color: scheme.outline, fontSize: 12.5)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: scheme.outline),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Opens the post composer from the profile (§4 PostComposer).
+  Future<void> _compose() async {
+    final posted = await Navigator.of(context)
+        .push<bool>(MaterialPageRoute(builder: (_) => const ComposeScreen()));
+    if (posted == true && mounted) _reload();
+  }
+
   /// Shares the user's own profile as a contact card into a chosen chat.
   Future<void> _shareSelfToChat(User u) async {
     final conv = await pickConversation(context);
@@ -918,6 +1055,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const AppDrawer(),
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'New post',
+        onPressed: _compose,
+        child: const Icon(Icons.edit_outlined),
+      ),
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -945,6 +1087,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           animation: profileDecor,
                           builder: (_, __) => MaxWidth(child: _profileCard(u)),
                         ),
+                        const SizedBox(height: 12),
+                        MaxWidth(child: _privacyCard(u)),
                         const SizedBox(height: 12),
                         MaxWidth(child: _quickLinks()),
                         if (_completeness(u).$1 < 1.0) ...[
@@ -1323,6 +1467,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                     }
                   case 'sharechat':
                     if (u != null) _shareSelfToChat(u);
+                  case 'copyhandle':
+                    if (u != null) {
+                      Clipboard.setData(
+                          ClipboardData(text: '@${u.username ?? u.userId}'));
+                      showInfo(context, 'Username copied');
+                    }
                   case 'people':
                     Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const FriendsScreen()));
@@ -1355,6 +1505,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                     child: ListTile(
                         leading: Icon(Icons.forward_to_inbox_outlined),
                         title: Text('Share to a chat'),
+                        contentPadding: EdgeInsets.zero)),
+                PopupMenuItem(
+                    value: 'copyhandle',
+                    child: ListTile(
+                        leading: Icon(Icons.alternate_email),
+                        title: Text('Copy username'),
                         contentPadding: EdgeInsets.zero)),
                 PopupMenuItem(
                     value: 'people',
@@ -1501,7 +1657,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: LinkedText(u.bio!, textAlign: TextAlign.center),
+              child: _ExpandableBio(u.bio!),
             ),
           ],
           const SizedBox(height: 8),
@@ -1511,6 +1667,23 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _statsRow(u),
           ),
+          if (_stat(u, ['profile_views', 'views', 'view_count']) > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.visibility_outlined,
+                      size: 14, color: Theme.of(context).colorScheme.outline),
+                  const SizedBox(width: 4),
+                  Text(
+                      '${formatCount(_stat(u, ['profile_views', 'views', 'view_count']))} profile views',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.outline,
+                          fontSize: 12)),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Row(
