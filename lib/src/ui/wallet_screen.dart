@@ -15,6 +15,132 @@ String _money(num amount, String currency) =>
 /// Venmo's signature blue, used for the primary payment actions.
 const _venmoBlue = Color(0xFF008CFF);
 
+/// Venmo-style confirmation: big amount over the recipient's avatar with one
+/// prominent blue button. Returns true when confirmed.
+Future<bool> _confirmPayment(
+  BuildContext context, {
+  required PublicUser to,
+  required num amount,
+  required String currency,
+  String? note,
+  bool request = false,
+}) async {
+  final ok = await showModalBottomSheet<bool>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      final scheme = Theme.of(sheetContext).colorScheme;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Avatar(url: to.picture, name: to.name, radius: 30),
+              const SizedBox(height: 10),
+              Text(request ? 'Request from ${to.name}' : 'Pay ${to.name}',
+                  style: TextStyle(color: scheme.outline, fontSize: 14)),
+              const SizedBox(height: 4),
+              Text(
+                  currency.isEmpty
+                      ? amount.toStringAsFixed(2)
+                      : _money(amount, currency),
+                  style: const TextStyle(
+                      fontSize: 40, fontWeight: FontWeight.bold)),
+              if (note != null && note.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(note,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: scheme.outline)),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: _venmoBlue,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(0, 50)),
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                  child: Text(request ? 'Request' : 'Pay',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetContext, false),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  return ok == true;
+}
+
+/// Venmo-style full-screen success: a blue takeover with a check, the amount,
+/// and who it went to (or was requested from).
+class _PaymentDoneScreen extends StatelessWidget {
+  const _PaymentDoneScreen({required this.headline, required this.detail});
+
+  final String headline;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _venmoBlue,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child:
+                      const Icon(Icons.check, color: Colors.white, size: 52),
+                ),
+                const SizedBox(height: 24),
+                Text(headline,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text(detail,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 16)),
+                const SizedBox(height: 40),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white),
+                      minimumSize: const Size(160, 48)),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Done',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Reads the first non-empty string from [keys] in [m].
 String _pick(Map<String, dynamic> m, List<String> keys, [String fallback = '']) {
   for (final k in keys) {
@@ -1625,17 +1751,30 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
       showInfo(context, 'That\'s more than your available balance.');
       return;
     }
+    final note = _note.text.trim().isEmpty ? null : _note.text.trim();
+    final confirmed = await _confirmPayment(context,
+        to: _recipient!, amount: amount, currency: _currency, note: note);
+    if (!confirmed || !mounted) return;
     setState(() => _busy = true);
     try {
       await api.wallet.sendMoney(
         toUserId: _recipient!.userId,
         amount: amount,
         answer: _answer.text,
-        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        note: note,
       );
       if (mounted) {
-        showInfo(context, 'Sent ${_amount.text} to ${_recipient!.name}');
-        Navigator.of(context).pop(true);
+        await Navigator.of(context).push(MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => _PaymentDoneScreen(
+            headline: 'You paid ${_recipient!.name}',
+            detail: [
+              _money(amount, _currency),
+              if (note != null) note,
+            ].join(' · '),
+          ),
+        ));
+        if (mounted) Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) showError(context, e);
@@ -1816,16 +1955,29 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
       showInfo(context, 'Pick someone and a valid amount.');
       return;
     }
+    final note = _note.text.trim().isEmpty ? null : _note.text.trim();
+    final confirmed = await _confirmPayment(context,
+        to: _from!, amount: amount, currency: '', note: note, request: true);
+    if (!confirmed || !mounted) return;
     setState(() => _busy = true);
     try {
       await api.wallet.requestMoney(
         toUserId: _from!.userId,
         amount: amount,
-        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        note: note,
       );
       if (mounted) {
-        showInfo(context, 'Requested ${_amount.text} from ${_from!.name}');
-        Navigator.of(context).pop(true);
+        await Navigator.of(context).push(MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => _PaymentDoneScreen(
+            headline: 'Request sent',
+            detail: [
+              'You requested ${amount.toStringAsFixed(2)} from ${_from!.name}',
+              if (note != null) note,
+            ].join(' · '),
+          ),
+        ));
+        if (mounted) Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) showError(context, e);
