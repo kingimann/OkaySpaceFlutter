@@ -33,6 +33,92 @@ Future<bool> adminConfirm(BuildContext context, String title, String message,
   return ok == true;
 }
 
+/// Quick stats strip on the hub: revenue, open tickets, pending roadside
+/// verifications. Each value is best-effort — failures render as '—'.
+class _HubStats extends StatefulWidget {
+  const _HubStats();
+
+  @override
+  State<_HubStats> createState() => _HubStatsState();
+}
+
+class _HubStatsState extends State<_HubStats> {
+  String _revenue = '…';
+  String _tickets = '…';
+  String _verifications = '…';
+
+  @override
+  void initState() {
+    super.initState();
+    num n(dynamic v) => v is num ? v : (num.tryParse('$v') ?? 0);
+    int count(dynamic d, String key) {
+      dynamic list = d;
+      if (d is Map) list = d[key] ?? d['items'] ?? d['results'];
+      return list is List ? list.length : 0;
+    }
+
+    api.admin.revenue().then((d) {
+      if (mounted && d is Map) {
+        setState(() => _revenue =
+            '\$${n(d['total_fees'] ?? d['total']).toStringAsFixed(0)}');
+      }
+    }).catchError((_) {
+      if (mounted) setState(() => _revenue = '—');
+    });
+    api.admin.supportTickets(status: 'open').then((d) {
+      if (mounted) setState(() => _tickets = '${count(d, 'tickets')}');
+    }).catchError((_) {
+      if (mounted) setState(() => _tickets = '—');
+    });
+    api.admin.roadsideVerifications().then((d) {
+      if (mounted) {
+        setState(() => _verifications = '${count(d, 'verifications')}');
+      }
+    }).catchError((_) {
+      if (mounted) setState(() => _verifications = '—');
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget stat(IconData icon, String label, String value) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, size: 18, color: scheme.primary),
+                const SizedBox(height: 6),
+                Text(value,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(label,
+                    style: TextStyle(color: scheme.outline, fontSize: 11)),
+              ],
+            ),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: Row(
+        children: [
+          stat(Icons.payments_outlined, 'Platform fees', _revenue),
+          const SizedBox(width: 10),
+          stat(Icons.support_agent_outlined, 'Open tickets', _tickets),
+          const SizedBox(width: 10),
+          stat(Icons.fact_check_outlined, 'Verifications', _verifications),
+        ],
+      ),
+    );
+  }
+}
+
 /// Admin settings hub: every staff tool, grouped by area. Admins see all
 /// groups; mods see only the Staff group. The backend enforces roles
 /// server-side regardless of what's shown here.
@@ -88,6 +174,7 @@ class AdminSettingsScreen extends StatelessWidget {
         child: ListView(
           children: [
             if (_isAdmin) ...[
+              const _HubStats(),
               group('Moderation', [
                 (
                   Icons.manage_accounts_outlined,
