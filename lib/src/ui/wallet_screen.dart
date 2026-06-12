@@ -11,9 +11,7 @@ import 'pay_qr_screen.dart';
 import 'split_bill_screen.dart';
 import 'wallet_insights_screen.dart';
 
-// ignore: avoid_unused_parameters -- callers still pass the wallet currency.
-String _money(num amount, String currency) =>
-    '\$${amount.toStringAsFixed(2)}';
+String _money(num amount, String currency) => formatMoney(amount, currency);
 
 /// Venmo's signature blue, used for the primary payment actions.
 const _venmoBlue = Color(0xFF008CFF);
@@ -620,10 +618,7 @@ class _WalletScreenState extends State<WalletScreen> {
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-              _hideBalance
-                  ? '••••••'
-                  : '\$${w.balance.toStringAsFixed(2)}',
+          Text(_hideBalance ? '••••••' : _money(w.balance, w.currency),
               style:
                   const TextStyle(fontSize: 34, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
@@ -2063,7 +2058,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
             const SizedBox(height: 16),
             // Venmo-style amount entry: big centered display over a keypad.
             Text(
-              '\$${_amount.text.isEmpty ? '0' : _amount.text}',
+              '${currencySymbol(_currency)}${_amount.text.isEmpty ? '0' : _amount.text}',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 42,
