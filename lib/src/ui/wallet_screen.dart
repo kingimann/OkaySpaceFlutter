@@ -1203,10 +1203,15 @@ class _SecurityDialogState extends State<_SecurityDialog> {
 /// Send money: search a recipient, then enter amount, note and the security
 /// answer required by the transfer.
 class SendMoneyScreen extends StatefulWidget {
-  const SendMoneyScreen({super.key, this.recipient});
+  const SendMoneyScreen(
+      {super.key, this.recipient, this.initialAmount, this.initialNote});
 
   /// Optional preselected recipient (e.g. from a scanned pay QR).
   final PublicUser? recipient;
+
+  /// Optional amount/note prefill (e.g. embedded in a pay QR).
+  final String? initialAmount;
+  final String? initialNote;
 
   @override
   State<SendMoneyScreen> createState() => _SendMoneyScreenState();
@@ -1214,8 +1219,8 @@ class SendMoneyScreen extends StatefulWidget {
 
 class _SendMoneyScreenState extends State<SendMoneyScreen> {
   final _search = TextEditingController();
-  final _amount = TextEditingController();
-  final _note = TextEditingController();
+  late final _amount = TextEditingController(text: widget.initialAmount);
+  late final _note = TextEditingController(text: widget.initialNote);
   final _answer = TextEditingController();
 
   Future<List<PublicUser>>? _results;
