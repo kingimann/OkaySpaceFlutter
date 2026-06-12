@@ -66,6 +66,7 @@ Widget stripeConnectView({
   required String publishableKey,
   required Future<String> Function() fetchClientSecret,
   required String component,
+  String? fallbackComponent,
   void Function()? onExit,
   void Function(String message)? onError,
 }) {
@@ -78,6 +79,14 @@ Widget stripeConnectView({
       ..height = '100%'
       ..overflow = 'auto'
       ..background = '#ffffff';
+    // Visible while Connect.js boots; replaced by the Stripe component.
+    final loading = web.document.createElement('div') as web.HTMLDivElement;
+    loading.textContent = 'Loading secure Stripe form…';
+    loading.style
+      ..padding = '24px'
+      ..color = '#555'
+      ..fontFamily = 'sans-serif';
+    container.appendChild(loading);
     () async {
       try {
         await _ensureConnectJs();
@@ -88,17 +97,36 @@ Widget stripeConnectView({
         args.setProperty(
             'fetchClientSecret'.toJS,
             (() => fetchClientSecret().then((s) => s.toJS).toJS).toJS);
-        final instance =
-            sc.callMethod('init'.toJS, args) as JSObject;
-        final el =
-            instance.callMethod('create'.toJS, component.toJS) as JSObject;
+        final instance = sc.callMethod('init'.toJS, args) as JSObject;
+        // The account session controls which components are enabled; fall
+        // back (e.g. account-management → account-onboarding) before failing.
+        JSObject? el;
+        for (final name in <String>[
+          component,
+          if (fallbackComponent != null) fallbackComponent
+        ]) {
+          try {
+            final created = instance.callMethod('create'.toJS, name.toJS);
+            if (created != null && !created.isUndefinedOrNull) {
+              el = created as JSObject;
+              break;
+            }
+          } catch (_) {/* try the fallback component */}
+        }
+        if (el == null) {
+          throw StateError(
+              'Stripe could not create the "$component" component — the '
+              'account session may not have it enabled.');
+        }
         final done = onExit;
         if (done != null &&
             !el.getProperty('setOnExit'.toJS).isUndefinedOrNull) {
           el.callMethod('setOnExit'.toJS, (() => done()).toJS);
         }
+        loading.remove();
         container.appendChild(el as web.Node);
       } catch (e) {
+        loading.remove();
         onError?.call('$e');
       }
     }();

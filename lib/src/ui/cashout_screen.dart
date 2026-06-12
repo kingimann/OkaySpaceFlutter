@@ -454,7 +454,10 @@ class EmbeddedPayoutScreen extends StatefulWidget {
 
 class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
   String? _publishableKey;
+  String? _firstSecret;
+  String? _error;
   bool _popped = false;
+  int _attempt = 0; // bumps the view so Retry rebuilds it from scratch
 
   @override
   void initState() {
@@ -462,29 +465,51 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
     _start();
   }
 
+  /// Pre-validates everything the embed needs (publishable key AND a
+  /// working account session) so a backend gap shows a real error screen
+  /// instead of a blank page.
   Future<void> _start() async {
+    setState(() {
+      _error = null;
+      _publishableKey = null;
+      _firstSecret = null;
+    });
     try {
       final cfg = await api.payments.config();
       final pk = '${cfg['publishable_key'] ?? ''}';
+      if (pk.isEmpty) throw StateError('No Stripe publishable key');
+      final secret = await _freshSecret();
       if (!mounted) return;
-      if (pk.isEmpty) {
-        _bail();
-      } else {
-        setState(() => _publishableKey = pk);
-      }
-    } catch (_) {
-      if (mounted) _bail();
+      setState(() {
+        _publishableKey = pk;
+        _firstSecret = secret;
+        _attempt++;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = messageFor(e));
     }
   }
 
-  /// One Account Session per Connect.js request; Stripe re-asks when a
-  /// session expires, so this always fetches a fresh secret.
-  Future<String> _clientSecret() async {
+  Future<String> _freshSecret() async {
     final s = await api.payments.payoutAccountSession();
     final secret =
         '${s['client_secret'] ?? s['clientSecret'] ?? s['secret'] ?? ''}';
-    if (secret.isEmpty) throw StateError('No account-session client secret');
+    if (secret.isEmpty) {
+      throw StateError(
+          'The server returned no account-session client secret');
+    }
     return secret;
+  }
+
+  /// First call uses the pre-validated secret; Connect.js re-asks when a
+  /// session expires, and then we mint a fresh one.
+  Future<String> _clientSecret() async {
+    final first = _firstSecret;
+    if (first != null) {
+      _firstSecret = null;
+      return first;
+    }
+    return _freshSecret();
   }
 
   /// Leaves the screen signalling "use the hosted link instead".
@@ -503,6 +528,7 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
   @override
   Widget build(BuildContext context) {
     final pk = _publishableKey;
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: OkayAppBar(
         title: Text(widget.component == 'account-management'
@@ -515,20 +541,68 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
           ),
         ],
       ),
-      // The Stripe component manages its own scrolling inside the page.
-      body: pk == null
-          ? const Center(child: CircularProgressIndicator())
-          : stripeConnectView(
-                  publishableKey: pk,
-                  fetchClientSecret: _clientSecret,
-                  component: widget.component,
-                  onExit: () {
-                    // Connect.js calls this off the Flutter frame; defer.
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _done());
-                  },
-                  onError: (_) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _bail());
-                  },
+      body: _error != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline,
+                        size: 40, color: scheme.error),
+                    const SizedBox(height: 12),
+                    Text('The Stripe form couldn\'t load.\n$_error',
+                        textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _start,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Try again'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _bail,
+                          icon: const Icon(Icons.open_in_new),
+                          label: const Text('Open on Stripe instead'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : pk == null
+              ? const Center(child: CircularProgressIndicator())
+              // The Stripe component manages its own scrolling. KeyedSubtree
+              // forces a fresh platform view per attempt.
+              : KeyedSubtree(
+                  key: ValueKey(_attempt),
+                  child: SizedBox.expand(
+                    child: stripeConnectView(
+                      publishableKey: pk,
+                      fetchClientSecret: _clientSecret,
+                      component: widget.component,
+                      // The session may not have this component enabled;
+                      // onboarding is the universal fallback.
+                      fallbackComponent: widget.component == 'account-management'
+                          ? 'account-onboarding'
+                          : null,
+                      onExit: () {
+                        // Connect.js calls this off the Flutter frame; defer.
+                        WidgetsBinding.instance
+                            .addPostFrameCallback((_) => _done());
+                      },
+                      onError: (msg) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) setState(() => _error = msg);
+                        });
+                      },
+                    ),
+                  ),
                 ),
     );
   }
