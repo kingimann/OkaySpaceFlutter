@@ -131,6 +131,16 @@ class PointsBreakdownScreen extends StatelessWidget {
                 for (final e in entries)
                   _sourceRow(context, pointSourceFor(e.key), e.value, total),
 
+              // Recent activity timeline.
+              if (pointsLedger.recentEvents.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                const Text('Recent',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 4),
+                for (final ev in pointsLedger.recentEvents.take(15))
+                  _eventRow(context, ev),
+              ],
+
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -200,6 +210,30 @@ class PointsBreakdownScreen extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _eventRow(BuildContext context, PointEvent ev) {
+    final scheme = Theme.of(context).colorScheme;
+    final src = pointSourceFor(ev.source);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(src.icon, color: src.color, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(src.label,
+                style: const TextStyle(fontWeight: FontWeight.w500)),
+          ),
+          Text(shortAgo(ev.at),
+              style: TextStyle(color: scheme.outline, fontSize: 12)),
+          const SizedBox(width: 12),
+          Text('+${ev.amount}',
+              style:
+                  TextStyle(color: src.color, fontWeight: FontWeight.bold)),
         ],
       ),
     );
