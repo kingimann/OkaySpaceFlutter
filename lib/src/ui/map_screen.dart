@@ -6,39 +6,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:dio/dio.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/device_location.dart';
+import '../core/mapbox_api.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
 import 'marketplace_screen.dart';
 
 /// Mapbox public access token, injected at build time via
-/// `--dart-define=MAPBOX_TOKEN=pk...`. When empty the map falls back to
-/// free OpenStreetMap/Carto tiles so it still works without a token.
-const _mapboxToken = String.fromEnvironment('MAPBOX_TOKEN');
-bool get _hasMapbox => _mapboxToken.isNotEmpty;
+/// `--dart-define=MAPBOX_TOKEN=pk...`. Mapbox is the only map provider;
+/// without a token the map screen shows a configuration notice instead.
+String get _mapboxToken => kMapboxToken;
+bool get _hasMapbox => hasMapbox;
 
-/// A selectable basemap. [mapboxStyle] is set for Mapbox styles; otherwise
-/// [url] is a plain raster XYZ template.
+/// A selectable Mapbox basemap style.
 class _TileStyle {
   const _TileStyle(this.id, this.label,
-      {this.url = '', this.mapboxStyle = '', this.dark = false});
+      {required this.mapboxStyle, this.dark = false});
   final String id;
   final String label;
-  final String url;
   final String mapboxStyle;
   final bool dark;
 
-  bool get isMapbox => mapboxStyle.isNotEmpty;
-
-  /// Resolved tile URL template (Mapbox raster tiles when configured).
-  String get tileUrl => isMapbox
-      ? 'https://api.mapbox.com/styles/v1/mapbox/$mapboxStyle/tiles/512/{z}/{x}/{y}@2x?access_token=$_mapboxToken'
-      : url;
+  String get tileUrl =>
+      'https://api.mapbox.com/styles/v1/mapbox/$mapboxStyle/tiles/512/{z}/{x}/{y}@2x?access_token=$_mapboxToken';
 }
 
 const _mapboxStyles = <_TileStyle>[
@@ -50,31 +44,9 @@ const _mapboxStyles = <_TileStyle>[
   _TileStyle('dark', 'Dark', mapboxStyle: 'dark-v11', dark: true),
 ];
 
-const _osmStyles = <_TileStyle>[
-  // CARTO Voyager: modern Apple/Google-style cartography, retina tiles,
-  // continuously updated — the default look.
-  _TileStyle('explore', 'Explore',
-      url:
-          'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'),
-  _TileStyle('light', 'Light',
-      url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'),
-  _TileStyle('dark', 'Dark',
-      url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-      dark: true),
-  _TileStyle('satellite', 'Satellite',
-      url:
-          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      dark: true),
-  _TileStyle('standard', 'Classic',
-      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
-  _TileStyle('topo', 'Terrain',
-      url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png'),
-];
-
-
 /// An interactive map with switchable layers — marketplace listings, open
 /// roadside requests and nearby transit — plus location search and an
-/// adjustable radius (OpenStreetMap tiles, no API key required).
+/// adjustable radius. Tiles, geocoding and directions are all Mapbox.
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key, this.embedded = false});
 
@@ -101,7 +73,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _loading = false;
 
   // Display options (persisted).
-  String _tileStyle = 'explore';
+  String _tileStyle = 'streets';
   bool _showRadiusCircle = true;
   bool _showCrosshair = false;
   bool _cluster = false;
@@ -254,7 +226,7 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         if (p != null && p.isNotEmpty) {
           final d = jsonDecode(p) as Map<String, dynamic>;
-          _tileStyle = d['tile'] as String? ?? 'explore';
+          _tileStyle = d['tile'] as String? ?? 'streets';
           _radiusKm = (d['radius'] as num?)?.toDouble() ?? 25;
           _showListings = d['listings'] as bool? ?? true;
           _showRoadside = d['roadside'] as bool? ?? false;
@@ -345,34 +317,20 @@ class _MapScreenState extends State<MapScreen> {
     _storage.delete(key: _recentKey).ignore();
   }
 
-  /// When Mapbox tiles repeatedly fail (bad/restricted token), fall back to
-  /// the free styles so the map never goes gray.
-  bool _forceOsm = false;
   int _tileErrors = 0;
+  bool _warnedTiles = false;
 
-  List<_TileStyle> get _styles =>
-      (_hasMapbox && !_forceOsm) ? _mapboxStyles : _osmStyles;
+  List<_TileStyle> get _styles => _mapboxStyles;
 
   _TileStyle get _style => _styles.firstWhere((s) => s.id == _tileStyle,
       orElse: () => _styles.first);
 
   void _onTileError() {
     _tileErrors++;
-    if (_tileErrors < 6) return;
-    _tileErrors = 0;
-    if (_style.isMapbox) {
-      // Token problem: switch the whole list to the free styles.
-      setState(() {
-        _forceOsm = true;
-        _tileStyle = 'explore';
-      });
-      showInfo(context,
-          'Map tiles unavailable (check the Mapbox token) — switched to the standard map.');
-    } else if (_style.id != 'standard') {
-      // A free CDN is unreachable: drop to the most reliable source.
-      setState(() => _tileStyle = 'standard');
-      showInfo(context, 'Switched to the standard map style.');
-    }
+    if (_tileErrors < 6 || _warnedTiles) return;
+    _warnedTiles = true;
+    showInfo(context,
+        'Map tiles are failing — check the Mapbox token (URL restrictions?).');
   }
 
   /// Distinct categories of saved places, prefixed with 'all'.
@@ -472,42 +430,21 @@ class _MapScreenState extends State<MapScreen> {
     _loadAll();
   }
 
-  /// Fetches a driving route through [points] and draws it with a
-  /// distance/time summary. Uses Mapbox Directions (live traffic) when the
-  /// token is configured, falling back to the public OSRM server.
+  /// Fetches a Mapbox driving-traffic route through [points] and draws it
+  /// with a distance/time summary.
   Future<void> _fetchDriveRoute(List<LatLng> points) async {
     if (points.length < 2) return;
     try {
-      final coordsParam =
-          points.map((p) => '${p.longitude},${p.latitude}').join(';');
-      final res = await Dio().get<Map<String, dynamic>>(
-        _hasMapbox
-            ? 'https://api.mapbox.com/directions/v5/mapbox/driving-traffic/$coordsParam'
-            : 'https://router.project-osrm.org/route/v1/driving/$coordsParam',
-        queryParameters: {
-          'overview': 'full',
-          'geometries': 'geojson',
-          if (_hasMapbox) 'access_token': _mapboxToken,
-        },
-      );
-      final routes = res.data?['routes'];
-      if (routes is! List || routes.isEmpty) {
+      final r = await driveRoute(points);
+      if (r == null) {
         if (mounted) showInfo(context, 'No drivable route found.');
         return;
       }
-      final route = routes.first as Map;
-      final coords =
-          ((route['geometry'] as Map)['coordinates'] as List).cast<List>();
-      final km = ((route['distance'] as num) / 1000);
-      final mins = ((route['duration'] as num) / 60).round();
       if (!mounted) return;
       setState(() {
-        _roadRoute = [
-          for (final c in coords)
-            LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
-        ];
-        _routeSummary = '${km.toStringAsFixed(1)} km · ~$mins min drive'
-            '${_hasMapbox ? ' (live traffic)' : ''}';
+        _roadRoute = r.line;
+        _routeSummary =
+            '${r.km.toStringAsFixed(1)} km · ~${r.mins} min drive (live traffic)';
       });
     } catch (e) {
       if (mounted) showError(context, e);
@@ -573,7 +510,7 @@ class _MapScreenState extends State<MapScreen> {
               }
               setSheet(() => busy = true);
               try {
-                final r = await api.roadside.geocode(q);
+                final r = await geocodePlaces(q);
                 if (!c.mounted) return;
                 _addRecent(q);
                 if (r.isEmpty) {
@@ -774,7 +711,7 @@ class _MapScreenState extends State<MapScreen> {
     try {
       double? dLat, dLng;
       String destName = destQuery;
-      final places = await api.roadside.geocode(destQuery);
+      final places = await geocodePlaces(destQuery);
       if (places.isNotEmpty) {
         final r = places.first;
         destName = '${r['name'] ?? r['display_name'] ?? destQuery}';
@@ -1180,7 +1117,7 @@ class _MapScreenState extends State<MapScreen> {
   void _shareThisLocation() {
     final c = _controller.camera.center;
     final url =
-        'https://www.openstreetmap.org/?mlat=${c.latitude}&mlon=${c.longitude}#map=${_controller.camera.zoom.round()}/${c.latitude}/${c.longitude}';
+        'https://www.google.com/maps/search/?api=1&query=${c.latitude},${c.longitude}';
     Clipboard.setData(ClipboardData(text: url));
     showInfo(context, 'Location link copied');
   }
@@ -1565,6 +1502,19 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
+    // Mapbox is the sole provider: without the build-time token there is
+    // nothing to render — say so instead of showing a gray map.
+    if (!_hasMapbox) {
+      return Scaffold(
+        extendBody: !widget.embedded,
+        bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
+        body: const CenteredMessage(
+            message:
+                'Maps are powered by Mapbox.\nThis build is missing the MAPBOX_TOKEN — add the secret and redeploy.',
+            icon: Icons.map_outlined),
+      );
+    }
+
     final markers = <Marker>[
       if (_showListings)
         for (final l in _listings)
@@ -1656,13 +1606,9 @@ class _MapScreenState extends State<MapScreen> {
               TileLayer(
                 urlTemplate: _style.tileUrl,
                 userAgentPackageName: 'ca.okayspace.app',
-                tileSize: _style.isMapbox ? 512 : 256,
-                zoomOffset: _style.isMapbox ? -1 : 0,
-                additionalOptions: _style.isMapbox
-                    ? const {'token': _mapboxToken}
-                    : const {},
-                // Self-heal: repeated tile failures switch to a working style
-                // instead of leaving a gray map.
+                tileSize: 512,
+                zoomOffset: -1,
+                additionalOptions: {'token': _mapboxToken},
                 errorTileCallback: (tile, error, stackTrace) => _onTileError(),
               ),
               if (_showGrid) PolylineLayer(polylines: _graticule()),
@@ -1766,11 +1712,9 @@ class _MapScreenState extends State<MapScreen> {
                 for (final p in _route) _dot(p, scheme.primary),
                 for (final p in _areaPoints) _dot(p, scheme.tertiary),
               ]),
-              RichAttributionWidget(
+              const RichAttributionWidget(
                 attributions: [
-                  TextSourceAttribution(_style.isMapbox
-                      ? '© Mapbox © OpenStreetMap'
-                      : '© OpenStreetMap contributors'),
+                  TextSourceAttribution('© Mapbox © OpenStreetMap'),
                 ],
               ),
             ],

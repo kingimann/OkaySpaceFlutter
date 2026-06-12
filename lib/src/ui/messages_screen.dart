@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../okayspace_api.dart';
+import '../core/mapbox_api.dart';
 import 'call_screen.dart';
 import 'common.dart';
 import 'linked_text.dart';
@@ -4006,10 +4007,7 @@ class _MessageBubble extends StatelessWidget {
                   const InteractionOptions(flags: InteractiveFlag.none),
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'ca.okayspace.app',
-              ),
+              mapboxTileLayer(),
               MarkerLayer(markers: [
                 Marker(
                   point: LatLng(lat, lng),
@@ -4965,10 +4963,7 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
               onTap: (_, p) => setState(() => _point = p),
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'ca.okayspace.app',
-              ),
+              mapboxTileLayer(),
               MarkerLayer(markers: [
                 Marker(
                   point: _point,

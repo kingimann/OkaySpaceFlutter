@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../okayspace_api.dart';
+import '../core/mapbox_api.dart';
 import 'common.dart';
 
 /// Compose and publish a new post with optional photo attachments.
@@ -342,7 +343,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
         action: 'Search');
     if (query == null) return;
     try {
-      final results = await api.roadside.geocode(query);
+      final results = await geocodePlaces(query);
       if (!mounted) return;
       if (results.isEmpty) {
         showInfo(context, 'No places found.');

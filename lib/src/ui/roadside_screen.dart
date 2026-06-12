@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
 import '../core/device_location.dart';
+import '../core/mapbox_api.dart';
 import 'common.dart';
 
 const _services = <(String, String, IconData)>[
@@ -372,11 +373,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
                 initialZoom: 10,
               ),
               children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'ca.okayspace.app',
-                ),
+                mapboxTileLayer(),
                 MarkerLayer(markers: [
                   for (final r in items)
                     Marker(
@@ -791,11 +788,7 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                           initialZoom: 13,
                         ),
                         children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'ca.okayspace.app',
-                          ),
+                          mapboxTileLayer(),
                           MarkerLayer(markers: [
                             Marker(
                               point: LatLng(r.latitude, r.longitude),
@@ -1091,7 +1084,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
         setState(() => _dropResults = null);
         return;
       }
-      setState(() => _dropResults = api.roadside.geocode(query));
+      setState(() => _dropResults = geocodePlaces(query));
     });
   }
 
@@ -1179,7 +1172,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
         setState(() => _geoResults = null); // clear stale suggestions
         return;
       }
-      setState(() => _geoResults = api.roadside.geocode(query));
+      setState(() => _geoResults = geocodePlaces(query));
     });
   }
 
@@ -1432,11 +1425,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                           initialZoom: 14,
                         ),
                         children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'ca.okayspace.app',
-                          ),
+                          mapboxTileLayer(),
                           MarkerLayer(markers: [
                             Marker(
                               point: LatLng(_pickedLat!, _pickedLng!),
@@ -1557,11 +1546,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                             initialZoom: 10,
                           ),
                           children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName: 'ca.okayspace.app',
-                            ),
+                            mapboxTileLayer(),
                             PolylineLayer(polylines: [
                               Polyline(
                                 points: [
