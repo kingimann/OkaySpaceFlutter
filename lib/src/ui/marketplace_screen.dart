@@ -5,6 +5,7 @@ import '../../okayspace_api.dart';
 import 'business_screen.dart';
 import 'common.dart';
 import 'create_listing_screen.dart';
+import 'profile_screen.dart';
 
 String _price(Listing l) => '${l.currency} ${l.price.toStringAsFixed(2)}';
 
@@ -449,6 +450,7 @@ class ListingDetailScreen extends StatefulWidget {
 class _ListingDetailScreenState extends State<ListingDetailScreen> {
   late Future<Listing> _listing;
   late Future<List<ListingComment>> _comments;
+  Future<List<Listing>>? _moreFromSeller;
   bool? _saved; // local override once toggled
 
   @override
@@ -456,6 +458,16 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     super.initState();
     _listing = api.marketplace.get(widget.listingId);
     _comments = api.marketplace.comments(widget.listingId);
+    // Other listings by the same seller (current one excluded).
+    _listing.then((l) {
+      if (mounted && l.userId.isNotEmpty) {
+        setState(() {
+          _moreFromSeller = api.marketplace.userListings(l.userId).then(
+              (items) =>
+                  items.where((x) => x.id != widget.listingId).toList());
+        });
+      }
+    }).catchError((_) {});
   }
 
   Future<void> _addComment() async {
@@ -631,11 +643,26 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                       ]),
                     ],
                     const SizedBox(height: 12),
-                    Row(children: [
-                      Avatar(url: l.seller.picture, name: l.seller.name, radius: 16),
-                      const SizedBox(width: 8),
-                      Text(l.seller.name),
-                    ]),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: l.userId.isEmpty
+                          ? null
+                          : () => ProfileScreen.open(context, l.userId),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(children: [
+                          Avatar(
+                              url: l.seller.picture,
+                              name: l.seller.name,
+                              radius: 16),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(l.seller.name)),
+                          Icon(Icons.chevron_right,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.outline),
+                        ]),
+                      ),
+                    ),
                     if (l.description != null) ...[
                       const Divider(height: 32),
                       Text(l.description!),
@@ -665,6 +692,92 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         ),
                       ],
                     ),
+                    if (_moreFromSeller != null)
+                      FutureBuilder<List<Listing>>(
+                        future: _moreFromSeller,
+                        builder: (context, snap) {
+                          final more = snap.data ?? const <Listing>[];
+                          if (more.isEmpty) return const SizedBox.shrink();
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Divider(height: 32),
+                              const Text('More from this seller',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                height: 150,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: more.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 10),
+                                  itemBuilder: (context, i) {
+                                    final m = more[i];
+                                    final scheme =
+                                        Theme.of(context).colorScheme;
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: () => Navigator.of(context)
+                                          .push(MaterialPageRoute(
+                                        builder: (_) => ListingDetailScreen(
+                                            listingId: m.id),
+                                      )),
+                                      child: SizedBox(
+                                        width: 120,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              child: m.photos.isNotEmpty
+                                                  ? Image.network(
+                                                      m.photos.first,
+                                                      width: 120,
+                                                      height: 92,
+                                                      fit: BoxFit.cover)
+                                                  : Container(
+                                                      width: 120,
+                                                      height: 92,
+                                                      color: scheme
+                                                          .surfaceContainerHighest,
+                                                      child: Icon(
+                                                          Icons
+                                                              .storefront_outlined,
+                                                          color: scheme
+                                                              .outline),
+                                                    ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(m.title,
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                    fontSize: 12.5,
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                            Text(_price(m),
+                                                style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: scheme.primary,
+                                                    fontWeight:
+                                                        FontWeight.bold)),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     const Divider(height: 32),
                     Row(
                       children: [
