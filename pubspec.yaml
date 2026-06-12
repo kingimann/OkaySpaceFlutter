@@ -27,6 +27,8 @@ dependencies:
   nfc_manager: ^3.5.0
   # Biometric unlock for the wallet PIN lock (no-op on web).
   local_auth: ^2.3.0
+  # Open external maps for roadside directions.
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

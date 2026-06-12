@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -130,7 +131,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
             children: [
               _mineTab(),
               _nearbyTab(),
-              _list(_helping, "You're not helping with any requests."),
+              _helpingTab(),
               _list(_history, 'No past requests.'),
             ],
           ),
@@ -211,6 +212,59 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
         Expanded(
           child: _list(_mine,
               'No roadside requests.\nTap “Request help” if you’re stuck.'),
+        ),
+      ],
+    );
+  }
+
+  /// Helping tab: lifetime helper stats over the active list.
+  Widget _helpingTab() {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        FutureBuilder<List<RoadsideRequest>>(
+          future: _history,
+          builder: (context, snap) {
+            final done = (snap.data ?? const <RoadsideRequest>[])
+                .where((r) =>
+                    r.helping && r.status.toLowerCase() == 'completed')
+                .toList();
+            if (done.isEmpty) return const SizedBox.shrink();
+            final earned =
+                done.fold<num>(0, (a, r) => a + r.total);
+            Widget stat(String label, String value) => Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(value,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 17)),
+                        Text(label,
+                            style: TextStyle(
+                                color: scheme.outline, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                );
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Row(children: [
+                stat('Rescues completed', '${done.length}'),
+                const SizedBox(width: 10),
+                stat('Earned helping', '\$${earned.toStringAsFixed(2)}'),
+              ]),
+            );
+          },
+        ),
+        Expanded(
+          child:
+              _list(_helping, "You're not helping with any requests."),
         ),
       ],
     );
@@ -647,7 +701,19 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.directions_outlined, size: 18),
+                    label: const Text('Get directions'),
+                    onPressed: () => launchUrl(
+                      Uri.parse(
+                          'https://www.google.com/maps/dir/?api=1&destination=${r.latitude},${r.longitude}'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                  ),
+                ),
                 _row(Icons.place_outlined, r.placeName ?? 'Location set'),
                 if (r.vehicleMake != null || r.vehicleModel != null)
                   _row(Icons.directions_car_outlined,
