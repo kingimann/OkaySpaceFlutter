@@ -1,4 +1,9 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:image_picker/image_picker.dart';
 
 import 'admin_settings_screen.dart';
 import 'common.dart';
@@ -248,6 +253,9 @@ class _AdminRoadsideCallsScreenState extends State<AdminRoadsideCallsScreen> {
   final _date = TextEditingController();
   final _callNo = TextEditingController();
 
+  /// Client-side service filter ('' = all).
+  String _serviceFilter = '';
+
   Future<List<Map<String, dynamic>>> _fetch({String? date, String? callNo}) =>
       api.admin
           .roadsideCalls(date: date, callNumber: callNo)
@@ -288,33 +296,37 @@ class _AdminRoadsideCallsScreenState extends State<AdminRoadsideCallsScreen> {
   }
 
   Future<void> _create({required bool isTest}) async {
-    final name = await promptText(context,
-        title: isTest ? 'Test call · caller name' : 'Real call · caller name',
-        hint: 'Caller name',
-        action: 'Next');
-    if (name == null || !mounted) return;
-    final place = await promptText(context,
-        title: 'Place / address', hint: 'Where is the vehicle?',
-        action: 'Create');
-    if (place == null || !mounted) return;
-    try {
-      final res = await api.admin.createRoadsideCall({
-        'service': 'tow',
-        'caller_name': name,
-        'place': place,
-        'is_test': isTest,
-      });
-      if (mounted) {
-        showInfo(
-            context,
-            isTest
-                ? 'Test call created'
-                : 'Call #${res['call_number'] ?? res['number'] ?? '?'} created');
-        _search();
-      }
-    } catch (e) {
-      if (mounted) showError(context, e);
+    final created = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => AdminRoadsideCallFormScreen(isTest: isTest)));
+    if (created == true && mounted) _search();
+  }
+
+  /// Copies the visible calls to the clipboard as CSV.
+  Future<void> _exportCsv() async {
+    final calls = await _calls.catchError((_) => <Map<String, dynamic>>[]);
+    if (!mounted || calls.isEmpty) {
+      if (mounted) showInfo(context, 'Nothing to export.');
+      return;
     }
+    String esc(String v) => '"${v.replaceAll('"', '""')}"';
+    final rows = [
+      'call_number,service,status,is_test,caller,helper,place,destination,price,created_at',
+      for (final c in calls)
+        [
+          esc(_s(c, ['call_number', 'number'])),
+          esc(_s(c, ['service'])),
+          esc(_s(c, ['status'])),
+          '${c['is_test'] == true}',
+          esc(_s(c, ['caller_name', 'requester_name'])),
+          esc(_s(c, ['helper_name'])),
+          esc(_s(c, ['place', 'address'])),
+          esc(_s(c, ['destination', 'dest_name'])),
+          esc(_s(c, ['price', 'amount'])),
+          esc(_s(c, ['created_at'])),
+        ].join(','),
+    ];
+    await Clipboard.setData(ClipboardData(text: rows.join('\n')));
+    if (mounted) showInfo(context, 'Copied ${calls.length} calls as CSV');
   }
 
   @override
@@ -351,6 +363,10 @@ class _AdminRoadsideCallsScreenState extends State<AdminRoadsideCallsScreen> {
                   ),
                   IconButton(
                       icon: const Icon(Icons.search), onPressed: _search),
+                  IconButton(
+                      icon: const Icon(Icons.download_outlined),
+                      tooltip: 'Export CSV',
+                      onPressed: _exportCsv),
                 ],
               ),
             ),
@@ -376,53 +392,484 @@ class _AdminRoadsideCallsScreenState extends State<AdminRoadsideCallsScreen> {
                 ],
               ),
             ),
-            Expanded(
-              child: AsyncList<Map<String, dynamic>>(
-                future: _calls,
-                emptyMessage: 'No roadside calls.',
-                emptyIcon: Icons.car_crash_outlined,
-                builder: (context, calls) => ListView(
-                  padding: const EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                   children: [
-                    for (final c in calls)
-                      Card(
-                        child: ListTile(
-                          title: Text(
-                              '#${_s(c, ['call_number', 'number'], '?')} · ${_s(c, ['service'], 'call')}'
-                              '${c['is_test'] == true ? ' · TEST' : ''}'),
-                          subtitle: Text(
-                              [
-                                _s(c, ['caller_name', 'requester_name']),
-                                _s(c, ['place', 'address']),
-                                _s(c, ['status']),
-                                if (_s(c, ['price', 'amount']).isNotEmpty)
-                                  '\$${_s(c, ['price', 'amount'])}',
-                              ].where((x) => x.isNotEmpty).join(' · '),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis),
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete_outline,
-                                color: scheme.error),
-                            onPressed: () async {
-                              if (!await adminConfirm(context, 'Delete call',
-                                  'Delete this roadside call?',
-                                  action: 'Delete', destructive: true)) {
-                                return;
-                              }
-                              try {
-                                await api.admin
-                                    .deleteRoadsideCall(_s(c, ['id']));
-                                if (context.mounted) _search();
-                              } catch (e) {
-                                if (context.mounted) showError(context, e);
-                              }
-                            },
-                          ),
+                    for (final (id, label) in const [
+                      ('', 'All'),
+                      ('tow', 'Tow'),
+                      ('lockout', 'Lockout'),
+                      ('battery', 'Battery'),
+                      ('tire', 'Tire'),
+                      ('fuel', 'Gas'),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(label),
+                          selected: _serviceFilter == id,
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (_) =>
+                              setState(() => _serviceFilter = id),
                         ),
                       ),
                   ],
                 ),
               ),
+            ),
+            Expanded(
+              child: AsyncList<Map<String, dynamic>>(
+                future: _calls,
+                emptyMessage: 'No roadside calls.',
+                emptyIcon: Icons.car_crash_outlined,
+                builder: (context, all) {
+                  final calls = _serviceFilter.isEmpty
+                      ? all
+                      : all
+                          .where((c) =>
+                              _s(c, ['service']).toLowerCase() ==
+                              _serviceFilter)
+                          .toList();
+                  final open = calls
+                      .where((c) => !const ['completed', 'cancelled', 'canceled']
+                          .contains(_s(c, ['status']).toLowerCase()))
+                      .length;
+                  final tests =
+                      calls.where((c) => c['is_test'] == true).length;
+                  return ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // At-a-glance stats for the visible set.
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                            '${calls.length} call${calls.length == 1 ? '' : 's'} · $open open · $tests test',
+                            style: TextStyle(
+                                color: scheme.outline,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                      for (final c in calls)
+                        _CallCard(call: c, onChanged: _search),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One roadside call, with everything dispatch needs at a glance.
+class _CallCard extends StatelessWidget {
+  const _CallCard({required this.call, required this.onChanged});
+
+  final Map<String, dynamic> call;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final c = call;
+    final status = _s(c, ['status'], 'open');
+    final photos = c['photos'] is List
+        ? (c['photos'] as List).map((e) => '$e').where((u) => u.isNotEmpty)
+        : const Iterable<String>.empty();
+    final vehicle = [
+      _s(c, ['vehicle_year']),
+      _s(c, ['vehicle_color']),
+      _s(c, ['vehicle_make']),
+      _s(c, ['vehicle_model']),
+      if (_s(c, ['vehicle_plate']).isNotEmpty)
+        '· ${_s(c, ['vehicle_plate'])}',
+    ].where((x) => x.isNotEmpty).join(' ');
+    final payment = [
+      _s(c, ['payment_method']),
+      if (_s(c, ['price', 'amount']).isNotEmpty)
+        '\$${_s(c, ['price', 'amount'])}',
+      if (c['settled'] == true)
+        'settled'
+      else if (c['settled'] == false)
+        'held',
+    ].where((x) => x.isNotEmpty).join(' · ');
+
+    Widget line(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 15, color: scheme.outline),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(text,
+                    style: TextStyle(fontSize: 12.5, color: scheme.outline)),
+              ),
+            ],
+          ),
+        );
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                      '#${_s(c, ['call_number', 'number'], '?')} · ${_s(c, ['service'], 'call')}',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                if (c['is_test'] == true)
+                  Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('TEST',
+                        style: TextStyle(
+                            color: Color(0xFFF59E0B),
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(status,
+                      style: TextStyle(
+                          color: scheme.primary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold)),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.delete_outline,
+                      size: 19, color: scheme.error),
+                  onPressed: () async {
+                    if (!await adminConfirm(context, 'Delete call',
+                        'Delete this roadside call?',
+                        action: 'Delete', destructive: true)) {
+                      return;
+                    }
+                    try {
+                      await api.admin.deleteRoadsideCall(_s(c, ['id']));
+                      if (context.mounted) onChanged();
+                    } catch (e) {
+                      if (context.mounted) showError(context, e);
+                    }
+                  },
+                ),
+              ],
+            ),
+            line(
+                Icons.person_outline,
+                [
+                  _s(c, ['caller_name', 'requester_name'], 'Caller'),
+                  if (_s(c, ['caller_phone', 'phone']).isNotEmpty)
+                    _s(c, ['caller_phone', 'phone']),
+                ].join(' · ')),
+            if (_s(c, ['helper_name']).isNotEmpty)
+              line(
+                  Icons.volunteer_activism_outlined,
+                  [
+                    'Helper: ${_s(c, ['helper_name'])}',
+                    if (_s(c, ['helper_phone']).isNotEmpty)
+                      _s(c, ['helper_phone']),
+                  ].join(' · ')),
+            if (vehicle.isNotEmpty)
+              line(Icons.directions_car_outlined, vehicle),
+            if (_s(c, ['place', 'address']).isNotEmpty)
+              line(Icons.place_outlined, _s(c, ['place', 'address'])),
+            if (_s(c, ['destination', 'dest_name']).isNotEmpty)
+              line(Icons.flag_outlined,
+                  'Drop-off: ${_s(c, ['destination', 'dest_name'])}'),
+            if (_s(c, ['note', 'notes']).isNotEmpty)
+              line(Icons.notes, _s(c, ['note', 'notes'])),
+            if (payment.isNotEmpty) line(Icons.attach_money, payment),
+            line(
+                Icons.schedule,
+                [
+                  'created ${_s(c, ['created_at']).split('T').first}',
+                  if (_s(c, ['accepted_at']).isNotEmpty)
+                    'accepted ${_s(c, ['accepted_at']).split('T').first}',
+                  if (_s(c, ['completed_at']).isNotEmpty)
+                    'completed ${_s(c, ['completed_at']).split('T').first}',
+                ].join(' · ')),
+            if (photos.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final url in photos.take(6))
+                      InkWell(
+                        onTap: () => _lightbox(context, url),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(url,
+                              width: 72, height: 54, fit: BoxFit.cover),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Full call-creation form: service, caller, vehicle, price, notes, photos,
+/// and optional coordinates (defaults to downtown Toronto).
+class AdminRoadsideCallFormScreen extends StatefulWidget {
+  const AdminRoadsideCallFormScreen({super.key, required this.isTest});
+
+  final bool isTest;
+
+  @override
+  State<AdminRoadsideCallFormScreen> createState() =>
+      _AdminRoadsideCallFormScreenState();
+}
+
+class _AdminRoadsideCallFormScreenState
+    extends State<AdminRoadsideCallFormScreen> {
+  String _service = 'tow';
+  final _caller = TextEditingController();
+  final _phone = TextEditingController();
+  final _place = TextEditingController();
+  final _year = TextEditingController();
+  final _make = TextEditingController();
+  final _model = TextEditingController();
+  final _color = TextEditingController();
+  final _plate = TextEditingController();
+  final _price = TextEditingController();
+  final _notes = TextEditingController();
+  final _lat = TextEditingController();
+  final _lng = TextEditingController();
+  final List<Uint8List> _photos = [];
+  bool _busy = false;
+
+  static const _callServices = [
+    ('tow', 'Tow', Icons.local_shipping),
+    ('lockout', 'Lockout', Icons.lock_outline),
+    ('battery', 'Battery', Icons.battery_charging_full),
+    ('tire', 'Tire', Icons.tire_repair),
+    ('fuel', 'Gas', Icons.local_gas_station),
+  ];
+
+  @override
+  void dispose() {
+    for (final c in [
+      _caller, _phone, _place, _year, _make, _model,
+      _color, _plate, _price, _notes, _lat, _lng,
+    ]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _addPhotos() async {
+    try {
+      final picked = await ImagePicker().pickMultiImage(
+          maxWidth: 1280, maxHeight: 1280, imageQuality: 70);
+      for (final f in picked.take(6 - _photos.length)) {
+        _photos.add(await f.readAsBytes());
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_caller.text.trim().isEmpty || _place.text.trim().isEmpty) {
+      showInfo(context, 'Caller name and place are required.');
+      return;
+    }
+    final price = num.tryParse(_price.text.trim());
+    setState(() => _busy = true);
+    try {
+      final res = await api.admin.createRoadsideCall({
+        'service': _service,
+        'caller_name': _caller.text.trim(),
+        if (_phone.text.trim().isNotEmpty)
+          'caller_phone': _phone.text.trim(),
+        'place': _place.text.trim(),
+        if (_year.text.trim().isNotEmpty)
+          'vehicle_year': _year.text.trim(),
+        if (_make.text.trim().isNotEmpty)
+          'vehicle_make': _make.text.trim(),
+        if (_model.text.trim().isNotEmpty)
+          'vehicle_model': _model.text.trim(),
+        if (_color.text.trim().isNotEmpty)
+          'vehicle_color': _color.text.trim(),
+        if (_plate.text.trim().isNotEmpty)
+          'vehicle_plate': _plate.text.trim(),
+        if (price != null && price.isFinite) 'price': price,
+        if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
+        // Defaults to downtown Toronto when not provided (per spec).
+        'latitude': double.tryParse(_lat.text.trim()) ?? 43.6532,
+        'longitude': double.tryParse(_lng.text.trim()) ?? -79.3832,
+        if (_photos.isNotEmpty)
+          'photos': [
+            for (final b in _photos)
+              'data:image/jpeg;base64,${base64Encode(b)}',
+          ],
+        'is_test': widget.isTest,
+      });
+      if (mounted) {
+        showInfo(
+            context,
+            widget.isTest
+                ? 'Test call created'
+                : 'Call #${res['call_number'] ?? res['number'] ?? '?'} created');
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget two(TextEditingController a, String la, TextEditingController b,
+            String lb) =>
+        Row(children: [
+          Expanded(
+            child: TextField(
+                controller: a,
+                decoration: InputDecoration(
+                    labelText: la,
+                    isDense: true,
+                    border: const OutlineInputBorder())),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+                controller: b,
+                decoration: InputDecoration(
+                    labelText: lb,
+                    isDense: true,
+                    border: const OutlineInputBorder())),
+          ),
+        ]);
+
+    return Scaffold(
+      appBar: OkayAppBar(
+          title: Text(widget.isTest ? 'New test call' : 'New roadside call')),
+      body: MaxWidth(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final (id, label, icon) in _callServices)
+                  ChoiceChip(
+                    avatar: Icon(icon, size: 16),
+                    label: Text(label),
+                    selected: _service == id,
+                    onSelected: (_) => setState(() => _service = id),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            two(_caller, 'Caller name *', _phone, 'Phone'),
+            const SizedBox(height: 10),
+            TextField(
+                controller: _place,
+                decoration: const InputDecoration(
+                    labelText: 'Place / address *',
+                    isDense: true,
+                    border: OutlineInputBorder())),
+            const SizedBox(height: 14),
+            Text('VEHICLE',
+                style: TextStyle(
+                    color: scheme.outline,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.6)),
+            const SizedBox(height: 8),
+            two(_year, 'Year', _make, 'Make'),
+            const SizedBox(height: 10),
+            two(_model, 'Model', _color, 'Color'),
+            const SizedBox(height: 10),
+            two(_plate, 'Plate', _price, 'Price (\$)'),
+            const SizedBox(height: 10),
+            TextField(
+                controller: _notes,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                    labelText: 'Notes',
+                    isDense: true,
+                    border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            two(_lat, 'Latitude (optional)', _lng, 'Longitude (optional)'),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                for (var i = 0; i < _photos.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Stack(children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(_photos[i],
+                            width: 56, height: 56, fit: BoxFit.cover),
+                      ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: InkWell(
+                          onTap: () => setState(() => _photos.removeAt(i)),
+                          child: const CircleAvatar(
+                              radius: 9,
+                              backgroundColor: Colors.black54,
+                              child: Icon(Icons.close,
+                                  size: 12, color: Colors.white)),
+                        ),
+                      ),
+                    ]),
+                  ),
+                if (_photos.length < 6)
+                  OutlinedButton.icon(
+                    onPressed: _addPhotos,
+                    icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+                    label: Text('Photos (${_photos.length}/6)'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _busy ? null : _submit,
+              icon: _busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.send),
+              label: Text(widget.isTest ? 'Create test call' : 'Create call'),
             ),
           ],
         ),
