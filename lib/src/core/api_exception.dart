@@ -1,5 +1,3 @@
-import 'package:dio/dio.dart';
-
 /// A normalized error thrown by [ApiClient] for every failed request.
 ///
 /// The OkaySpace backend reports errors as
@@ -27,7 +25,7 @@ class ApiException implements Exception {
   /// Raw error payload for callers that need the full detail.
   final Object? details;
 
-  /// The original error (e.g. a [DioException]) when relevant.
+  /// The original error (e.g. a [TransportFailure]) when relevant.
   final Object? cause;
 
   bool get isNetworkError => statusCode == null;
@@ -36,21 +34,9 @@ class ApiException implements Exception {
   bool get isNotFound => statusCode == 404;
   bool get isValidationError => statusCode == 422;
 
-  /// Builds an [ApiException] from a Dio failure, extracting the backend's
-  /// error envelope when present.
-  factory ApiException.fromDio(DioException e) {
-    final response = e.response;
-    final status = response?.statusCode;
-    final data = response?.data;
-
-    if (status == null) {
-      return ApiException(
-        statusCode: null,
-        message: _transportMessage(e),
-        cause: e,
-      );
-    }
-
+  /// Builds an [ApiException] from an HTTP error response, extracting the
+  /// backend's error envelope when present.
+  factory ApiException.fromResponse(int statusCode, Object? data) {
     String? code;
     String? message;
     Object? details = data;
@@ -71,28 +57,16 @@ class ApiException implements Exception {
     }
 
     return ApiException(
-      statusCode: status,
+      statusCode: statusCode,
       code: code,
-      message: message ?? 'Request failed with status $status.',
+      message: message ?? 'Request failed with status $statusCode.',
       details: details,
-      cause: e,
     );
   }
 
-  static String _transportMessage(DioException e) {
-    switch (e.type) {
-      case DioExceptionType.connectionTimeout:
-      case DioExceptionType.sendTimeout:
-      case DioExceptionType.receiveTimeout:
-        return 'The connection timed out. Please try again.';
-      case DioExceptionType.connectionError:
-        return 'Could not reach the server. Check your connection.';
-      case DioExceptionType.cancel:
-        return 'The request was cancelled.';
-      default:
-        return e.message ?? 'A network error occurred.';
-    }
-  }
+  /// A transport-level failure that produced no HTTP response.
+  factory ApiException.network(String message, {Object? cause}) =>
+      ApiException(statusCode: null, message: message, cause: cause);
 
   /// Pulls a readable message out of FastAPI's `detail` list.
   static String? _messageFromDetail(Object detail) {

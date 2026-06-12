@@ -1,14 +1,16 @@
 /// OkaySpace API client for Flutter.
 ///
-/// A hand-written, Dio-based client for the OkaySpace REST API
-/// (`https://okayspace-v0vx.onrender.com/api/v1`). Import this single file to
-/// access the client, services and models.
+/// A fully hand-written client for the OkaySpace REST API
+/// (`https://okayspace-v0vx.onrender.com/api/v1`) — including its own HTTP
+/// transport, with no third-party networking dependency. Import this single
+/// file to access the client, services and models.
 library;
 
 // Core
 export 'src/okayspace_api.dart';
 export 'src/core/api_client.dart';
 export 'src/core/api_config.dart';
+export 'src/core/http_transport.dart';
 export 'src/core/api_exception.dart';
 export 'src/core/token_store.dart';
 

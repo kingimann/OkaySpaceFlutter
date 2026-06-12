@@ -1,10 +1,12 @@
-import 'package:dio/dio.dart';
+import 'dart:convert';
+
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 // The shared client lives with the UI layer; pragmatic import for the
 // no-token fallback only.
 import '../ui/common.dart' show api;
+import 'http_transport.dart';
 
 /// Mapbox is the app's sole mapping provider: tiles, geocoding, and
 /// directions. The public token ships at build time via
@@ -12,7 +14,19 @@ import '../ui/common.dart' show api;
 const kMapboxToken = String.fromEnvironment('MAPBOX_TOKEN');
 bool get hasMapbox => kMapboxToken.isNotEmpty;
 
-final _dio = Dio();
+/// GET [url] on the app's own transport and decode the JSON object reply
+/// (null on HTTP errors — Mapbox failures degrade, they don't crash).
+Future<Map<String, dynamic>?> _getJson(String url) async {
+  final res = await sendHttp(HttpRequestData(
+    method: 'GET',
+    url: Uri.parse(url),
+    headers: const {'Accept': 'application/json'},
+    timeout: const Duration(seconds: 20),
+  ));
+  if (res.status >= 400) return null;
+  final data = jsonDecode(res.body);
+  return data is Map<String, dynamic> ? data : null;
+}
 
 /// Shared raster tile layer for the app's inline mini-maps (route previews,
 /// shared locations). The full map screen manages its own styles.
@@ -29,12 +43,11 @@ TileLayer mapboxTileLayer() => TileLayer(
 /// same shape the UI already consumes: {name, full_address, lat, lng}.
 Future<List<Map<String, dynamic>>> geocodePlaces(String query) async {
   if (!hasMapbox) return api.roadside.geocode(query);
-  final res = await _dio.get<Map<String, dynamic>>(
-    'https://api.mapbox.com/geocoding/v5/mapbox.places/'
-    '${Uri.encodeComponent(query)}.json',
-    queryParameters: {'access_token': kMapboxToken, 'limit': 6},
-  );
-  final features = res.data?['features'];
+  final data = await _getJson(
+      'https://api.mapbox.com/geocoding/v5/mapbox.places/'
+      '${Uri.encodeComponent(query)}.json'
+      '?access_token=$kMapboxToken&limit=6');
+  final features = data?['features'];
   if (features is! List) return const [];
   return [
     for (final f in features.whereType<Map>())
@@ -57,15 +70,10 @@ Future<({List<LatLng> line, double km, int mins})?> driveRoute(
     throw StateError('Mapbox token not configured');
   }
   final coords = points.map((p) => '${p.longitude},${p.latitude}').join(';');
-  final res = await _dio.get<Map<String, dynamic>>(
-    'https://api.mapbox.com/directions/v5/mapbox/driving-traffic/$coords',
-    queryParameters: {
-      'overview': 'full',
-      'geometries': 'geojson',
-      'access_token': kMapboxToken,
-    },
-  );
-  final routes = res.data?['routes'];
+  final data = await _getJson(
+      'https://api.mapbox.com/directions/v5/mapbox/driving-traffic/$coords'
+      '?overview=full&geometries=geojson&access_token=$kMapboxToken');
+  final routes = data?['routes'];
   if (routes is! List || routes.isEmpty) return null;
   final route = routes.first as Map;
   final line = [

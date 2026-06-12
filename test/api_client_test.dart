@@ -1,23 +1,12 @@
-import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:okayspace/okayspace_api.dart';
 
 void main() {
-  group('ApiException.fromDio', () {
-    DioException dioError(int status, dynamic data) => DioException(
-          requestOptions: RequestOptions(path: '/x'),
-          response: Response(
-            requestOptions: RequestOptions(path: '/x'),
-            statusCode: status,
-            data: data,
-          ),
-          type: DioExceptionType.badResponse,
-        );
-
+  group('ApiException.fromResponse', () {
     test('extracts the backend error envelope', () {
-      final e = ApiException.fromDio(dioError(404, {
+      final e = ApiException.fromResponse(404, {
         'error': {'code': 'not_found', 'message': 'Not Found'},
-      }));
+      });
       expect(e.statusCode, 404);
       expect(e.code, 'not_found');
       expect(e.message, 'Not Found');
@@ -25,7 +14,7 @@ void main() {
     });
 
     test('reads FastAPI 422 detail lists', () {
-      final e = ApiException.fromDio(dioError(422, {
+      final e = ApiException.fromResponse(422, {
         'detail': [
           {
             'loc': ['body', 'email'],
@@ -33,7 +22,7 @@ void main() {
             'type': 'value_error.missing',
           }
         ],
-      }));
+      });
       expect(e.statusCode, 422);
       expect(e.isValidationError, isTrue);
       expect(e.message, contains('email'));
@@ -41,43 +30,88 @@ void main() {
     });
 
     test('flags transport failures with no response', () {
-      final e = ApiException.fromDio(DioException(
-        requestOptions: RequestOptions(path: '/x'),
-        type: DioExceptionType.connectionError,
-      ));
+      final e = ApiException.network('Could not reach the server.');
       expect(e.statusCode, isNull);
       expect(e.isNetworkError, isTrue);
     });
   });
 
-  group('ApiClient auth header', () {
-    test('attaches the stored bearer token to requests', () async {
+  group('ApiClient', () {
+    test('attaches the stored bearer token and decodes JSON', () async {
       final store = InMemoryTokenStore();
-      final dio = Dio();
-      final captured = <String, dynamic>{};
-
-      // Build the client first so its auth interceptor is registered, then add
-      // a capturing interceptor that runs *after* it and short-circuits the
-      // request (so nothing actually hits the network).
-      final client = ApiClient(tokenStore: store, dio: dio);
-      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
-        captured.addAll(options.headers);
-        handler.resolve(Response(
-          requestOptions: options,
-          statusCode: 200,
-          data: {'ok': true},
-        ));
-      }));
+      late HttpRequestData captured;
+      final client = ApiClient(
+        tokenStore: store,
+        transport: (r) async {
+          captured = r;
+          return const RawResponse(200, '{"ok": true}');
+        },
+      );
 
       await client.setToken('tok_123');
       final result = await client.getJson('/auth/me');
 
-      expect(captured['Authorization'], 'Bearer tok_123');
+      expect(captured.method, 'GET');
+      expect(captured.headers['Authorization'], 'Bearer tok_123');
+      expect(captured.url.path, endsWith('/auth/me'));
       expect(result, {'ok': true});
       expect(await client.isAuthenticated, isTrue);
 
       await client.clearToken();
       expect(await client.isAuthenticated, isFalse);
+    });
+
+    test('encodes the JSON body and drops null query values', () async {
+      late HttpRequestData captured;
+      final client = ApiClient(
+        tokenStore: InMemoryTokenStore(),
+        transport: (r) async {
+          captured = r;
+          return const RawResponse(200, '');
+        },
+      );
+
+      final result = await client.postJson('/posts',
+          body: {'text': 'hi'}, query: {'limit': 10, 'q': null});
+
+      expect(captured.method, 'POST');
+      expect(captured.headers['Content-Type'], 'application/json');
+      expect(captured.body, '{"text":"hi"}');
+      expect(captured.url.queryParameters, {'limit': '10'});
+      expect(result, isNull); // empty reply body
+    });
+
+    test('throws ApiException and clears the token on 401', () async {
+      final store = InMemoryTokenStore('tok_old');
+      var unauthorized = false;
+      final client = ApiClient(
+        tokenStore: store,
+        transport: (r) async => const RawResponse(401,
+            '{"error":{"code":"unauthorized","message":"Session expired"}}'),
+      )..onUnauthorized = () => unauthorized = true;
+
+      await expectLater(
+        client.getJson('/auth/me'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 401)
+            .having((e) => e.message, 'message', 'Session expired')),
+      );
+      expect(unauthorized, isTrue);
+      expect(await store.read(), isNull);
+    });
+
+    test('wraps transport failures as network ApiExceptions', () async {
+      final client = ApiClient(
+        tokenStore: InMemoryTokenStore(),
+        transport: (r) async =>
+            throw TransportFailure('Could not reach the server.'),
+      );
+
+      await expectLater(
+        client.getJson('/feed'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.isNetworkError, 'isNetworkError', isTrue)),
+      );
     });
   });
 }
