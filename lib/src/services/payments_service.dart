@@ -63,6 +63,53 @@ class PaymentsService {
   Future<Map<String, dynamic>> cashout(Map<String, dynamic> body) async =>
       _map(await _client.postJson('/payments/payouts/cashout', body: body));
 
+  /// Adds a debit card as payout destination ([token] is a Stripe card
+  /// token created client-side; raw card numbers never reach the backend).
+  Future<Map<String, dynamic>> addDebitCard(String token) async =>
+      _map(await _client
+          .postJson('/payments/payouts/debit-card', body: {'token': token}));
+
+  /// Adds a bank account as payout destination ([token] is a Stripe token).
+  Future<Map<String, dynamic>> addBankAccount(String token) async =>
+      _map(await _client
+          .postJson('/payments/payouts/bank-account', body: {'token': token}));
+
+  // --- Stripe Connect money rails ------------------------------------------
+  // The wallet's Stripe-native endpoints: balance/transactions live at
+  // Stripe, transfers move money user→user, payouts cash out (optionally
+  // instant to a debit card).
+
+  /// Creates/fetches the user's Stripe connected account.
+  Future<Map<String, dynamic>> stripeAccount() async =>
+      _map(await _client.postJson('/stripe/account'));
+
+  /// The user's Stripe balance (available/pending).
+  Future<Map<String, dynamic>> stripeBalance() async =>
+      _map(await _client.getJson('/stripe/balance'));
+
+  /// The user's Stripe balance transactions.
+  Future<dynamic> stripeTransactions() =>
+      _client.getJson('/stripe/transactions');
+
+  /// Sends money to another user over Stripe.
+  Future<Map<String, dynamic>> stripeTransfer({
+    required String toUserId,
+    required num amount,
+    String? note,
+  }) async =>
+      _map(await _client.postJson('/stripe/transfer', body: {
+        'to_user_id': toUserId,
+        'amount': amount,
+        if (note != null) 'note': note,
+      }));
+
+  /// Pays out to the user's bank/debit card. [instant] uses Stripe Instant
+  /// Payouts (debit card required; Stripe charges its instant fee).
+  Future<Map<String, dynamic>> stripePayout(
+          {required num amount, bool instant = false}) async =>
+      _map(await _client.postJson('/stripe/payout',
+          body: {'amount': amount, 'instant': instant}));
+
   // --- Developer API billing ----------------------------------------------
 
   Future<Map<String, dynamic>> apiPlan() async =>

@@ -44,6 +44,12 @@ class WalletService {
       asMapOrNull(await _client.postJson('/wallet/topup/confirm-intent', body: body)) ??
       const {};
 
+  /// Reconciles pending top-ups with Stripe (credits any that completed
+  /// while the app wasn't watching, e.g. via Payment Link).
+  Future<void> topupSync() async {
+    await _client.postJson('/wallet/topup/sync');
+  }
+
   Future<dynamic> topups() => _client.getJson('/wallet/topups');
 
   Future<void> cancelTopup(String topupId) async {

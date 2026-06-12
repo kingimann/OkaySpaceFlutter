@@ -8,6 +8,7 @@ Widget stripeConnectView({
   required String publishableKey,
   required Future<String> Function() fetchClientSecret,
   required String component,
+  String? fallbackComponent,
   void Function()? onExit,
   void Function(String message)? onError,
 }) =>

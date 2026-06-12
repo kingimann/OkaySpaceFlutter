@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../okayspace_api.dart';
 import '../core/stripe_connect_embed.dart';
 import 'common.dart';
 
@@ -190,9 +191,23 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
     setState(() => _busy = true);
     try {
-      await api.payments.cashout({'amount': amount});
+      // Stripe rails first (/stripe/payout, supports instant-to-debit-card);
+      // the ledger cash-out remains the fallback for backends without it.
+      try {
+        await api.payments.stripePayout(amount: amount, instant: _instant);
+      } on ApiException catch (e) {
+        if (e.isNotFound || e.statusCode == 405 || e.statusCode == 501) {
+          await api.payments.cashout({'amount': amount});
+        } else {
+          rethrow;
+        }
+      }
       if (mounted) {
-        showInfo(context, 'Cash-out requested');
+        showInfo(
+            context,
+            _instant
+                ? 'Instant payout requested — usually minutes to your card.'
+                : 'Cash-out requested');
         _amount.clear();
         await _load();
       }
@@ -202,6 +217,10 @@ class _CashOutScreenState extends State<CashOutScreen> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  // Instant payouts hit the debit card in minutes (Stripe charges its
+  // instant fee); standard payouts take 1-2 business days.
+  bool _instant = false;
 
   @override
   Widget build(BuildContext context) {
@@ -385,7 +404,19 @@ class _CashOutScreenState extends State<CashOutScreen> {
                           ],
                         ),
                       ],
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Instant to debit card'),
+                        subtitle: const Text(
+                            'Minutes instead of 1–2 business days '
+                            '(Stripe instant fee applies)'),
+                        value: _instant,
+                        onChanged: _busy
+                            ? null
+                            : (v) => setState(() => _instant = v),
+                      ),
+                      const SizedBox(height: 8),
                       FilledButton.icon(
                         onPressed: _busy ? null : _cashout,
                         icon: _busy
@@ -423,7 +454,10 @@ class EmbeddedPayoutScreen extends StatefulWidget {
 
 class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
   String? _publishableKey;
+  String? _firstSecret;
+  String? _error;
   bool _popped = false;
+  int _attempt = 0; // bumps the view so Retry rebuilds it from scratch
 
   @override
   void initState() {
@@ -431,29 +465,51 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
     _start();
   }
 
+  /// Pre-validates everything the embed needs (publishable key AND a
+  /// working account session) so a backend gap shows a real error screen
+  /// instead of a blank page.
   Future<void> _start() async {
+    setState(() {
+      _error = null;
+      _publishableKey = null;
+      _firstSecret = null;
+    });
     try {
       final cfg = await api.payments.config();
       final pk = '${cfg['publishable_key'] ?? ''}';
+      if (pk.isEmpty) throw StateError('No Stripe publishable key');
+      final secret = await _freshSecret();
       if (!mounted) return;
-      if (pk.isEmpty) {
-        _bail();
-      } else {
-        setState(() => _publishableKey = pk);
-      }
-    } catch (_) {
-      if (mounted) _bail();
+      setState(() {
+        _publishableKey = pk;
+        _firstSecret = secret;
+        _attempt++;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = messageFor(e));
     }
   }
 
-  /// One Account Session per Connect.js request; Stripe re-asks when a
-  /// session expires, so this always fetches a fresh secret.
-  Future<String> _clientSecret() async {
+  Future<String> _freshSecret() async {
     final s = await api.payments.payoutAccountSession();
     final secret =
         '${s['client_secret'] ?? s['clientSecret'] ?? s['secret'] ?? ''}';
-    if (secret.isEmpty) throw StateError('No account-session client secret');
+    if (secret.isEmpty) {
+      throw StateError(
+          'The server returned no account-session client secret');
+    }
     return secret;
+  }
+
+  /// First call uses the pre-validated secret; Connect.js re-asks when a
+  /// session expires, and then we mint a fresh one.
+  Future<String> _clientSecret() async {
+    final first = _firstSecret;
+    if (first != null) {
+      _firstSecret = null;
+      return first;
+    }
+    return _freshSecret();
   }
 
   /// Leaves the screen signalling "use the hosted link instead".
@@ -472,6 +528,7 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
   @override
   Widget build(BuildContext context) {
     final pk = _publishableKey;
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: OkayAppBar(
         title: Text(widget.component == 'account-management'
@@ -484,20 +541,68 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
           ),
         ],
       ),
-      // The Stripe component manages its own scrolling inside the page.
-      body: pk == null
-          ? const Center(child: CircularProgressIndicator())
-          : stripeConnectView(
-                  publishableKey: pk,
-                  fetchClientSecret: _clientSecret,
-                  component: widget.component,
-                  onExit: () {
-                    // Connect.js calls this off the Flutter frame; defer.
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _done());
-                  },
-                  onError: (_) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _bail());
-                  },
+      body: _error != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline,
+                        size: 40, color: scheme.error),
+                    const SizedBox(height: 12),
+                    Text('The Stripe form couldn\'t load.\n$_error',
+                        textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _start,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Try again'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _bail,
+                          icon: const Icon(Icons.open_in_new),
+                          label: const Text('Open on Stripe instead'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : pk == null
+              ? const Center(child: CircularProgressIndicator())
+              // The Stripe component manages its own scrolling. KeyedSubtree
+              // forces a fresh platform view per attempt.
+              : KeyedSubtree(
+                  key: ValueKey(_attempt),
+                  child: SizedBox.expand(
+                    child: stripeConnectView(
+                      publishableKey: pk,
+                      fetchClientSecret: _clientSecret,
+                      component: widget.component,
+                      // The session may not have this component enabled;
+                      // onboarding is the universal fallback.
+                      fallbackComponent: widget.component == 'account-management'
+                          ? 'account-onboarding'
+                          : null,
+                      onExit: () {
+                        // Connect.js calls this off the Flutter frame; defer.
+                        WidgetsBinding.instance
+                            .addPostFrameCallback((_) => _done());
+                      },
+                      onError: (msg) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) setState(() => _error = msg);
+                        });
+                      },
+                    ),
+                  ),
                 ),
     );
   }
