@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:local_auth/local_auth.dart';
 
 import 'common.dart';
 
@@ -57,6 +59,32 @@ class WalletLock {
 
   /// Relocks until the next successful [verify] (e.g. after disabling).
   void relock() => _unlocked = false;
+
+  /// Whether the device can authenticate with biometrics (never on web).
+  Future<bool> get biometricsAvailable async {
+    if (kIsWeb) return false;
+    try {
+      final auth = LocalAuthentication();
+      return await auth.canCheckBiometrics || await auth.isDeviceSupported();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Unlocks via fingerprint/Face ID. Only meaningful while a PIN is set.
+  Future<bool> unlockWithBiometrics() async {
+    if (kIsWeb) return false;
+    try {
+      final ok = await LocalAuthentication().authenticate(
+        localizedReason: 'Unlock your wallet',
+        options: const AuthenticationOptions(stickyAuth: true),
+      );
+      if (ok) _unlocked = true;
+      return ok;
+    } catch (_) {
+      return false; // unsupported/cancelled — the PIN pad still works
+    }
+  }
 }
 
 final walletLock = WalletLock.instance;
@@ -77,6 +105,23 @@ class _WalletPinScreenState extends State<WalletPinScreen> {
   String _entered = '';
   String? _firstPass;
   String? _error;
+  bool _biometrics = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.setup) {
+      walletLock.biometricsAvailable.then((ok) {
+        if (mounted && ok) setState(() => _biometrics = true);
+      });
+    }
+  }
+
+  Future<void> _tryBiometrics() async {
+    if (await walletLock.unlockWithBiometrics()) {
+      if (mounted) Navigator.of(context).pop(true);
+    }
+  }
 
   String get _title => widget.setup
       ? (_firstPass == null ? 'Choose a 4-digit PIN' : 'Confirm your PIN')
@@ -169,11 +214,11 @@ class _WalletPinScreenState extends State<WalletPinScreen> {
               ],
             ),
             const SizedBox(height: 28),
-            for (final row in const [
-              ['1', '2', '3'],
-              ['4', '5', '6'],
-              ['7', '8', '9'],
-              ['', '0', '<'],
+            for (final row in [
+              const ['1', '2', '3'],
+              const ['4', '5', '6'],
+              const ['7', '8', '9'],
+              [_biometrics ? '@' : '', '0', '<'],
             ])
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -185,16 +230,21 @@ class _WalletPinScreenState extends State<WalletPinScreen> {
                       child: k.isEmpty
                           ? null
                           : InkWell(
-                              onTap: () => _tap(k),
+                              // '@' is the biometric key on the entry pad.
+                              onTap: k == '@' ? _tryBiometrics : () => _tap(k),
                               borderRadius: BorderRadius.circular(14),
                               child: Center(
                                 child: k == '<'
                                     ? const Icon(Icons.backspace_outlined,
                                         size: 22)
-                                    : Text(k,
-                                        style: const TextStyle(
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.w600)),
+                                    : k == '@'
+                                        ? const Icon(Icons.fingerprint,
+                                            size: 26)
+                                        : Text(k,
+                                            style: const TextStyle(
+                                                fontSize: 24,
+                                                fontWeight:
+                                                    FontWeight.w600)),
                               ),
                             ),
                     ),

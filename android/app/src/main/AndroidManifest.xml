@@ -5,6 +5,8 @@
     <!-- NFC tap-to-pay (optional: the app works on devices without NFC). -->
     <uses-permission android:name="android.permission.NFC"/>
     <uses-feature android:name="android.hardware.nfc" android:required="false"/>
+    <!-- Biometric unlock for the wallet PIN lock. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <application
         android:label="OkaySpace"
         android:name="${applicationName}"

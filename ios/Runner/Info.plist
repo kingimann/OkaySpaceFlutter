@@ -83,5 +83,7 @@
 	</array>
 	<key>NFCReaderUsageDescription</key>
 	<string>OkaySpace uses NFC to read and write pay tags so you can tap to pay people.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>OkaySpace uses Face ID to unlock your wallet.</string>
 </dict>
 </plist>
