@@ -596,6 +596,65 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
         'Thanks for your review');
   }
 
+  /// Nearby public transit around the breakdown spot — a no-car fallback
+  /// while waiting (or if the request falls through).
+  Future<void> _transitNearby(RoadsideRequest r) async {
+    final future = api.roadside
+        .transitNearby(lat: r.latitude, lng: r.longitude, radius: 1200);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: future,
+          builder: (sheetContext, snap) {
+            if (!snap.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final stops = snap.data!;
+            if (stops.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(
+                    child: Text('No transit stops found nearby.')),
+              );
+            }
+            return ListView(
+              shrinkWrap: true,
+              children: [
+                const ListTile(
+                    title: Text('Transit nearby',
+                        style: TextStyle(fontWeight: FontWeight.bold))),
+                for (final stop in stops.take(12))
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.directions_bus_outlined),
+                    title: Text(
+                        '${stop['name'] ?? stop['title'] ?? stop['stop_name'] ?? 'Stop'}'),
+                    subtitle: Text(
+                      [
+                        if (stop['lines'] is List)
+                          (stop['lines'] as List).join(', ')
+                        else if (stop['routes'] is List)
+                          (stop['routes'] as List).join(', '),
+                        if (stop['distance'] != null)
+                          '${stop['distance']} m',
+                      ].whereType<String>().join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   /// Starts a live ETA share toward the request location (helper side).
   Future<void> _shareEta(RoadsideRequest r) async {
     final raw = await promptText(context,
@@ -818,6 +877,12 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
           onPressed: _busy ? null : _verify,
           icon: const Icon(Icons.verified_outlined),
           label: const Text('Enter completion code'),
+        ));
+        btns.add(const SizedBox(height: 10));
+        btns.add(TextButton.icon(
+          onPressed: _busy ? null : () => _transitNearby(r),
+          icon: const Icon(Icons.directions_bus_outlined, size: 18),
+          label: const Text('No car needed? Transit nearby'),
         ));
       }
       if (status == 'completed' && (r.canReview ?? false)) {
