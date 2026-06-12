@@ -478,11 +478,19 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
       final cfg = await api.payments.config();
       final pk = '${cfg['publishable_key'] ?? ''}';
       if (pk.isEmpty) throw StateError('No Stripe publishable key');
-      final secret = await _freshSecret();
+      final session = await api.payments.payoutAccountSession();
+      final secret = _secretOf(session);
+      // The backend reports which embedded components the session enables
+      // (e.g. the full 'payouts' dashboard vs onboarding-only); honor it.
+      final enabled = [
+        if (session['components'] is List)
+          for (final c in session['components'] as List) '$c',
+      ];
       if (!mounted) return;
       setState(() {
         _publishableKey = pk;
         _firstSecret = secret;
+        _enabled = enabled;
         _attempt++;
       });
     } catch (e) {
@@ -490,8 +498,22 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
     }
   }
 
-  Future<String> _freshSecret() async {
-    final s = await api.payments.payoutAccountSession();
+  List<String> _enabled = const [];
+
+  /// The component to render: the requested one when the session enables it,
+  /// otherwise the best enabled alternative ('payouts' is the full embedded
+  /// dashboard: payout methods, balance, and instant payouts).
+  String get _component {
+    if (_enabled.isEmpty || _enabled.contains(widget.component)) {
+      return widget.component;
+    }
+    for (final c in ['payouts', 'account-management', 'account-onboarding']) {
+      if (_enabled.contains(c)) return c;
+    }
+    return widget.component;
+  }
+
+  String _secretOf(Map<String, dynamic> s) {
     final secret =
         '${s['client_secret'] ?? s['clientSecret'] ?? s['secret'] ?? ''}';
     if (secret.isEmpty) {
@@ -500,6 +522,9 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
     }
     return secret;
   }
+
+  Future<String> _freshSecret() async =>
+      _secretOf(await api.payments.payoutAccountSession());
 
   /// First call uses the pre-validated secret; Connect.js re-asks when a
   /// session expires, and then we mint a fresh one.
@@ -585,10 +610,10 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
                     child: stripeConnectView(
                       publishableKey: pk,
                       fetchClientSecret: _clientSecret,
-                      component: widget.component,
+                      component: _component,
                       // The session may not have this component enabled;
                       // onboarding is the universal fallback.
-                      fallbackComponent: widget.component == 'account-management'
+                      fallbackComponent: _component == 'account-management'
                           ? 'account-onboarding'
                           : null,
                       onExit: () {
