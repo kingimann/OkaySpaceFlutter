@@ -113,7 +113,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       case 'groups':
         return const GroupsScreen(embedded: true);
       case 'wallet':
-        return const WalletScreen();
+        return const WalletScreen(embedded: true);
       case 'search':
         return const SearchScreen();
       case 'notifications':

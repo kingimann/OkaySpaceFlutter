@@ -4,8 +4,7 @@ import 'package:flutter/services.dart';
 import '../../okayspace_api.dart';
 import 'common.dart';
 
-String _money(num amount, String currency) =>
-    '$currency ${amount.toStringAsFixed(2)}';
+String _money(num amount, String currency) => formatMoney(amount, currency);
 
 /// Insights over the wallet's recent transactions: money in vs out, volume
 /// by transaction type, the biggest single transaction, and a CSV export.

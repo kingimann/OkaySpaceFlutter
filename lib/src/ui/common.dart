@@ -1051,3 +1051,19 @@ class AsyncList<T> extends StatelessWidget {
     );
   }
 }
+
+/// Symbol for a wallet currency code (falls back to the code itself).
+String currencySymbol(String currency) => switch (currency.toUpperCase()) {
+      'USD' || 'CAD' || 'AUD' || 'MXN' => '\$',
+      'EUR' => '€',
+      'GBP' => '£',
+      'NGN' => '₦',
+      'INR' => '₹',
+      'JPY' || 'CNY' => '¥',
+      'KRW' => '₩',
+      final c => '$c ',
+    };
+
+/// Formats an amount with its currency symbol, e.g. `$12.34`, `€5.00`.
+String formatMoney(num amount, String currency) =>
+    '${currencySymbol(currency)}${amount.toStringAsFixed(2)}';

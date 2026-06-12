@@ -50,7 +50,8 @@ class _CashOutScreenState extends State<CashOutScreen> {
     return v is num ? v : (num.tryParse('$v') ?? 0);
   }
 
-  String get _currency => '${_status['currency'] ?? 'USD'}'.toUpperCase();
+  String get _symbol =>
+      currencySymbol('${_status['currency'] ?? 'USD'}'.toUpperCase());
 
   Future<void> _setup() async {
     setState(() => _busy = true);
@@ -161,7 +162,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
                                   color:
                                       Colors.white.withValues(alpha: 0.85))),
                           const SizedBox(height: 8),
-                          Text('$_currency ${_available.toStringAsFixed(2)}',
+                          Text('$_symbol${_available.toStringAsFixed(2)}',
                               style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 32,
@@ -234,10 +235,10 @@ class _CashOutScreenState extends State<CashOutScreen> {
                               ? 'More than your available balance'
                               : null,
                           helperText: (_entered ?? 0) >= 5 && !_overAvailable
-                              ? "You'll receive $_currency "
-                                  '${(_entered! - _fee).toStringAsFixed(2)} '
-                                  'after the \$1.99 fee'
-                              : '\$5 minimum · \$1.99 flat fee · instant to debit card',
+                              ? "You'll receive "
+                                  '$_symbol${(_entered! - _fee).toStringAsFixed(2)} '
+                                  'after the ${_symbol}1.99 fee'
+                              : '${_symbol}5 minimum · ${_symbol}1.99 flat fee · instant to debit card',
                         ),
                       ),
                       if (_available >= 5) ...[
