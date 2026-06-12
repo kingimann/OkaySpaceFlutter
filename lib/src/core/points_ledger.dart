@@ -46,6 +46,21 @@ class PointsLedger extends ChangeNotifier {
   /// The most a single day's streak bonus can be worth.
   static const int streakDailyCap = 7;
 
+  /// The most streak freezes a user can bank at once.
+  static const int maxStreakFreezes = 2;
+
+  /// Streak length → one-time milestone bonus. Reaching each of these for the
+  /// first time grants a bigger reward on top of the daily streak bonus.
+  static const Map<int, int> streakMilestones = {
+    3: 5,
+    7: 10,
+    14: 15,
+    30: 30,
+    60: 50,
+    100: 100,
+    365: 365,
+  };
+
   /// How many recent point events to keep for the activity log.
   static const int _maxEvents = 60;
 
@@ -53,6 +68,11 @@ class PointsLedger extends ChangeNotifier {
   final Map<String, int> _bySource = {};
   // Recent point events, newest last (kept ≤ _maxEvents).
   final List<PointEvent> _events = [];
+  // Points earned per day (day key → total), kept ~2 weeks for the recap.
+  final Map<String, int> _dailyTotals = {};
+  // Daily points goal and a one-shot flag set when today's goal is reached.
+  int _dailyGoal = 20;
+  bool _pendingGoalReached = false;
   String _onlineDay = '';
   int _onlineLeftoverSeconds = 0; // toward the next online point
   int _onlinePointsToday = 0;
@@ -61,11 +81,33 @@ class PointsLedger extends ChangeNotifier {
   String _lastActiveDay = '';
   int _currentStreak = 0;
   int _longestStreak = 0;
+  // Streak milestones already rewarded (one-time each).
+  final Set<int> _streakMilestonesHit = {};
+  // The milestone just reached, surfaced once for a celebration then cleared.
+  int? _pendingStreakMilestone;
+  // Banked streak freezes (auto-protect a single missed day) and a one-shot
+  // flag set when one was just spent.
+  int _streakFreezes = 0;
+  bool _pendingFreezeUsed = false;
+
+  // Highest backend level seen on this device (-1 = not yet known), used to
+  // detect a level-up and celebrate it once.
+  int _lastSeenLevel = -1;
+
+  // Last leaderboard rank seen on this device (-1 = not yet known), used to
+  // show how the user has moved since.
+  int _lastSeenRank = -1;
 
   // Per-day action counts (reset each day, keyed by source) and the ids of
   // daily quests already claimed today — both scoped to [_onlineDay].
   final Map<String, int> _dailyActions = {};
   final Set<String> _claimedQuests = {};
+
+  // Per-week action counts and the ids of weekly challenges already claimed —
+  // both scoped to [_challengeWeek] (the Monday the current week began).
+  String _challengeWeek = '';
+  final Map<String, int> _weekActions = {};
+  final Set<String> _claimedChallenges = {};
 
   // Set while the app is in the foreground; null while backgrounded.
   DateTime? _activeSince;
@@ -86,6 +128,58 @@ class PointsLedger extends ChangeNotifier {
     if (_events.length > _maxEvents) {
       _events.removeRange(0, _events.length - _maxEvents);
     }
+    // Per-day totals for the weekly recap (kept ~2 weeks, day keys sort
+    // chronologically because they're zero-padded yyyy-mm-dd).
+    final today = _today;
+    final before = _dailyTotals[today] ?? 0;
+    _dailyTotals[today] = before + amount;
+    if (before < _dailyGoal && before + amount >= _dailyGoal) {
+      _pendingGoalReached = true;
+    }
+    if (_dailyTotals.length > 16) {
+      final keys = _dailyTotals.keys.toList()..sort();
+      for (final k in keys.take(_dailyTotals.length - 16)) {
+        _dailyTotals.remove(k);
+      }
+    }
+  }
+
+  /// Points earned over the last 7 days (oldest first), paired with the date.
+  List<({DateTime day, int points})> last7Days() {
+    final now = DateTime.now();
+    return [
+      for (var i = 6; i >= 0; i--)
+        () {
+          final d = DateTime(now.year, now.month, now.day)
+              .subtract(Duration(days: i));
+          return (day: d, points: _dailyTotals[_dayKey(d)] ?? 0);
+        }()
+    ];
+  }
+
+  /// Total points earned in the last 7 days.
+  int get pointsThisWeek => last7Days().fold(0, (a, e) => a + e.points);
+
+  /// Points earned so far today.
+  int get pointsToday => _dailyTotals[_today] ?? 0;
+
+  /// The user's daily points goal.
+  int get dailyGoal => _dailyGoal;
+
+  /// Sets the daily points goal (clamped to a sensible range).
+  void setDailyGoal(int goal) {
+    final g = goal.clamp(5, 200);
+    if (g == _dailyGoal) return;
+    _dailyGoal = g;
+    notifyListeners();
+    _persist();
+  }
+
+  /// Whether today's goal was just reached; reading it clears the flag.
+  bool takePendingGoalReached() {
+    final r = _pendingGoalReached;
+    _pendingGoalReached = false;
+    return r;
   }
 
   /// Total points tracked locally across all sources.
@@ -109,10 +203,46 @@ class PointsLedger extends ChangeNotifier {
   /// Whether today has already been counted toward the streak.
   bool get countedToday => _lastActiveDay == _today;
 
+  /// Records the current backend [level] and reports whether it just went up.
+  ///
+  /// Returns the previous level when [level] is higher than the last one seen
+  /// on this device (so callers can celebrate), or null on the first sighting
+  /// or when there's no increase. Persists the new high-water mark.
+  int? checkLevelUp(int level) {
+    if (level <= 0) return null;
+    final prev = _lastSeenLevel;
+    if (prev == level) return null;
+    _lastSeenLevel = level;
+    _persist();
+    // No fanfare on the very first sighting or on a (spurious) decrease.
+    if (prev < 0 || level < prev) return null;
+    return prev;
+  }
+
+  /// Records the current leaderboard [rank] and reports the previous rank seen
+  /// on this device, or null on the first sighting or when unchanged. A lower
+  /// rank number is better, so `prev - rank > 0` means the user moved up.
+  int? checkRankChange(int rank) {
+    if (rank <= 0) return null;
+    final prev = _lastSeenRank;
+    if (prev == rank) return null;
+    _lastSeenRank = rank;
+    _persist();
+    return prev < 0 ? null : prev;
+  }
+
   String _dayKey(DateTime n) =>
       '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
 
   String get _today => _dayKey(DateTime.now());
+
+  /// The Monday this week began on, as a day key — the weekly challenge epoch.
+  String get _thisWeek {
+    final now = DateTime.now();
+    final monday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    return _dayKey(monday);
+  }
 
   void _rolloverIfNeeded() {
     if (_onlineDay != _today) {
@@ -121,6 +251,11 @@ class PointsLedger extends ChangeNotifier {
       _onlinePointsToday = 0;
       _dailyActions.clear();
       _claimedQuests.clear();
+    }
+    if (_challengeWeek != _thisWeek) {
+      _challengeWeek = _thisWeek;
+      _weekActions.clear();
+      _claimedChallenges.clear();
     }
   }
 
@@ -146,15 +281,70 @@ class PointsLedger extends ChangeNotifier {
     return true;
   }
 
+  /// How many times [source] was awarded since Monday.
+  int actionsThisWeek(String source) {
+    _rolloverIfNeeded();
+    return _weekActions[source] ?? 0;
+  }
+
+  /// Points earned since Monday (the weekly-challenge week, unlike the rolling
+  /// 7-day window of [pointsThisWeek]).
+  int get pointsThisCalendarWeek {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day);
+    var sum = 0;
+    for (var i = 0; i < now.weekday; i++) {
+      sum += _dailyTotals[_dayKey(midnight.subtract(Duration(days: i)))] ?? 0;
+    }
+    return sum;
+  }
+
+  /// Days since Monday (inclusive of today) on which the daily goal was met.
+  int get goalDaysThisWeek {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day);
+    var days = 0;
+    for (var i = 0; i < now.weekday; i++) {
+      final t = _dailyTotals[_dayKey(midnight.subtract(Duration(days: i)))];
+      if ((t ?? 0) >= _dailyGoal) days++;
+    }
+    return days;
+  }
+
+  /// Whether a weekly challenge has already been claimed this week.
+  bool isChallengeClaimed(String challengeId) {
+    _rolloverIfNeeded();
+    return _claimedChallenges.contains(challengeId);
+  }
+
+  /// Claims a completed weekly challenge's reward (once per week). Returns
+  /// true if the reward was granted now.
+  bool claimChallenge(String challengeId, int reward) {
+    _rolloverIfNeeded();
+    if (_claimedChallenges.contains(challengeId) || reward <= 0) return false;
+    _claimedChallenges.add(challengeId);
+    award('challenges', reward);
+    return true;
+  }
+
   /// Counts today toward the daily streak (once), extending or resetting it,
   /// and awards a small streak bonus that grows with the run (capped per day).
   void _touchStreak() {
     final today = _today;
     if (_lastActiveDay == today) return; // already counted today
 
-    final yesterday = _dayKey(DateTime.now().subtract(const Duration(days: 1)));
+    final now = DateTime.now();
+    final yesterday = _dayKey(now.subtract(const Duration(days: 1)));
+    final dayBefore = _dayKey(now.subtract(const Duration(days: 2)));
     if (_lastActiveDay == yesterday) {
       _currentStreak += 1; // kept the run going
+    } else if (_lastActiveDay == dayBefore &&
+        _streakFreezes > 0 &&
+        _currentStreak > 0) {
+      // Missed exactly one day — spend a freeze to keep the run alive.
+      _streakFreezes -= 1;
+      _currentStreak += 1;
+      _pendingFreezeUsed = true;
     } else {
       _currentStreak = 1; // first day, or the run lapsed
     }
@@ -165,8 +355,43 @@ class PointsLedger extends ChangeNotifier {
     final bonus = _currentStreak.clamp(1, streakDailyCap);
     _credit('streak', bonus);
 
+    // One-time milestone bonus when the run first reaches a threshold, plus a
+    // banked streak freeze (up to the cap) as a reward.
+    final ms = streakMilestones[_currentStreak];
+    if (ms != null && !_streakMilestonesHit.contains(_currentStreak)) {
+      _streakMilestonesHit.add(_currentStreak);
+      _pendingStreakMilestone = _currentStreak;
+      _credit('streak', ms);
+      if (_streakFreezes < maxStreakFreezes) _streakFreezes += 1;
+    }
+
     notifyListeners();
     _persist();
+  }
+
+  /// The next streak length that earns a milestone bonus, or null if past all.
+  int? get nextStreakMilestone {
+    for (final d in streakMilestones.keys) {
+      if (d > _currentStreak) return d;
+    }
+    return null;
+  }
+
+  /// A milestone just reached but not yet celebrated; reading it clears it.
+  int? takePendingStreakMilestone() {
+    final m = _pendingStreakMilestone;
+    _pendingStreakMilestone = null;
+    return m;
+  }
+
+  /// Streak freezes currently banked (each protects one missed day).
+  int get streakFreezes => _streakFreezes;
+
+  /// Whether a freeze was just spent to save the streak; reading it clears it.
+  bool takePendingFreezeUsed() {
+    final used = _pendingFreezeUsed;
+    _pendingFreezeUsed = false;
+    return used;
   }
 
   // --- Persistence --------------------------------------------------------
@@ -188,6 +413,14 @@ class PointsLedger extends ChangeNotifier {
           _lastActiveDay = (m['lastActiveDay'] as String?) ?? '';
           _currentStreak = (m['currentStreak'] as num?)?.toInt() ?? 0;
           _longestStreak = (m['longestStreak'] as num?)?.toInt() ?? 0;
+          final ms = m['streakMilestones'];
+          if (ms is List) {
+            _streakMilestonesHit
+                .addAll(ms.whereType<num>().map((e) => e.toInt()));
+          }
+          _streakFreezes = (m['streakFreezes'] as num?)?.toInt() ?? 0;
+          _lastSeenLevel = (m['lastSeenLevel'] as num?)?.toInt() ?? -1;
+          _lastSeenRank = (m['lastSeenRank'] as num?)?.toInt() ?? -1;
           final da = m['dailyActions'];
           if (da is Map) {
             da.forEach((k, v) {
@@ -198,6 +431,24 @@ class PointsLedger extends ChangeNotifier {
           if (cq is List) {
             _claimedQuests.addAll(cq.whereType<String>());
           }
+          _challengeWeek = (m['challengeWeek'] as String?) ?? '';
+          final wa = m['weekActions'];
+          if (wa is Map) {
+            wa.forEach((k, v) {
+              if (v is num) _weekActions['$k'] = v.toInt();
+            });
+          }
+          final cc = m['claimedChallenges'];
+          if (cc is List) {
+            _claimedChallenges.addAll(cc.whereType<String>());
+          }
+          final dt = m['dailyTotals'];
+          if (dt is Map) {
+            dt.forEach((k, v) {
+              if (v is num) _dailyTotals['$k'] = v.toInt();
+            });
+          }
+          _dailyGoal = (m['dailyGoal'] as num?)?.toInt() ?? 20;
           final evts = m['events'];
           if (evts is List) {
             for (final e in evts) {
@@ -231,8 +482,17 @@ class PointsLedger extends ChangeNotifier {
           'lastActiveDay': _lastActiveDay,
           'currentStreak': _currentStreak,
           'longestStreak': _longestStreak,
+          'streakMilestones': _streakMilestonesHit.toList(),
+          'streakFreezes': _streakFreezes,
+          'lastSeenLevel': _lastSeenLevel,
+          'lastSeenRank': _lastSeenRank,
           'dailyActions': _dailyActions,
           'claimedQuests': _claimedQuests.toList(),
+          'challengeWeek': _challengeWeek,
+          'weekActions': _weekActions,
+          'claimedChallenges': _claimedChallenges.toList(),
+          'dailyTotals': _dailyTotals,
+          'dailyGoal': _dailyGoal,
           'events': [
             for (final e in _events)
               {'s': e.source, 'a': e.amount, 't': e.at.millisecondsSinceEpoch},
@@ -250,6 +510,7 @@ class PointsLedger extends ChangeNotifier {
     if (amount <= 0) return;
     _rolloverIfNeeded();
     _dailyActions[source] = (_dailyActions[source] ?? 0) + 1;
+    _weekActions[source] = (_weekActions[source] ?? 0) + 1;
     _credit(source, amount);
     notifyListeners();
     _persist();

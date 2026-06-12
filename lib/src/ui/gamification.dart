@@ -121,6 +121,7 @@ const _green = Color(0xFF22C55E);
 const _violet = Color(0xFF8B5CF6);
 const _rose = Color(0xFFE11D48);
 const _cyan = Color(0xFF06B6D4);
+const _orange = Color(0xFFF97316);
 
 final kAchievements = <Achievement>[
   Achievement('welcome', 'Welcome aboard', 'Joined OkaySpace',
@@ -197,6 +198,7 @@ class PointSource {
 /// a generic "Activity" row in the breakdown.
 const kPointSources = <PointSource>[
   PointSource('quests', 'Daily quests', Icons.task_alt_outlined, _violet),
+  PointSource('challenges', 'Weekly challenges', Icons.flag_outlined, _orange),
   PointSource('streak', 'Daily streak', Icons.local_fire_department, _gold),
   PointSource('online', 'Online time', Icons.schedule_outlined, _cyan),
   PointSource('posts', 'Posts & replies', Icons.post_add_outlined, _blue),
@@ -234,6 +236,46 @@ final kDailyQuests = <DailyQuest>[
       (l) => l.actionsToday('social')),
   DailyQuest('stick_around', 'Stick around', 'Spend ~15 min in the app',
       Icons.schedule_outlined, _cyan, 3, 3, (l) => l.onlinePointsToday),
+];
+
+/// A week-long goal that grants a claimable bonus when its target is met.
+/// Progress and claims reset every Monday.
+class WeeklyChallenge {
+  const WeeklyChallenge(this.id, this.title, this.description, this.icon,
+      this.color, this.target, this.reward, this.current);
+  final String id;
+  final String title;
+  final String description;
+  final IconData icon;
+  final Color color;
+  final int target;
+  final int reward;
+
+  /// This week's progress toward [target], read from the ledger.
+  final int Function(PointsLedger) current;
+}
+
+/// The weekly challenge board. Targets are bigger than daily quests and so are
+/// the rewards; claimed bonuses land in the `challenges` point source.
+final kWeeklyChallenges = <WeeklyChallenge>[
+  WeeklyChallenge('points', 'Point hunter', 'Earn 100 points this week',
+      Icons.toll_outlined, _gold, 100, 25,
+      (l) => l.pointsThisCalendarWeek),
+  WeeklyChallenge('goal_days', 'Goal getter', 'Hit your daily goal on 4 days',
+      Icons.track_changes_outlined, _violet, 4, 20,
+      (l) => l.goalDaysThisWeek),
+  WeeklyChallenge('posts', 'On a roll', 'Make 7 posts or replies',
+      Icons.post_add_outlined, _blue, 7, 15,
+      (l) => l.actionsThisWeek('posts')),
+  WeeklyChallenge('reactions', 'Hype machine', 'React to 20 posts',
+      Icons.favorite_border, _rose, 20, 12,
+      (l) => l.actionsThisWeek('reactions')),
+  WeeklyChallenge('social', 'Networker', 'Follow 3 new people',
+      Icons.person_add_alt_1_outlined, _green, 3, 10,
+      (l) => l.actionsThisWeek('social')),
+  WeeklyChallenge('quests', 'Quest devotee', 'Claim 12 daily quests',
+      Icons.task_alt_outlined, _cyan, 12, 15,
+      (l) => l.actionsThisWeek('quests')),
 ];
 
 /// Looks up display metadata for a source id.
