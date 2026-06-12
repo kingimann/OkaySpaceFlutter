@@ -58,6 +58,9 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
   // Default search origin until device location is available.
   static const _lat = 43.6532, _lng = -79.3832;
 
+  /// Nearby search radius, adjustable from the Nearby tab.
+  double _radiusKm = 50;
+
   late Future<List<RoadsideRequest>> _mine;
   late Future<List<RoadsideRequest>> _nearby;
   late Future<List<RoadsideRequest>> _helping;
@@ -71,7 +74,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
 
   void _load() {
     _mine = api.roadside.mine();
-    _nearby = api.roadside.nearby(lat: _lat, lng: _lng, radiusKm: 50);
+    _nearby = api.roadside.nearby(lat: _lat, lng: _lng, radiusKm: _radiusKm);
     _helping = api.roadside.helping();
     _history = api.roadside.history();
   }
@@ -121,7 +124,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
           child: TabBarView(
             children: [
               _list(_mine, 'No roadside requests.\nTap “Request help” if you’re stuck.'),
-              _list(_nearby, 'No open requests nearby right now.'),
+              _nearbyTab(),
               _list(_helping, "You're not helping with any requests."),
               _list(_history, 'No past requests.'),
             ],
@@ -131,7 +134,44 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
     );
   }
 
+  /// Nearby tab: a radius selector over the standard list.
+  Widget _nearbyTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Row(
+            children: [
+              Text('Within',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                      fontSize: 13)),
+              const SizedBox(width: 10),
+              for (final km in const [10.0, 25.0, 50.0, 100.0])
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text('${km.toInt()} km'),
+                    selected: _radiusKm == km,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (_) => setState(() {
+                      _radiusKm = km;
+                      _nearby = api.roadside
+                          .nearby(lat: _lat, lng: _lng, radiusKm: km);
+                    }),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+            child: _list(_nearby, 'No open requests nearby right now.')),
+      ],
+    );
+  }
+
   Widget _list(Future<List<RoadsideRequest>> future, String empty) {
+    final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: _reload,
       child: AsyncList<RoadsideRequest>(
@@ -140,27 +180,71 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
         emptyMessage: empty,
         emptyIcon: Icons.car_repair,
         builder: (context, items) => ListView.separated(
-          padding: const EdgeInsets.only(bottom: 88),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 88),
           itemCount: items.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, i) {
             final r = items[i];
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundColor: _statusColor(r.status).withValues(alpha: 0.18),
-                child: Icon(_serviceIcon(r.service),
-                    color: _statusColor(r.status)),
+            final color = _statusColor(r.status);
+            // Card with a colored status stripe down the left edge.
+            return Material(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(14),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => _open(r),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(width: 4, color: color),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor:
+                                  color.withValues(alpha: 0.16),
+                              child: Icon(_serviceIcon(r.service),
+                                  color: color, size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(_serviceLabel(r.service),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                      [
+                                        if (r.placeName != null)
+                                          r.placeName!,
+                                        shortAgo(r.createdAt),
+                                        if (r.distanceKm != null)
+                                          '${r.distanceKm!.toStringAsFixed(1)} km',
+                                        if (r.total > 0)
+                                          '\$${r.total.toStringAsFixed(2)}',
+                                      ].join(' · '),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          color: scheme.outline,
+                                          fontSize: 12.5)),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _StatusPill(status: r.status),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              title: Text(_serviceLabel(r.service),
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text([
-                if (r.placeName != null) r.placeName!,
-                shortAgo(r.createdAt),
-                if (r.distanceKm != null)
-                  '${r.distanceKm!.toStringAsFixed(1)} km',
-              ].join(' · ')),
-              trailing: _StatusPill(status: r.status),
-              onTap: () => _open(r),
             );
           },
         ),
