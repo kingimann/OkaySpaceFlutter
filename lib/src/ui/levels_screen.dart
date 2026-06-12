@@ -6,6 +6,7 @@ import '../core/points_ledger.dart';
 import 'common.dart';
 import 'daily_quests_screen.dart';
 import 'gamification.dart';
+import 'monthly_recap_screen.dart';
 import 'points_breakdown_screen.dart';
 import 'profile_decor.dart';
 import 'records_screen.dart';
@@ -345,6 +346,51 @@ class LevelsScreen extends StatelessWidget {
                               const Text('Weekly recap',
                                   style: TextStyle(fontWeight: FontWeight.w600)),
                               Text('$week points in the last 7 days',
+                                  style: TextStyle(
+                                      color: scheme.outline, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: scheme.outline),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          // Monthly recap entry.
+          AnimatedBuilder(
+            animation: pointsLedger,
+            builder: (context, _) {
+              final now = DateTime.now();
+              var month = 0;
+              for (var d = 1; d <= now.day; d++) {
+                month +=
+                    pointsLedger.pointsOn(DateTime(now.year, now.month, d));
+              }
+              return Material(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const MonthlyRecapScreen())),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_month_outlined,
+                            color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('This month',
+                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                              Text('$month points so far · see the heatmap',
                                   style: TextStyle(
                                       color: scheme.outline, fontSize: 12)),
                             ],

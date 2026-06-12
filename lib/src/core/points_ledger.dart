@@ -68,7 +68,8 @@ class PointsLedger extends ChangeNotifier {
   final Map<String, int> _bySource = {};
   // Recent point events, newest last (kept ≤ _maxEvents).
   final List<PointEvent> _events = [];
-  // Points earned per day (day key → total), kept ~2 weeks for the recap.
+  // Points earned per day (day key → total), kept ~6 weeks for the weekly
+  // recap and monthly heatmap.
   final Map<String, int> _dailyTotals = {};
   // Daily points goal and a one-shot flag set when today's goal is reached.
   int _dailyGoal = 20;
@@ -138,8 +139,8 @@ class PointsLedger extends ChangeNotifier {
     if (_events.length > _maxEvents) {
       _events.removeRange(0, _events.length - _maxEvents);
     }
-    // Per-day totals for the weekly recap (kept ~2 weeks, day keys sort
-    // chronologically because they're zero-padded yyyy-mm-dd).
+    // Per-day totals for the recaps (day keys sort chronologically because
+    // they're zero-padded yyyy-mm-dd).
     final today = _today;
     final before = _dailyTotals[today] ?? 0;
     _dailyTotals[today] = before + amount;
@@ -156,9 +157,10 @@ class PointsLedger extends ChangeNotifier {
       _biggestGain = amount;
       _biggestGainSource = source;
     }
-    if (_dailyTotals.length > 16) {
+    // Kept ~6 weeks so the monthly heatmap always has a full month.
+    if (_dailyTotals.length > 42) {
       final keys = _dailyTotals.keys.toList()..sort();
-      for (final k in keys.take(_dailyTotals.length - 16)) {
+      for (final k in keys.take(_dailyTotals.length - 42)) {
         _dailyTotals.remove(k);
       }
     }
@@ -182,6 +184,9 @@ class PointsLedger extends ChangeNotifier {
 
   /// Points earned so far today.
   int get pointsToday => _dailyTotals[_today] ?? 0;
+
+  /// Points earned on [day] (0 if none tracked or outside retention).
+  int pointsOn(DateTime day) => _dailyTotals[_dayKey(day)] ?? 0;
 
   /// The user's daily points goal.
   int get dailyGoal => _dailyGoal;
