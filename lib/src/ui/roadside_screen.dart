@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -54,6 +58,9 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
   // Default search origin until device location is available.
   static const _lat = 43.6532, _lng = -79.3832;
 
+  /// Nearby search radius, adjustable from the Nearby tab.
+  double _radiusKm = 50;
+
   late Future<List<RoadsideRequest>> _mine;
   late Future<List<RoadsideRequest>> _nearby;
   late Future<List<RoadsideRequest>> _helping;
@@ -67,7 +74,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
 
   void _load() {
     _mine = api.roadside.mine();
-    _nearby = api.roadside.nearby(lat: _lat, lng: _lng, radiusKm: 50);
+    _nearby = api.roadside.nearby(lat: _lat, lng: _lng, radiusKm: _radiusKm);
     _helping = api.roadside.helping();
     _history = api.roadside.history();
   }
@@ -117,7 +124,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
           child: TabBarView(
             children: [
               _list(_mine, 'No roadside requests.\nTap “Request help” if you’re stuck.'),
-              _list(_nearby, 'No open requests nearby right now.'),
+              _nearbyTab(),
               _list(_helping, "You're not helping with any requests."),
               _list(_history, 'No past requests.'),
             ],
@@ -127,7 +134,44 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
     );
   }
 
+  /// Nearby tab: a radius selector over the standard list.
+  Widget _nearbyTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Row(
+            children: [
+              Text('Within',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                      fontSize: 13)),
+              const SizedBox(width: 10),
+              for (final km in const [10.0, 25.0, 50.0, 100.0])
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text('${km.toInt()} km'),
+                    selected: _radiusKm == km,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (_) => setState(() {
+                      _radiusKm = km;
+                      _nearby = api.roadside
+                          .nearby(lat: _lat, lng: _lng, radiusKm: km);
+                    }),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+            child: _list(_nearby, 'No open requests nearby right now.')),
+      ],
+    );
+  }
+
   Widget _list(Future<List<RoadsideRequest>> future, String empty) {
+    final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: _reload,
       child: AsyncList<RoadsideRequest>(
@@ -136,27 +180,71 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
         emptyMessage: empty,
         emptyIcon: Icons.car_repair,
         builder: (context, items) => ListView.separated(
-          padding: const EdgeInsets.only(bottom: 88),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 88),
           itemCount: items.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, i) {
             final r = items[i];
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundColor: _statusColor(r.status).withValues(alpha: 0.18),
-                child: Icon(_serviceIcon(r.service),
-                    color: _statusColor(r.status)),
+            final color = _statusColor(r.status);
+            // Card with a colored status stripe down the left edge.
+            return Material(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(14),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => _open(r),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(width: 4, color: color),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor:
+                                  color.withValues(alpha: 0.16),
+                              child: Icon(_serviceIcon(r.service),
+                                  color: color, size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(_serviceLabel(r.service),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                      [
+                                        if (r.placeName != null)
+                                          r.placeName!,
+                                        shortAgo(r.createdAt),
+                                        if (r.distanceKm != null)
+                                          '${r.distanceKm!.toStringAsFixed(1)} km',
+                                        if (r.total > 0)
+                                          '\$${r.total.toStringAsFixed(2)}',
+                                      ].join(' · '),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          color: scheme.outline,
+                                          fontSize: 12.5)),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _StatusPill(status: r.status),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              title: Text(_serviceLabel(r.service),
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text([
-                if (r.placeName != null) r.placeName!,
-                shortAgo(r.createdAt),
-                if (r.distanceKm != null)
-                  '${r.distanceKm!.toStringAsFixed(1)} km',
-              ].join(' · ')),
-              trailing: _StatusPill(status: r.status),
-              onTap: () => _open(r),
             );
           },
         ),
@@ -181,6 +269,74 @@ class _StatusPill extends StatelessWidget {
       child: Text(status,
           style: TextStyle(
               color: c, fontWeight: FontWeight.bold, fontSize: 12)),
+    );
+  }
+}
+
+/// Horizontal lifecycle stepper: requested → accepted → en route → arrived
+/// → done, with the reached steps filled in the status color.
+class _Timeline extends StatelessWidget {
+  const _Timeline({required this.request});
+
+  final RoadsideRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final status = request.status.toLowerCase();
+    final cancelled = status == 'cancelled' ||
+        status == 'canceled' ||
+        status == 'disputed';
+    final reached = cancelled
+        ? 0
+        : status == 'completed'
+            ? 4
+            : request.arrived
+                ? 3
+                : request.enRoute
+                    ? 2
+                    : (status == 'accepted' ? 1 : 0);
+    final color = _statusColor(request.status);
+    const labels = ['Requested', 'Accepted', 'En route', 'Arrived', 'Done'];
+
+    return Row(
+      children: [
+        for (var i = 0; i < labels.length; i++) ...[
+          if (i > 0)
+            Expanded(
+              child: Container(
+                height: 3,
+                color: i <= reached
+                    ? color
+                    : scheme.surfaceContainerHighest,
+              ),
+            ),
+          Column(
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: i <= reached
+                      ? color
+                      : scheme.surfaceContainerHighest,
+                ),
+                child: i <= reached
+                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(height: 4),
+              Text(labels[i],
+                  style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight:
+                          i == reached ? FontWeight.bold : FontWeight.normal,
+                      color: i <= reached ? null : scheme.outline)),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }
@@ -230,6 +386,31 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
     _do(() => api.roadside.review(widget.requestId,
         rating: result.$1, text: result.$2.isEmpty ? null : result.$2),
         'Thanks for your review');
+  }
+
+  /// Starts a live ETA share toward the request location (helper side).
+  Future<void> _shareEta(RoadsideRequest r) async {
+    final raw = await promptText(context,
+        title: 'Share my ETA',
+        hint: 'Minutes away (e.g. 15)',
+        action: 'Share');
+    final minutes = int.tryParse(raw ?? '');
+    if (minutes == null || minutes <= 0 || !mounted) return;
+    try {
+      await api.roadside.startEta(
+        name: 'Roadside help',
+        destinationName: r.placeName,
+        destinationLatitude: r.latitude,
+        destinationLongitude: r.longitude,
+        etaMinutes: minutes,
+        ttlMinutes: minutes + 60,
+      );
+      if (mounted) {
+        showInfo(context, 'ETA shared — $minutes min out');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Future<void> _verify() async {
@@ -282,6 +463,40 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                _Timeline(request: r),
+                const SizedBox(height: 16),
+                // Where the vehicle is — helpers can see at a glance.
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    height: 160,
+                    child: IgnorePointer(
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: LatLng(r.latitude, r.longitude),
+                          initialZoom: 13,
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'ca.okayspace.app',
+                          ),
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: LatLng(r.latitude, r.longitude),
+                              width: 36,
+                              height: 36,
+                              child: const Icon(Icons.location_pin,
+                                  color: Color(0xFFEF4444), size: 36),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 _row(Icons.place_outlined, r.placeName ?? 'Location set'),
                 if (r.vehicleMake != null || r.vehicleModel != null)
                   _row(Icons.directions_car_outlined,
@@ -296,6 +511,45 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                 if (r.distanceKm != null)
                   _row(Icons.straighten,
                       '${r.distanceKm!.toStringAsFixed(1)} km away'),
+                if (r.photos.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 84,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: r.photos.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, i) => InkWell(
+                        onTap: () => showDialog<void>(
+                          context: context,
+                          builder: (_) => Dialog.fullscreen(
+                            backgroundColor: Colors.black,
+                            child: Stack(children: [
+                              Center(
+                                  child: InteractiveViewer(
+                                      child: Image.network(r.photos[i]))),
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: IconButton(
+                                  icon: const Icon(Icons.close,
+                                      color: Colors.white),
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(),
+                                ),
+                              ),
+                            ]),
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(r.photos[i],
+                              width: 110, height: 84, fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 ..._actions(r),
               ],
@@ -366,6 +620,12 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
           btns.add(big("I'm on my way", Icons.directions_car,
               () => _do(() => api.roadside.enroute(r.id), 'Marked en route')));
         } else if (!r.arrived) {
+          btns.add(OutlinedButton.icon(
+            onPressed: _busy ? null : () => _shareEta(r),
+            icon: const Icon(Icons.share_location_outlined),
+            label: const Text('Share my ETA'),
+          ));
+          btns.add(const SizedBox(height: 10));
           btns.add(big("I've arrived", Icons.flag,
               () => _do(() => api.roadside.arrived(r.id), 'Marked arrived')));
         } else {
@@ -456,45 +716,94 @@ class RoadsideRequestForm extends StatefulWidget {
 class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
   String _service = _services.first.$1;
   final _place = TextEditingController();
+  final _make = TextEditingController();
+  final _model = TextEditingController();
+  final _note = TextEditingController();
   final _lat = TextEditingController();
   final _lng = TextEditingController();
-  final _vehicle = TextEditingController();
-  final _note = TextEditingController();
+
+  /// Resolved location (via search or manual entry).
+  double? _pickedLat;
+  double? _pickedLng;
+  String? _pickedName;
+
+  Future<List<Map<String, dynamic>>>? _geoResults;
+  Timer? _geoDebounce;
+  bool _manualCoords = false;
+  String _fuelType = 'regular';
+  String _payment = 'wallet';
   bool _busy = false;
 
   @override
   void dispose() {
-    _place.dispose();
-    _lat.dispose();
-    _lng.dispose();
-    _vehicle.dispose();
-    _note.dispose();
+    _geoDebounce?.cancel();
+    for (final c in [_place, _make, _model, _note, _lat, _lng]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  void _onPlaceQuery(String q) {
+    _geoDebounce?.cancel();
+    _geoDebounce = Timer(const Duration(milliseconds: 400), () {
+      final query = q.trim();
+      if (query.length < 3 || !mounted) return;
+      setState(() => _geoResults = api.roadside.geocode(query));
+    });
+  }
+
+  void _pickGeo(Map<String, dynamic> g) {
+    final lat = double.tryParse('${g['lat'] ?? g['latitude']}');
+    final lng = double.tryParse('${g['lng'] ?? g['lon'] ?? g['longitude']}');
+    if (lat == null || lng == null) return;
+    setState(() {
+      _pickedLat = lat;
+      _pickedLng = lng;
+      _pickedName =
+          '${g['name'] ?? g['display_name'] ?? g['label'] ?? _place.text.trim()}';
+      _geoResults = null;
+      _place.text = _pickedName!;
+    });
+  }
+
+  void _applyManual() {
     final lat = double.tryParse(_lat.text.trim());
     final lng = double.tryParse(_lng.text.trim());
-    if (lat == null || lng == null) {
+    if (lat == null || lng == null || lat.abs() > 90 || lng.abs() > 180) {
       showInfo(context, 'Enter a valid latitude and longitude.');
+      return;
+    }
+    setState(() {
+      _pickedLat = lat;
+      _pickedLng = lng;
+      _pickedName = _place.text.trim().isEmpty
+          ? '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}'
+          : _place.text.trim();
+    });
+  }
+
+  Future<void> _submit() async {
+    final lat = _pickedLat;
+    final lng = _pickedLng;
+    if (lat == null || lng == null) {
+      showInfo(context, 'Pick your location first.');
       return;
     }
     setState(() => _busy = true);
     try {
-      // The free-text vehicle field maps loosely to make/model.
-      final parts = _vehicle.text.trim().split(' ');
       await api.roadside.create(
         service: _service,
         latitude: lat,
         longitude: lng,
-        placeName: _place.text.trim().isEmpty ? null : _place.text.trim(),
-        vehicleMake: parts.isNotEmpty && parts.first.isNotEmpty ? parts.first : null,
-        vehicleModel:
-            parts.length > 1 ? parts.sublist(1).join(' ') : null,
+        placeName: _pickedName,
+        vehicleMake: _make.text.trim().isEmpty ? null : _make.text.trim(),
+        vehicleModel: _model.text.trim().isEmpty ? null : _model.text.trim(),
+        fuelType: _service == 'fuel' ? _fuelType : null,
+        paymentMethod: _payment,
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
       );
       if (mounted) {
-        showInfo(context, 'Request submitted');
+        showInfo(context, 'Request submitted — help is on the way list');
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -504,95 +813,280 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
     }
   }
 
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(top: 22, bottom: 10),
+        child: Text(text.toUpperCase(),
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.outline,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.6)),
+      );
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final located = _pickedLat != null && _pickedLng != null;
+
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Request help')),
       body: MaxWidth(
         child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text('What do you need?',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final s in _services)
-                ChoiceChip(
-                  avatar: Icon(s.$3, size: 18),
-                  label: Text(s.$2),
-                  selected: _service == s.$1,
-                  onSelected: (_) => setState(() => _service = s.$1),
-                ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _place,
-            decoration: const InputDecoration(
-              labelText: 'Location description',
-              hintText: 'e.g. Highway 401 near exit 12',
-              prefixIcon: Icon(Icons.place_outlined),
-              border: OutlineInputBorder(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            _sectionTitle('What do you need?'),
+            // Service grid: big tappable cards instead of cramped chips.
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.15,
+              children: [
+                for (final svc in _services)
+                  Material(
+                    color: _service == svc.$1
+                        ? scheme.primary.withValues(alpha: 0.16)
+                        : scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => setState(() => _service = svc.$1),
+                      child: Container(
+                        decoration: _service == svc.$1
+                            ? BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                border:
+                                    Border.all(color: scheme.primary, width: 1.5),
+                              )
+                            : null,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(svc.$3,
+                                size: 26,
+                                color: _service == svc.$1
+                                    ? scheme.primary
+                                    : scheme.outline),
+                            const SizedBox(height: 6),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: Text(svc.$2,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: _service == svc.$1
+                                          ? FontWeight.bold
+                                          : FontWeight.w500)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _lat,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true, signed: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Latitude', border: OutlineInputBorder()),
+            if (_service == 'fuel') ...[
+              _sectionTitle('Fuel type'),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final f in const ['regular', 'premium', 'diesel'])
+                    ChoiceChip(
+                      label: Text(f[0].toUpperCase() + f.substring(1)),
+                      selected: _fuelType == f,
+                      onSelected: (_) => setState(() => _fuelType = f),
+                    ),
+                ],
+              ),
+            ],
+            _sectionTitle('Where are you?'),
+            TextField(
+              controller: _place,
+              onChanged: _onPlaceQuery,
+              decoration: InputDecoration(
+                labelText: 'Search address or place',
+                hintText: 'e.g. Highway 401 near exit 12',
+                prefixIcon: const Icon(Icons.place_outlined),
+                suffixIcon: located
+                    ? const Icon(Icons.check_circle, color: Color(0xFF22C55E))
+                    : null,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            if (_geoResults != null)
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: _geoResults,
+                builder: (context, snap) {
+                  final results = snap.data ?? const [];
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Center(
+                            child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2))));
+                  }
+                  if (results.isEmpty) return const SizedBox.shrink();
+                  return Card(
+                    margin: const EdgeInsets.only(top: 6),
+                    child: Column(
+                      children: [
+                        for (final g in results.take(5))
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.place, size: 18),
+                            title: Text(
+                                '${g['name'] ?? g['display_name'] ?? g['label'] ?? 'Result'}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                            onTap: () => _pickGeo(g),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            // Live mini-map of the chosen spot.
+            if (located)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    height: 150,
+                    child: IgnorePointer(
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: LatLng(_pickedLat!, _pickedLng!),
+                          initialZoom: 14,
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'ca.okayspace.app',
+                          ),
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: LatLng(_pickedLat!, _pickedLng!),
+                              width: 36,
+                              height: 36,
+                              child: const Icon(Icons.location_pin,
+                                  color: Color(0xFFEF4444), size: 36),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _lng,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true, signed: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Longitude', border: OutlineInputBorder()),
-                ),
+            TextButton.icon(
+              icon: Icon(
+                  _manualCoords ? Icons.expand_less : Icons.expand_more,
+                  size: 18),
+              label: const Text('Enter coordinates manually'),
+              onPressed: () => setState(() => _manualCoords = !_manualCoords),
+            ),
+            if (_manualCoords)
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _lat,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
+                      decoration: const InputDecoration(
+                          labelText: 'Latitude',
+                          isDense: true,
+                          border: OutlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _lng,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
+                      decoration: const InputDecoration(
+                          labelText: 'Longitude',
+                          isDense: true,
+                          border: OutlineInputBorder()),
+                    ),
+                  ),
+                  IconButton(
+                      icon: const Icon(Icons.check), onPressed: _applyManual),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _vehicle,
-            decoration: const InputDecoration(
-              labelText: 'Vehicle (make & model)',
-              prefixIcon: Icon(Icons.directions_car_outlined),
-              border: OutlineInputBorder(),
+            _sectionTitle('Your vehicle'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _make,
+                    decoration: const InputDecoration(
+                        labelText: 'Make',
+                        hintText: 'Toyota',
+                        border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _model,
+                    decoration: const InputDecoration(
+                        labelText: 'Model',
+                        hintText: 'Corolla',
+                        border: OutlineInputBorder()),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _note,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Notes for the helper (optional)',
-              border: OutlineInputBorder(),
+            _sectionTitle('Payment'),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (id, label, icon) in const [
+                  ('wallet', 'Wallet', Icons.account_balance_wallet_outlined),
+                  ('cash', 'Cash', Icons.payments_outlined),
+                ])
+                  ChoiceChip(
+                    avatar: Icon(icon, size: 16),
+                    label: Text(label),
+                    selected: _payment == id,
+                    onSelected: (_) => setState(() => _payment = id),
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: _busy ? null : _submit,
-            icon: _busy
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.send),
-            label: const Text('Submit request'),
-          ),
-        ],
-      ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _note,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Notes for the helper (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _busy || !located ? null : _submit,
+              icon: _busy
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.send),
+              label: Text(located ? 'Submit request' : 'Pick a location first'),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }

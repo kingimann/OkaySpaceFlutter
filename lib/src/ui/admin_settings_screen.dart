@@ -180,7 +180,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       appBar: const OkayAppBar(title: Text('Admin settings')),
       body: MaxWidth(
         child: RefreshIndicator(
-          onRefresh: () async => setState(() => _statsGen++),
+          onRefresh: () async {
+            setState(() => _statsGen++);
+            // Hold the indicator briefly while the recreated stats load.
+            await Future<void>.delayed(const Duration(milliseconds: 600));
+          },
           child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           children: [

@@ -541,6 +541,9 @@ class _AdminSupportScreenState extends State<AdminSupportScreen> {
                         selected: _filter == f,
                         onSelected: (_) => setState(() {
                           _filter = f;
+                          // A new filter hides rows; keeping the old
+                          // selection would bulk-act on invisible tickets.
+                          _selected.clear();
                           _tickets = _fetch();
                         }),
                       ),

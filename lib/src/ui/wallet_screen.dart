@@ -424,12 +424,19 @@ class _WalletScreenState extends State<WalletScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Another WalletScreen instance (home-shell tab vs pushed route) may have
+    // unlocked already — honor the shared lock state.
+    if (_pinLocked && walletLock.unlocked) _pinLocked = false;
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: OkayAppBar(
           title: const Text('Wallet'),
-          actions: [
+          // While PIN-locked, the QR and tools must be gated too — they
+          // expose balances, history, and pay actions.
+          actions: _pinLocked
+              ? const []
+              : [
             IconButton(
               icon: const Icon(Icons.qr_code),
               tooltip: 'Pay by QR',

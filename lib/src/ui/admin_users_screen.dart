@@ -172,11 +172,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             ),
             Expanded(
               child: AsyncList<Map<String, dynamic>>(
-                future: _users.then(
-                    (all) => all.where(_matchesFilter).toList()),
+                future: _users,
                 emptyMessage: 'No users found.',
                 emptyIcon: Icons.person_search_outlined,
-                builder: (context, users) => ListView.separated(
+                builder: (context, all) {
+                  // Filter here, not via a derived future: .then() in build
+                  // hands the FutureBuilder a fresh Future every rebuild,
+                  // flashing the skeleton.
+                  final users = all.where(_matchesFilter).toList();
+                  return ListView.separated(
                   itemCount: users.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, i) {
@@ -245,7 +249,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       onTap: () => _openUser(u),
                     );
                   },
-                ),
+                );
+                },
               ),
             ),
           ],
@@ -345,30 +350,30 @@ class _UserActionsSheetState extends State<_UserActionsSheet> {
             subtitle: Text('${_s(u, ['email', 'username'])} · role: $_role'),
           ),
           const Divider(),
+          // Target values are captured BEFORE _act runs: the optimistic
+          // apply mutates `u` first, so a lazy read inside the op closure
+          // would send the server its own current value back (a no-op).
           action(
               u['verified'] == true
                   ? Icons.verified
                   : Icons.verified_outlined,
-              u['verified'] == true ? 'Remove verification' : 'Verify',
-              () => _act(
-                  () => api.admin
-                      .updateUser(_id, {'verified': u['verified'] != true}),
-                  apply: (m) => m['verified'] = m['verified'] != true)),
-          action(
-              Icons.shield_outlined,
-              _role == 'mod' ? 'Remove mod' : 'Make mod',
-              () => _act(
-                  () => api.admin.updateUser(
-                      _id, {'role': _role == 'mod' ? 'user' : 'mod'}),
-                  apply: (m) => m['role'] = _role == 'mod' ? 'user' : 'mod')),
-          action(
-              Icons.admin_panel_settings_outlined,
-              _role == 'admin' ? 'Remove admin' : 'Make admin',
-              () => _act(
-                  () => api.admin.updateUser(
-                      _id, {'role': _role == 'admin' ? 'user' : 'admin'}),
-                  apply: (m) =>
-                      m['role'] = _role == 'admin' ? 'user' : 'admin')),
+              u['verified'] == true ? 'Remove verification' : 'Verify', () {
+            final next = u['verified'] != true;
+            _act(() => api.admin.updateUser(_id, {'verified': next}),
+                apply: (m) => m['verified'] = next);
+          }),
+          action(Icons.shield_outlined,
+              _role == 'mod' ? 'Remove mod' : 'Make mod', () {
+            final next = _role == 'mod' ? 'user' : 'mod';
+            _act(() => api.admin.updateUser(_id, {'role': next}),
+                apply: (m) => m['role'] = next);
+          }),
+          action(Icons.admin_panel_settings_outlined,
+              _role == 'admin' ? 'Remove admin' : 'Make admin', () {
+            final next = _role == 'admin' ? 'user' : 'admin';
+            _act(() => api.admin.updateUser(_id, {'role': next}),
+                apply: (m) => m['role'] = next);
+          }),
           const Divider(),
           if (_banned)
             action(Icons.lock_open, 'Lift ban / suspension',
@@ -898,10 +903,12 @@ class _AdminAuditScreenState extends State<AdminAuditScreen> {
               child: RefreshIndicator(
           onRefresh: _reload,
           child: AsyncList<Map<String, dynamic>>(
-            future: _log.then((all) => all.where(_matches).toList()),
+            future: _log,
             emptyMessage: 'No admin activity yet.',
             emptyIcon: Icons.history,
-            builder: (context, entries) => ListView.separated(
+            builder: (context, all) {
+              final entries = all.where(_matches).toList();
+              return ListView.separated(
               itemCount: entries.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, i) {
@@ -935,7 +942,8 @@ class _AdminAuditScreenState extends State<AdminAuditScreen> {
                               TextStyle(color: scheme.outline, fontSize: 12)),
                 );
               },
-            ),
+            );
+            },
           ),
         ),
             ),
