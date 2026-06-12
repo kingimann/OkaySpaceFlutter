@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import '../core/points_ledger.dart';
 import 'common.dart';
+import 'daily_quests_screen.dart';
 import 'gamification.dart';
 import 'points_breakdown_screen.dart';
 
@@ -117,6 +118,47 @@ class LevelsScreen extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          // Daily quests entry.
+          AnimatedBuilder(
+            animation: pointsLedger,
+            builder: (context, _) {
+              final done = kDailyQuests
+                  .where((q) => q.current(pointsLedger) >= q.target)
+                  .length;
+              return Material(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const DailyQuestsScreen())),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.task_alt_outlined, color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Daily quests',
+                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                              Text('$done of ${kDailyQuests.length} done today',
+                                  style: TextStyle(
+                                      color: scheme.outline, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: scheme.outline),
+                      ],
+                    ),
+                  ),
                 ),
               );
             },
