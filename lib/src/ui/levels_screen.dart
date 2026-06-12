@@ -92,6 +92,77 @@ class LevelsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          // Daily points goal ring.
+          AnimatedBuilder(
+            animation: pointsLedger,
+            builder: (context, _) {
+              final today = pointsLedger.pointsToday;
+              final goal = pointsLedger.dailyGoal;
+              final reached = today >= goal;
+              final frac = goal > 0 ? (today / goal).clamp(0.0, 1.0) : 0.0;
+              return Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 58,
+                      height: 58,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: 58,
+                            height: 58,
+                            child: CircularProgressIndicator(
+                              value: frac,
+                              strokeWidth: 6,
+                              backgroundColor: scheme.surfaceContainerHighest,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  reached ? const Color(0xFF22C55E) : scheme.primary),
+                            ),
+                          ),
+                          reached
+                              ? const Icon(Icons.check,
+                                  color: Color(0xFF22C55E), size: 24)
+                              : Text('$today',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("Today's goal",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text(
+                              reached
+                                  ? 'Goal reached — $today / $goal points 🎉'
+                                  : '$today / $goal points · ${goal - today} to go',
+                              style: TextStyle(
+                                  color: scheme.outline, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.tune),
+                      tooltip: 'Set goal',
+                      onPressed: () => _editGoal(context, goal),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
           // Daily activity streak (local).
           AnimatedBuilder(
             animation: pointsLedger,
@@ -394,6 +465,49 @@ class LevelsScreen extends StatelessWidget {
               subtitle: Text(sub),
             ),
         ],
+      ),
+    );
+  }
+
+  /// Lets the user pick a daily points goal from a few presets.
+  void _editGoal(BuildContext context, int current) {
+    const presets = [10, 20, 30, 50, 75, 100];
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Daily points goal',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 4),
+              Text('How many points do you want to earn each day?',
+                  style: TextStyle(
+                      color: Theme.of(sheetContext).colorScheme.outline,
+                      fontSize: 13)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final p in presets)
+                    ChoiceChip(
+                      label: Text('$p'),
+                      selected: p == current,
+                      onSelected: (_) {
+                        pointsLedger.setDailyGoal(p);
+                        Navigator.pop(sheetContext);
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

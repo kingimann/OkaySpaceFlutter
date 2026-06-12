@@ -987,6 +987,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         }
       });
     }
+    // Cheer when today's points goal is reached.
+    if (pointsLedger.takePendingGoalReached()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showInfo(context, '🎯 Daily goal reached — nice work!');
+      });
+    }
     // Note how the leaderboard rank has moved since this device last looked.
     _leaderboard.then((lb) {
       final rank = _rankIn(lb, u.userId);

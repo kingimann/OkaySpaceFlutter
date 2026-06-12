@@ -70,6 +70,9 @@ class PointsLedger extends ChangeNotifier {
   final List<PointEvent> _events = [];
   // Points earned per day (day key → total), kept ~2 weeks for the recap.
   final Map<String, int> _dailyTotals = {};
+  // Daily points goal and a one-shot flag set when today's goal is reached.
+  int _dailyGoal = 20;
+  bool _pendingGoalReached = false;
   String _onlineDay = '';
   int _onlineLeftoverSeconds = 0; // toward the next online point
   int _onlinePointsToday = 0;
@@ -122,7 +125,11 @@ class PointsLedger extends ChangeNotifier {
     // Per-day totals for the weekly recap (kept ~2 weeks, day keys sort
     // chronologically because they're zero-padded yyyy-mm-dd).
     final today = _today;
-    _dailyTotals[today] = (_dailyTotals[today] ?? 0) + amount;
+    final before = _dailyTotals[today] ?? 0;
+    _dailyTotals[today] = before + amount;
+    if (before < _dailyGoal && before + amount >= _dailyGoal) {
+      _pendingGoalReached = true;
+    }
     if (_dailyTotals.length > 16) {
       final keys = _dailyTotals.keys.toList()..sort();
       for (final k in keys.take(_dailyTotals.length - 16)) {
@@ -146,6 +153,28 @@ class PointsLedger extends ChangeNotifier {
 
   /// Total points earned in the last 7 days.
   int get pointsThisWeek => last7Days().fold(0, (a, e) => a + e.points);
+
+  /// Points earned so far today.
+  int get pointsToday => _dailyTotals[_today] ?? 0;
+
+  /// The user's daily points goal.
+  int get dailyGoal => _dailyGoal;
+
+  /// Sets the daily points goal (clamped to a sensible range).
+  void setDailyGoal(int goal) {
+    final g = goal.clamp(5, 200);
+    if (g == _dailyGoal) return;
+    _dailyGoal = g;
+    notifyListeners();
+    _persist();
+  }
+
+  /// Whether today's goal was just reached; reading it clears the flag.
+  bool takePendingGoalReached() {
+    final r = _pendingGoalReached;
+    _pendingGoalReached = false;
+    return r;
+  }
 
   /// Total points tracked locally across all sources.
   int get total => _bySource.values.fold(0, (a, b) => a + b);
@@ -343,6 +372,7 @@ class PointsLedger extends ChangeNotifier {
               if (v is num) _dailyTotals['$k'] = v.toInt();
             });
           }
+          _dailyGoal = (m['dailyGoal'] as num?)?.toInt() ?? 20;
           final evts = m['events'];
           if (evts is List) {
             for (final e in evts) {
@@ -383,6 +413,7 @@ class PointsLedger extends ChangeNotifier {
           'dailyActions': _dailyActions,
           'claimedQuests': _claimedQuests.toList(),
           'dailyTotals': _dailyTotals,
+          'dailyGoal': _dailyGoal,
           'events': [
             for (final e in _events)
               {'s': e.source, 'a': e.amount, 't': e.at.millisecondsSinceEpoch},
