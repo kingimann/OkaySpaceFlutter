@@ -45,6 +45,33 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Timer? _debounce;
   late Future<List<Map<String, dynamic>>> _users = _fetch('');
 
+  /// Set while the signed-in admin is unverified, enabling "Verify myself".
+  String? _unverifiedSelfId;
+
+  @override
+  void initState() {
+    super.initState();
+    api.auth.me().then((me) {
+      if (mounted && !me.verified) {
+        setState(() => _unverifiedSelfId = me.userId);
+      }
+    }).catchError((_) {});
+  }
+
+  Future<void> _verifyMyself() async {
+    final id = _unverifiedSelfId;
+    if (id == null) return;
+    try {
+      await api.admin.updateUser(id, {'verified': true});
+      if (mounted) {
+        showInfo(context, 'You\'re verified');
+        setState(() => _unverifiedSelfId = null);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _fetch(String q) => api.admin
       .users(query: q.isEmpty ? null : q, limit: 100)
       .then(_asMapList);
@@ -85,6 +112,18 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       body: MaxWidth(
         child: Column(
           children: [
+            if (_unverifiedSelfId != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.verified_outlined),
+                    label: const Text('Verify myself'),
+                    onPressed: _verifyMyself,
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: TextField(
