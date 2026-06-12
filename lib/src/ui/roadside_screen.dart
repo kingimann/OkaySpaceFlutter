@@ -189,6 +189,74 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
+/// Horizontal lifecycle stepper: requested → accepted → en route → arrived
+/// → done, with the reached steps filled in the status color.
+class _Timeline extends StatelessWidget {
+  const _Timeline({required this.request});
+
+  final RoadsideRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final status = request.status.toLowerCase();
+    final cancelled = status == 'cancelled' ||
+        status == 'canceled' ||
+        status == 'disputed';
+    final reached = cancelled
+        ? 0
+        : status == 'completed'
+            ? 4
+            : request.arrived
+                ? 3
+                : request.enRoute
+                    ? 2
+                    : (status == 'accepted' ? 1 : 0);
+    final color = _statusColor(request.status);
+    const labels = ['Requested', 'Accepted', 'En route', 'Arrived', 'Done'];
+
+    return Row(
+      children: [
+        for (var i = 0; i < labels.length; i++) ...[
+          if (i > 0)
+            Expanded(
+              child: Container(
+                height: 3,
+                color: i <= reached
+                    ? color
+                    : scheme.surfaceContainerHighest,
+              ),
+            ),
+          Column(
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: i <= reached
+                      ? color
+                      : scheme.surfaceContainerHighest,
+                ),
+                child: i <= reached
+                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(height: 4),
+              Text(labels[i],
+                  style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight:
+                          i == reached ? FontWeight.bold : FontWeight.normal,
+                      color: i <= reached ? null : scheme.outline)),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// Full request detail with the lifecycle actions appropriate to the viewer
 /// (requester vs. helper) and the current status.
 class RoadsideDetailScreen extends StatefulWidget {
@@ -234,6 +302,31 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
     _do(() => api.roadside.review(widget.requestId,
         rating: result.$1, text: result.$2.isEmpty ? null : result.$2),
         'Thanks for your review');
+  }
+
+  /// Starts a live ETA share toward the request location (helper side).
+  Future<void> _shareEta(RoadsideRequest r) async {
+    final raw = await promptText(context,
+        title: 'Share my ETA',
+        hint: 'Minutes away (e.g. 15)',
+        action: 'Share');
+    final minutes = int.tryParse(raw ?? '');
+    if (minutes == null || minutes <= 0 || !mounted) return;
+    try {
+      await api.roadside.startEta(
+        name: 'Roadside help',
+        destinationName: r.placeName,
+        destinationLatitude: r.latitude,
+        destinationLongitude: r.longitude,
+        etaMinutes: minutes,
+        ttlMinutes: minutes + 60,
+      );
+      if (mounted) {
+        showInfo(context, 'ETA shared — $minutes min out');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Future<void> _verify() async {
@@ -286,6 +379,40 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                _Timeline(request: r),
+                const SizedBox(height: 16),
+                // Where the vehicle is — helpers can see at a glance.
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SizedBox(
+                    height: 160,
+                    child: IgnorePointer(
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: LatLng(r.latitude, r.longitude),
+                          initialZoom: 13,
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'ca.okayspace.app',
+                          ),
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: LatLng(r.latitude, r.longitude),
+                              width: 36,
+                              height: 36,
+                              child: const Icon(Icons.location_pin,
+                                  color: Color(0xFFEF4444), size: 36),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 _row(Icons.place_outlined, r.placeName ?? 'Location set'),
                 if (r.vehicleMake != null || r.vehicleModel != null)
                   _row(Icons.directions_car_outlined,
@@ -300,6 +427,45 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                 if (r.distanceKm != null)
                   _row(Icons.straighten,
                       '${r.distanceKm!.toStringAsFixed(1)} km away'),
+                if (r.photos.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 84,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: r.photos.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (context, i) => InkWell(
+                        onTap: () => showDialog<void>(
+                          context: context,
+                          builder: (_) => Dialog.fullscreen(
+                            backgroundColor: Colors.black,
+                            child: Stack(children: [
+                              Center(
+                                  child: InteractiveViewer(
+                                      child: Image.network(r.photos[i]))),
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: IconButton(
+                                  icon: const Icon(Icons.close,
+                                      color: Colors.white),
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(),
+                                ),
+                              ),
+                            ]),
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(r.photos[i],
+                              width: 110, height: 84, fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 ..._actions(r),
               ],
@@ -370,6 +536,12 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
           btns.add(big("I'm on my way", Icons.directions_car,
               () => _do(() => api.roadside.enroute(r.id), 'Marked en route')));
         } else if (!r.arrived) {
+          btns.add(OutlinedButton.icon(
+            onPressed: _busy ? null : () => _shareEta(r),
+            icon: const Icon(Icons.share_location_outlined),
+            label: const Text('Share my ETA'),
+          ));
+          btns.add(const SizedBox(height: 10));
           btns.add(big("I've arrived", Icons.flag,
               () => _do(() => api.roadside.arrived(r.id), 'Marked arrived')));
         } else {
