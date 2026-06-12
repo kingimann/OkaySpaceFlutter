@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import 'common.dart';
 import 'post_tile.dart';
+import 'post_video.dart';
 import 'profile_screen.dart';
 
 /// A single post shown in full with its replies and a reply composer.
@@ -51,6 +52,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _toggleLike() async {
     try {
       final updated = await api.feed.toggleLike(_post.id);
+      if (mounted) setState(() => _post = updated);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _toggleDislike() async {
+    try {
+      final updated = await api.feed.toggleDislike(_post.id);
       if (mounted) setState(() => _post = updated);
     } catch (e) {
       if (mounted) showError(context, e);
@@ -183,6 +193,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   _PostHeader(
                     post: _post,
                     onLike: _toggleLike,
+                    onDislike: _toggleDislike,
                     onRepost: _repostMenu,
                     onBookmark: _toggleBookmark,
                   ),
@@ -265,12 +276,14 @@ class _PostHeader extends StatelessWidget {
   const _PostHeader({
     required this.post,
     required this.onLike,
+    required this.onDislike,
     required this.onRepost,
     required this.onBookmark,
   });
 
   final Post post;
   final VoidCallback onLike;
+  final VoidCallback onDislike;
   final VoidCallback onRepost;
   final VoidCallback onBookmark;
 
@@ -321,6 +334,22 @@ class _PostHeader extends StatelessWidget {
             const SizedBox(height: 12),
             Text(post.text, style: const TextStyle(fontSize: 17)),
           ],
+          // Full media, regardless of the feed's data-saver preference —
+          // the collapsed "tap to view" chips land here.
+          for (final m in post.media)
+            if (m.url != null && m.url!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: m.isVideo
+                        ? PostVideo(url: m.url!)
+                        : Image.network(m.url!, fit: BoxFit.cover),
+                  ),
+                ),
+              ),
           const SizedBox(height: 12),
           Text(
             '${post.createdAt.toLocal()}'.split('.').first,
@@ -344,6 +373,18 @@ class _PostHeader extends StatelessWidget {
                 icon: Icon(
                   post.likedByMe ? Icons.favorite : Icons.favorite_border,
                   color: post.likedByMe ? Colors.red : muted,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Dislike',
+                onPressed: onDislike,
+                icon: Icon(
+                  post.dislikedByMe
+                      ? Icons.thumb_down
+                      : Icons.thumb_down_outlined,
+                  color: post.dislikedByMe
+                      ? Theme.of(context).colorScheme.primary
+                      : muted,
                 ),
               ),
               IconButton(

@@ -25,6 +25,11 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> {
   late Future<List<Post>> _feed;
+
+  // Raw fetched posts + the one fetched ad, so preference changes re-filter
+  // locally instead of refetching (and re-billing an ad impression).
+  List<Post> _rawPosts = const [];
+  Post? _ad;
   late Future<List<StoryTrayItem>> _stories;
   late Future<List<Map<String, dynamic>>> _trending;
   int _unread = 0;
@@ -40,12 +45,14 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
-    // Open on the preferred tab once prefs load, and re-filter on changes.
-    if (feedPrefs.isLoaded && feedPrefs.defaultTab == 'following') {
-      _tab = 1;
-      _load();
+    // Decide the starting tab BEFORE the single initial load; when prefs are
+    // already loaded the default-tab logic is settled here, so a later pref
+    // change can never yank the user between tabs.
+    if (feedPrefs.isLoaded) {
+      _appliedDefaultTab = true;
+      if (feedPrefs.defaultTab == 'following') _tab = 1;
     }
+    _load();
     feedPrefs.addListener(_onPrefsChanged);
     feedScrollSignal.addListener(_onScrollToTop);
     // Poll for newer posts so a "new posts" pill can appear.
@@ -67,7 +74,9 @@ class _FeedScreenState extends State<FeedScreen> {
         return;
       }
     }
-    setState(_load); // re-filter with the new preferences
+    // Re-filter the cached posts locally — no network, no skeleton flash,
+    // no duplicate ad impressions.
+    setState(() => _feed = Future.value(_applyPrefs()));
   }
 
   @override
@@ -84,12 +93,56 @@ class _FeedScreenState extends State<FeedScreen> {
     if (_hasNewPosts) return;
     try {
       final base = _tab == 1 ? api.feed.homeFeed() : api.feed.exploreFeed();
-      final fresh = _orderFeed(await base);
-      final newest = fresh.isEmpty ? null : fresh.first.id;
+      // Compare like with like: the same preference filters as the display,
+      // and newest-by-date (sort-independent) — otherwise a filtered-out or
+      // top-sorted head produces a phantom "New posts" pill forever.
+      final newest = _newestId(_filterPosts(await base));
       if (mounted && newest != null && newest != _topPostId) {
         setState(() => _hasNewPosts = true);
       }
     } catch (_) {/* ignore poll errors */}
+  }
+
+  /// The user's Customize-feed filters, applied to a raw post list.
+  List<Post> _filterPosts(List<Post> list) {
+    var out = list;
+    if (feedPrefs.hideReposts) {
+      out = out.where((p) => p.repostOf == null).toList();
+    }
+    if (feedPrefs.hidePolls) {
+      out = out.where((p) => p.poll == null).toList();
+    }
+    if (feedPrefs.mutedAuthors.isNotEmpty) {
+      out = out
+          .where((p) => !feedPrefs.isAuthorMuted(p.author.userId))
+          .toList();
+    }
+    if (feedPrefs.hideSponsored) {
+      out = out.where((p) => !p.promoted).toList();
+    }
+    return out;
+  }
+
+  /// Id of the newest post by date (display-order independent).
+  String? _newestId(List<Post> posts) => posts.isEmpty
+      ? null
+      : posts
+          .reduce((a, b) => a.createdAt.isAfter(b.createdAt) ? a : b)
+          .id;
+
+  /// Filters + orders the cached raw posts and weaves in the fetched ad.
+  List<Post> _applyPrefs() {
+    final filtered = _filterPosts(_rawPosts);
+    _topPostId = _newestId(filtered);
+    var out = _orderFeed(filtered);
+    final ad = _ad;
+    if (!feedPrefs.hideSponsored &&
+        ad != null &&
+        out.length >= 3 &&
+        !out.any((p) => p.id == ad.id)) {
+      out = [...out]..insert(out.length >= 4 ? 4 : out.length, ad);
+    }
+    return out;
   }
 
   void _loadNewPosts() {
@@ -113,25 +166,15 @@ class _FeedScreenState extends State<FeedScreen> {
     // 0 = Explore, 1 = Following.
     _hasNewPosts = false;
     final base = _tab == 1 ? api.feed.homeFeed() : api.feed.exploreFeed();
-    _feed = base.then(_orderFeed).then((list) async {
-      // User feed preferences (Customize feed).
-      var out = list;
-      if (feedPrefs.hideReposts) {
-        out = out.where((p) => p.repostOf == null).toList();
+    _ad = null; // each network load may pick a fresh ad
+    _feed = base.then((list) async {
+      _rawPosts = list;
+      // Fetch the ad only when sponsored content will be shown — fetching
+      // records a billable impression.
+      if (!feedPrefs.hideSponsored && list.length >= 3) {
+        _ad = await _fetchAd(list);
       }
-      if (feedPrefs.hidePolls) {
-        out = out.where((p) => p.poll == null).toList();
-      }
-      if (feedPrefs.mutedAuthors.isNotEmpty) {
-        out = out
-            .where((p) => !feedPrefs.isAuthorMuted(p.author.userId))
-            .toList();
-      }
-      if (feedPrefs.hideSponsored) {
-        out = out.where((p) => !p.promoted).toList();
-      }
-      _topPostId = out.isEmpty ? null : out.first.id;
-      return feedPrefs.hideSponsored ? out : await _interleaveAd(out);
+      return _applyPrefs();
     });
     _stories = api.stories.tray();
     _trending = api.feed.trendingHashtags();
@@ -140,24 +183,21 @@ class _FeedScreenState extends State<FeedScreen> {
     }).catchError((_) {});
   }
 
-  /// Fetches one sponsored post and weaves it into the feed (§3 AdSlot),
-  /// recording an impression. Silently skips if no ad is available.
-  Future<List<Post>> _interleaveAd(List<Post> list) async {
-    if (list.length < 3) return list;
+  /// Fetches one sponsored post for the feed slot (§3 AdSlot), recording an
+  /// impression. Returns null when no ad is available or it's already shown.
+  Future<Post?> _fetchAd(List<Post> list) async {
     try {
       final data = await api.ads.next(placement: 'feed');
       final raw = data['post'] is Map
           ? Map<String, dynamic>.from(data['post'] as Map)
           : data;
-      if (raw.isEmpty) return list;
+      if (raw.isEmpty) return null;
       final ad = Post.fromJson(raw);
-      if (ad.id.isEmpty || list.any((p) => p.id == ad.id)) return list;
+      if (ad.id.isEmpty || list.any((p) => p.id == ad.id)) return null;
       api.ads.postEvent(ad.id, 'impression').ignore();
-      final out = [...list];
-      out.insert(out.length >= 4 ? 4 : out.length, ad);
-      return out;
+      return ad;
     } catch (_) {
-      return list;
+      return null;
     }
   }
 
@@ -176,6 +216,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   void _setTab(int t) {
     if (t == _tab) return;
+    _appliedDefaultTab = true; // a manual choice beats the default
     setState(() {
       _tab = t;
       _load();

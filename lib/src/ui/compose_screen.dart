@@ -219,24 +219,26 @@ class _ComposeScreenState extends State<ComposeScreen> {
                             onPressed: () async {
                               drafts.remove(d);
                               await _writeDrafts(drafts);
-                              setSheet(() {});
+                              if (sheetContext.mounted) setSheet(() {});
                             },
                           ),
                           onTap: () async {
                             // Loading replaces the buffer; keep the current
-                            // text safe by saving it as a draft first.
+                            // text safe by saving it as a draft. One single
+                            // read-modify-write so neither write clobbers
+                            // the other.
                             final current = _text.text.trim();
                             Navigator.pop(sheetContext);
+                            final keep = await _readDrafts();
+                            keep.removeWhere((e) =>
+                                e['t'] == d['t'] && e['at'] == d['at']);
                             if (current.isNotEmpty && current != d['t']) {
-                              final keep = await _readDrafts();
                               keep.insert(0, {
                                 't': current,
                                 'at': DateTime.now().millisecondsSinceEpoch
                               });
-                              await _writeDrafts(keep);
                             }
-                            drafts.remove(d);
-                            await _writeDrafts(drafts);
+                            await _writeDrafts(keep);
                             if (mounted) {
                               setState(() => _text.text = '${d['t']}');
                             }
