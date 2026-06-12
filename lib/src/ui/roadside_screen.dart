@@ -27,6 +27,16 @@ IconData _serviceIcon(String key) => _services
     .firstWhere((s) => s.$1 == key, orElse: () => ('', '', Icons.help_outline))
     .$3;
 
+/// Phase detection tolerant of both the model booleans and status strings
+/// (the backend can express en-route/arrived either way).
+bool _isEnRoute(RoadsideRequest r) {
+  final s = r.status.toLowerCase();
+  return r.enRoute || s == 'enroute' || s == 'en_route';
+}
+
+bool _isArrived(RoadsideRequest r) =>
+    r.arrived || r.status.toLowerCase() == 'arrived';
+
 /// A status pill color for a roadside request.
 Color _statusColor(String status) {
   switch (status.toLowerCase()) {
@@ -90,7 +100,12 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
 
   Future<void> _reload() async {
     setState(_load);
-    await _mine;
+    // Hold the refresh indicator until every tab's fetch settles.
+    await Future.wait<void>([
+      for (final f in [_mine, _nearby, _helping, _history])
+        f.then<void>((_) {}).catchError((_) {}),
+      _active.then<void>((_) {}).catchError((_) {}),
+    ]);
   }
 
   Future<void> _request() async {
@@ -190,9 +205,9 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16)),
                               Text(
-                                  r.arrived
+                                  _isArrived(r)
                                       ? 'Your helper has arrived'
-                                      : r.enRoute
+                                      : _isEnRoute(r)
                                           ? 'Help is on the way'
                                           : r.status.toLowerCase() ==
                                                   'accepted'
@@ -260,7 +275,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
               child: Row(children: [
                 stat('Rescues completed', '${done.length}'),
                 const SizedBox(width: 10),
-                stat('Earned helping', '\$${earned.toStringAsFixed(2)}'),
+                stat('Value of rescues', '\$${earned.toStringAsFixed(2)}'),
               ]),
             );
           },
@@ -325,6 +340,10 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
     return FutureBuilder<List<RoadsideRequest>>(
       future: _nearby,
       builder: (context, snap) {
+        if (snap.hasError) {
+          return CenteredMessage(
+              message: messageFor(snap.error), icon: Icons.error_outline);
+        }
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -349,7 +368,8 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
                     Marker(
                       point: LatLng(r.latitude, r.longitude),
                       width: 44,
-                      height: 44,
+                      height: 48,
+                      alignment: Alignment.topCenter,
                       child: GestureDetector(
                         onTap: () => _open(r),
                         child: Column(children: [
@@ -499,9 +519,9 @@ class _Timeline extends StatelessWidget {
         ? 0
         : status == 'completed'
             ? 4
-            : request.arrived
+            : _isArrived(request)
                 ? 3
-                : request.enRoute
+                : _isEnRoute(request)
                     ? 2
                     : (status == 'accepted' ? 1 : 0);
     final color = _statusColor(request.status);
@@ -596,6 +616,71 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
         'Thanks for your review');
   }
 
+  /// Nearby public transit around the breakdown spot — a no-car fallback
+  /// while waiting (or if the request falls through).
+  Future<void> _transitNearby(RoadsideRequest r) async {
+    final future = api.roadside
+        .transitNearby(lat: r.latitude, lng: r.longitude, radius: 1200);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: future,
+          builder: (sheetContext, snap) {
+            if (snap.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(32),
+                child: Center(child: Text(messageFor(snap.error))),
+              );
+            }
+            if (!snap.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final stops = snap.data!;
+            if (stops.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(
+                    child: Text('No transit stops found nearby.')),
+              );
+            }
+            return ListView(
+              shrinkWrap: true,
+              children: [
+                const ListTile(
+                    title: Text('Transit nearby',
+                        style: TextStyle(fontWeight: FontWeight.bold))),
+                for (final stop in stops.take(12))
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.directions_bus_outlined),
+                    title: Text(
+                        '${stop['name'] ?? stop['title'] ?? stop['stop_name'] ?? 'Stop'}'),
+                    subtitle: Text(
+                      [
+                        if (stop['lines'] is List)
+                          (stop['lines'] as List).join(', ')
+                        else if (stop['routes'] is List)
+                          (stop['routes'] as List).join(', '),
+                        if (stop['distance'] != null)
+                          '${stop['distance']} m',
+                      ].whereType<String>().join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   /// Starts a live ETA share toward the request location (helper side).
   Future<void> _shareEta(RoadsideRequest r) async {
     final raw = await promptText(context,
@@ -638,6 +723,13 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
         child: FutureBuilder<RoadsideRequest>(
           future: _req,
           builder: (context, snap) {
+            if (snap.hasError) {
+              return CenteredMessage(
+                  message: messageFor(snap.error),
+                  icon: Icons.error_outline,
+                  onRetry: () => setState(
+                      () => _req = api.roadside.get(widget.requestId)));
+            }
             if (!snap.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
@@ -819,6 +911,12 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
           icon: const Icon(Icons.verified_outlined),
           label: const Text('Enter completion code'),
         ));
+        btns.add(const SizedBox(height: 10));
+        btns.add(TextButton.icon(
+          onPressed: _busy ? null : () => _transitNearby(r),
+          icon: const Icon(Icons.directions_bus_outlined, size: 18),
+          label: const Text('No car needed? Transit nearby'),
+        ));
       }
       if (status == 'completed' && (r.canReview ?? false)) {
         btns.add(big('Leave a review', Icons.star_outline, _review));
@@ -836,10 +934,10 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
     } else {
       // Helper view.
       if (r.helping) {
-        if (!r.enRoute) {
+        if (!_isEnRoute(r)) {
           btns.add(big("I'm on my way", Icons.directions_car,
               () => _do(() => api.roadside.enroute(r.id), 'Marked en route')));
-        } else if (!r.arrived) {
+        } else if (!_isArrived(r)) {
           btns.add(OutlinedButton.icon(
             onPressed: _busy ? null : () => _shareEta(r),
             icon: const Icon(Icons.share_location_outlined),
@@ -958,8 +1056,9 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
 
   Future<void> _addPhotos() async {
     try {
+      // Kept small: six base64 photos must fit one JSON body.
       final picked = await ImagePicker().pickMultiImage(
-          maxWidth: 1600, maxHeight: 1600, imageQuality: 80);
+          maxWidth: 1280, maxHeight: 1280, imageQuality: 70);
       for (final f in picked.take(6 - _photos.length)) {
         _photos.add(await f.readAsBytes());
       }
@@ -1004,10 +1103,23 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
   }
 
   void _onPlaceQuery(String q) {
+    // Editing the text invalidates a previously picked location immediately —
+    // otherwise the form would submit the old coordinates under new text.
+    if (_pickedName != null && q.trim() != _pickedName) {
+      setState(() {
+        _pickedLat = null;
+        _pickedLng = null;
+        _pickedName = null;
+      });
+    }
     _geoDebounce?.cancel();
     _geoDebounce = Timer(const Duration(milliseconds: 400), () {
       final query = q.trim();
-      if (query.length < 3 || !mounted) return;
+      if (!mounted) return;
+      if (query.length < 3) {
+        setState(() => _geoResults = null); // clear stale suggestions
+        return;
+      }
       setState(() => _geoResults = api.roadside.geocode(query));
     });
   }
@@ -1067,7 +1179,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
         ],
       );
       if (mounted) {
-        showInfo(context, 'Request submitted — help is on the way list');
+        showInfo(context, 'Request submitted — help is on the way');
         Navigator.of(context).pop(true);
       }
     } catch (e) {
