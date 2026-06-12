@@ -6,6 +6,9 @@ import 'common.dart';
 import 'daily_quests_screen.dart';
 import 'gamification.dart';
 import 'points_breakdown_screen.dart';
+import 'profile_decor.dart';
+import 'rewards_screen.dart';
+import 'weekly_recap_screen.dart';
 
 /// Points & Levels: current standing, progress to the next level, the tier
 /// ladder, and how points are earned.
@@ -163,6 +166,88 @@ class LevelsScreen extends StatelessWidget {
               );
             },
           ),
+          const SizedBox(height: 16),
+          // Weekly recap entry.
+          AnimatedBuilder(
+            animation: pointsLedger,
+            builder: (context, _) {
+              final week = pointsLedger.pointsThisWeek;
+              return Material(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const WeeklyRecapScreen())),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_today_outlined,
+                            color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Weekly recap',
+                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                              Text('$week points in the last 7 days',
+                                  style: TextStyle(
+                                      color: scheme.outline, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: scheme.outline),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          // Cosmetic rewards unlocked by level.
+          Builder(builder: (context) {
+            final unlocked = kAvatarFrames
+                    .where((f) => frameUnlockLevel(f.id) <= user.level)
+                    .length +
+                kProfileBackgrounds
+                    .where((b) => backgroundUnlockLevel(b.id) <= user.level)
+                    .length;
+            final total = kAvatarFrames.length + kProfileBackgrounds.length;
+            return Material(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => RewardsScreen(user: user))),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.card_giftcard, color: scheme.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Rewards',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            Text('$unlocked of $total cosmetics unlocked',
+                                style: TextStyle(
+                                    color: scheme.outline, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: scheme.outline),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
           const SizedBox(height: 16),
           // Live entry into the per-activity points breakdown.
           AnimatedBuilder(

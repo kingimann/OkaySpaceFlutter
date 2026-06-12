@@ -53,6 +53,8 @@ class PointsLedger extends ChangeNotifier {
   final Map<String, int> _bySource = {};
   // Recent point events, newest last (kept ≤ _maxEvents).
   final List<PointEvent> _events = [];
+  // Points earned per day (day key → total), kept ~2 weeks for the recap.
+  final Map<String, int> _dailyTotals = {};
   String _onlineDay = '';
   int _onlineLeftoverSeconds = 0; // toward the next online point
   int _onlinePointsToday = 0;
@@ -61,6 +63,14 @@ class PointsLedger extends ChangeNotifier {
   String _lastActiveDay = '';
   int _currentStreak = 0;
   int _longestStreak = 0;
+
+  // Highest backend level seen on this device (-1 = not yet known), used to
+  // detect a level-up and celebrate it once.
+  int _lastSeenLevel = -1;
+
+  // Last leaderboard rank seen on this device (-1 = not yet known), used to
+  // show how the user has moved since.
+  int _lastSeenRank = -1;
 
   // Per-day action counts (reset each day, keyed by source) and the ids of
   // daily quests already claimed today — both scoped to [_onlineDay].
@@ -86,7 +96,33 @@ class PointsLedger extends ChangeNotifier {
     if (_events.length > _maxEvents) {
       _events.removeRange(0, _events.length - _maxEvents);
     }
+    // Per-day totals for the weekly recap (kept ~2 weeks, day keys sort
+    // chronologically because they're zero-padded yyyy-mm-dd).
+    final today = _today;
+    _dailyTotals[today] = (_dailyTotals[today] ?? 0) + amount;
+    if (_dailyTotals.length > 16) {
+      final keys = _dailyTotals.keys.toList()..sort();
+      for (final k in keys.take(_dailyTotals.length - 16)) {
+        _dailyTotals.remove(k);
+      }
+    }
   }
+
+  /// Points earned over the last 7 days (oldest first), paired with the date.
+  List<({DateTime day, int points})> last7Days() {
+    final now = DateTime.now();
+    return [
+      for (var i = 6; i >= 0; i--)
+        () {
+          final d = DateTime(now.year, now.month, now.day)
+              .subtract(Duration(days: i));
+          return (day: d, points: _dailyTotals[_dayKey(d)] ?? 0);
+        }()
+    ];
+  }
+
+  /// Total points earned in the last 7 days.
+  int get pointsThisWeek => last7Days().fold(0, (a, e) => a + e.points);
 
   /// Total points tracked locally across all sources.
   int get total => _bySource.values.fold(0, (a, b) => a + b);
@@ -108,6 +144,34 @@ class PointsLedger extends ChangeNotifier {
 
   /// Whether today has already been counted toward the streak.
   bool get countedToday => _lastActiveDay == _today;
+
+  /// Records the current backend [level] and reports whether it just went up.
+  ///
+  /// Returns the previous level when [level] is higher than the last one seen
+  /// on this device (so callers can celebrate), or null on the first sighting
+  /// or when there's no increase. Persists the new high-water mark.
+  int? checkLevelUp(int level) {
+    if (level <= 0) return null;
+    final prev = _lastSeenLevel;
+    if (prev == level) return null;
+    _lastSeenLevel = level;
+    _persist();
+    // No fanfare on the very first sighting or on a (spurious) decrease.
+    if (prev < 0 || level < prev) return null;
+    return prev;
+  }
+
+  /// Records the current leaderboard [rank] and reports the previous rank seen
+  /// on this device, or null on the first sighting or when unchanged. A lower
+  /// rank number is better, so `prev - rank > 0` means the user moved up.
+  int? checkRankChange(int rank) {
+    if (rank <= 0) return null;
+    final prev = _lastSeenRank;
+    if (prev == rank) return null;
+    _lastSeenRank = rank;
+    _persist();
+    return prev < 0 ? null : prev;
+  }
 
   String _dayKey(DateTime n) =>
       '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
@@ -188,6 +252,8 @@ class PointsLedger extends ChangeNotifier {
           _lastActiveDay = (m['lastActiveDay'] as String?) ?? '';
           _currentStreak = (m['currentStreak'] as num?)?.toInt() ?? 0;
           _longestStreak = (m['longestStreak'] as num?)?.toInt() ?? 0;
+          _lastSeenLevel = (m['lastSeenLevel'] as num?)?.toInt() ?? -1;
+          _lastSeenRank = (m['lastSeenRank'] as num?)?.toInt() ?? -1;
           final da = m['dailyActions'];
           if (da is Map) {
             da.forEach((k, v) {
@@ -197,6 +263,12 @@ class PointsLedger extends ChangeNotifier {
           final cq = m['claimedQuests'];
           if (cq is List) {
             _claimedQuests.addAll(cq.whereType<String>());
+          }
+          final dt = m['dailyTotals'];
+          if (dt is Map) {
+            dt.forEach((k, v) {
+              if (v is num) _dailyTotals['$k'] = v.toInt();
+            });
           }
           final evts = m['events'];
           if (evts is List) {
@@ -231,8 +303,11 @@ class PointsLedger extends ChangeNotifier {
           'lastActiveDay': _lastActiveDay,
           'currentStreak': _currentStreak,
           'longestStreak': _longestStreak,
+          'lastSeenLevel': _lastSeenLevel,
+          'lastSeenRank': _lastSeenRank,
           'dailyActions': _dailyActions,
           'claimedQuests': _claimedQuests.toList(),
+          'dailyTotals': _dailyTotals,
           'events': [
             for (final e in _events)
               {'s': e.source, 'a': e.amount, 't': e.at.millisecondsSinceEpoch},

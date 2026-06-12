@@ -90,6 +90,36 @@ const kProfileBackgrounds = <ProfileBackground>[
   ProfileBackground('slate', 'Slate', [Color(0xFF64748B), Color(0xFF334155)]),
 ];
 
+/// The level at which each avatar frame unlocks (anything unlisted is
+/// available from the start). Fancier frames sit higher up the ladder, giving
+/// points/levels a tangible cosmetic payoff.
+const kFrameUnlocks = <String, int>{
+  'candy': 4,
+  'fire': 6,
+  'ocean': 6,
+  'forest': 8,
+  'emerald': 12,
+  'aurora': 15,
+  'rainbow': 20,
+  'royal': 28,
+};
+
+/// The level at which an avatar frame unlocks (1 = always available).
+int frameUnlockLevel(String id) => kFrameUnlocks[id] ?? 1;
+
+/// The level at which each profile background unlocks.
+const kBackgroundUnlocks = <String, int>{
+  'midnight': 4,
+  'peach': 8,
+  'mint': 10,
+  'aurora': 15,
+  'grape': 20,
+  'slate': 25,
+};
+
+/// The level at which a profile background unlocks (1 = always available).
+int backgroundUnlockLevel(String id) => kBackgroundUnlocks[id] ?? 1;
+
 /// Persists the user's chosen theme/frame/background ids on-device.
 class ProfileDecorController extends ChangeNotifier {
   ProfileDecorController() {

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../okayspace_api.dart';
+import '../core/points_ledger.dart';
 import 'activity_screen.dart';
 import 'app_drawer.dart';
 import 'bookmarks_screen.dart';
@@ -15,6 +16,7 @@ import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
 import 'hashtag_screen.dart';
+import 'level_up.dart';
 import 'linked_text.dart';
 import 'leaderboard_screen.dart';
 import 'levels_screen.dart';
@@ -945,6 +947,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   // Follower/following/friend counts — /auth/me omits them, so they come from
   // the public profile's `stats` object.
   Map<String, dynamic> _stats = const {};
+  // Leaderboard places gained (+) or lost (-) since this device last looked.
+  int? _rankDelta;
 
   /// Loads the signed-in user and (separately) the stats the /auth/me payload
   /// doesn't include.
@@ -954,6 +958,25 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       final s = p.raw['stats'];
       if (mounted && s is Map) {
         setState(() => _stats = Map<String, dynamic>.from(s));
+      }
+    }).catchError((_) {});
+    // Celebrate when the backend level has gone up since we last saw it.
+    final oldLevel = pointsLedger.checkLevelUp(u.level);
+    if (oldLevel != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          showLevelUpCelebration(context,
+              oldLevel: oldLevel, newLevel: u.level, user: u);
+        }
+      });
+    }
+    // Note how the leaderboard rank has moved since this device last looked.
+    _leaderboard.then((lb) {
+      final rank = _rankIn(lb, u.userId);
+      if (rank == null) return;
+      final prev = pointsLedger.checkRankChange(rank);
+      if (prev != null && prev != rank && mounted) {
+        setState(() => _rankDelta = prev - rank); // >0 = moved up
       }
     }).catchError((_) {});
     return u;
@@ -968,9 +991,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     await _me;
   }
 
-  /// Finds the user's 1-based rank on the points leaderboard, or null.
-  Future<int?> _rankFor(String userId) async {
-    final lb = await _leaderboard;
+  /// The user's 1-based rank within an already-loaded leaderboard, or null.
+  int? _rankIn(List<Map<String, dynamic>> lb, String userId) {
     for (var i = 0; i < lb.length; i++) {
       final e = lb[i];
       final id = '${e['user_id'] ?? e['id'] ?? e['userId'] ?? ''}';
@@ -981,6 +1003,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
     return null;
   }
+
+  /// Finds the user's 1-based rank on the points leaderboard, or null.
+  Future<int?> _rankFor(String userId) async =>
+      _rankIn(await _leaderboard, userId);
 
   Future<void> _editProfile(User user) async {
     final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
@@ -1364,10 +1390,15 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             scheme.outline),
         FutureBuilder<int?>(
           future: _rankFor(u.userId),
-          builder: (context, snap) => (snap.data == null)
-              ? const SizedBox.shrink()
-              : chip(Icons.leaderboard_outlined, 'Rank #${snap.data}',
-                  const Color(0xFFEAB308)),
+          builder: (context, snap) {
+            if (snap.data == null) return const SizedBox.shrink();
+            final d = _rankDelta;
+            final move = (d == null || d == 0)
+                ? ''
+                : (d > 0 ? '  ▲$d' : '  ▼${-d}');
+            return chip(Icons.leaderboard_outlined,
+                'Rank #${snap.data}$move', const Color(0xFFEAB308));
+          },
         ),
       ],
     );
