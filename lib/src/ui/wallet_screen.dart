@@ -1642,8 +1642,23 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         return;
       }
       // Otherwise: Stripe hosted checkout via the backend session endpoint.
-      final session = await api.payments
-          .checkout({'kind': 'topup', 'amount': amount});
+      final Map<String, dynamic> session;
+      try {
+        session =
+            await api.payments.checkout({'kind': 'topup', 'amount': amount});
+      } on ApiException catch (e) {
+        // The known live gap: the backend's checkout handler doesn't accept
+        // a wallet top-up yet ("Invalid recipient"). A raw error here leaves
+        // the user with no way forward — say what's actually wrong.
+        if (mounted) {
+          showInfo(
+              context,
+              'Adding money isn\'t available in this app yet '
+              '(server said: ${e.message}). '
+              'Please try again later or contact support.');
+        }
+        return;
+      }
       final url = session['url'] ??
           session['checkout_url'] ??
           session['session_url'];
