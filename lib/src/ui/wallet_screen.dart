@@ -1559,31 +1559,25 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     }
     setState(() => _busy = true);
     try {
-      // Real money goes through Stripe's hosted checkout — the card is
-      // entered on Stripe's page and the webhook credits the wallet.
+      // Stripe only: money enters the wallet exclusively through Stripe's
+      // hosted checkout; the webhook credits the balance. No demo paths.
       final session = await api.payments
           .checkout({'kind': 'topup', 'amount': amount});
       final url = session['url'] ??
           session['checkout_url'] ??
           session['session_url'];
-      if (url != null && '$url'.isNotEmpty) {
-        await launchUrl(Uri.parse('$url'),
-            mode: LaunchMode.externalApplication);
+      if (url == null || '$url'.isEmpty) {
         if (mounted) {
           showInfo(context,
-              'Finish the payment in the secure checkout — your balance updates once it succeeds.');
-          Navigator.of(context).pop(true);
+              'Checkout is unavailable right now — try again shortly.');
         }
         return;
       }
-      // Test-mode/demo backends: the old intent flow auto-completes.
-      final intent = await api.wallet.topupIntent(amount);
-      final id = intent['id'] ?? intent['intent_id'] ?? intent['topup_id'];
-      if (id != null) {
-        await api.wallet.confirmTopupIntent({'intent_id': '$id'});
-      }
+      await launchUrl(Uri.parse('$url'),
+          mode: LaunchMode.externalApplication);
       if (mounted) {
-        showInfo(context, 'Added ${_amount.text} to your wallet');
+        showInfo(context,
+            'Finish the payment in the secure checkout — your balance updates once it succeeds.');
         Navigator.of(context).pop(true);
       }
     } catch (e) {

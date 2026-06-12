@@ -24,6 +24,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
   void initState() {
     super.initState();
     _load();
+    _loadConfig();
   }
 
   @override
@@ -122,8 +123,21 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
   }
 
-  /// Flat fee charged per cash-out.
-  static const num _fee = 1.99;
+  // Cash-out limits from /payments/config (Stripe-governed); defaults match
+  // the platform's published values until the config loads.
+  num _fee = 1.99;
+  num _min = 5.0;
+
+  Future<void> _loadConfig() async {
+    try {
+      final cfg = await api.payments.config();
+      if (!mounted) return;
+      setState(() {
+        _fee = cfg['cashout_fee'] is num ? cfg['cashout_fee'] as num : _fee;
+        _min = cfg['cashout_min'] is num ? cfg['cashout_min'] as num : _min;
+      });
+    } catch (_) {/* keep defaults */}
+  }
 
   num? get _entered => num.tryParse(_amount.text.trim());
 
@@ -138,8 +152,9 @@ class _CashOutScreenState extends State<CashOutScreen> {
 
   Future<void> _cashout() async {
     final amount = _entered;
-    if (amount == null || !amount.isFinite || amount < 5) {
-      showInfo(context, 'Minimum cash-out is \$5.00.');
+    if (amount == null || !amount.isFinite || amount < _min) {
+      showInfo(context,
+          'Minimum cash-out is $_symbol${_min.toStringAsFixed(2)}.');
       return;
     }
     if (_overAvailable) {
@@ -273,11 +288,13 @@ class _CashOutScreenState extends State<CashOutScreen> {
                           errorText: _overAvailable
                               ? 'More than your available balance'
                               : null,
-                          helperText: (_entered ?? 0) >= 5 && !_overAvailable
+                          helperText: (_entered ?? 0) >= _min &&
+                                  !_overAvailable
                               ? "You'll receive "
                                   '$_symbol${(_entered! - _fee).toStringAsFixed(2)} '
-                                  'after the ${_symbol}1.99 fee'
-                              : '${_symbol}5 minimum · ${_symbol}1.99 flat fee · instant to debit card',
+                                  'after the $_symbol${_fee.toStringAsFixed(2)} fee'
+                              : '$_symbol${_min.toStringAsFixed(0)} minimum · '
+                                  '$_symbol${_fee.toStringAsFixed(2)} flat fee · instant to debit card',
                         ),
                       ),
                       if (_available >= 5) ...[
