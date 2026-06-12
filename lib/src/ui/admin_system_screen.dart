@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../core/cloudinary_api.dart';
+import '../core/foursquare_api.dart';
+import '../core/mapbox_api.dart';
 import 'admin_settings_screen.dart';
 import 'common.dart';
 import 'wallet_screen.dart';
@@ -245,19 +248,21 @@ class _AdminIntegrationsScreenState extends State<AdminIntegrationsScreen> {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Row(
+                // Wrap, not Row: on phones the chips would squeeze the count
+                // label into a one-character-per-line column.
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Expanded(
-                      child: Text('$ok/${all.length} configured',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
-                    ),
+                    Text('$ok/${all.length} configured',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
                     FilterChip(
                       label: const Text('Issues only'),
                       selected: _issuesOnly,
                       onSelected: (v) => setState(() => _issuesOnly = v),
                     ),
-                    const SizedBox(width: 8),
                     FilledButton(
                       onPressed: _testing ? null : _runLive,
                       child: Text(_testing ? 'Testing…' : 'Run live tests'),
@@ -265,6 +270,59 @@ class _AdminIntegrationsScreenState extends State<AdminIntegrationsScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                // SDKs compiled into this app build (set via CI secrets /
+                // --dart-define, not backend env vars — so they're shown
+                // here client-side, not in the backend's list below).
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('App SDKs (this build)',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 2),
+                        Text(
+                            'Baked in at build time from GitHub/Codemagic '
+                            'secrets. A redeploy is needed after adding one.',
+                            style: TextStyle(
+                                color: scheme.outline, fontSize: 12)),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final (name, set) in [
+                              ('Mapbox', hasMapbox),
+                              ('Cloudinary', hasCloudinary),
+                              ('Foursquare', hasFoursquare),
+                              (
+                                'Stripe top-up link',
+                                const String.fromEnvironment(
+                                        'STRIPE_TOPUP_LINK')
+                                    .isNotEmpty
+                              ),
+                            ])
+                              Chip(
+                                visualDensity: VisualDensity.compact,
+                                avatar: Icon(
+                                    set
+                                        ? Icons.check_circle
+                                        : Icons.circle_outlined,
+                                    size: 14,
+                                    color: set
+                                        ? const Color(0xFF22C55E)
+                                        : scheme.outline),
+                                label: Text(
+                                    '$name · ${set ? 'configured' : 'missing'}',
+                                    style: const TextStyle(fontSize: 11)),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 for (final i in shown)
                   Card(
                     child: Padding(
