@@ -1255,6 +1255,46 @@ class _RequestTile extends StatelessWidget {
                   style:
                       FilledButton.styleFrom(minimumSize: const Size(0, 40)),
                   onPressed: () async {
+                    // Self-imposed spending limits cover request payments
+                    // too, not just direct sends — warn-and-override, same
+                    // as SendMoney. Limits are advisory: a failed summary
+                    // read must not block the payment.
+                    if (spendingLimits.any) {
+                      var txns = const <WalletTxn>[];
+                      try {
+                        final w = await api.wallet.summary();
+                        txns = [...w.recent, ...w.sent];
+                      } catch (_) {}
+                      final exceeded =
+                          spendingLimits.wouldExceed(txns, amount);
+                      if (exceeded != null) {
+                        if (!context.mounted) return;
+                        final go = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Spending limit reached'),
+                            content: Text(
+                                'Paying this request takes '
+                                '${exceeded.label.toLowerCase()}\'s spending '
+                                'to ${_money(exceeded.spent + amount, currency)} '
+                                'of your ${_money(exceeded.limit, currency)} '
+                                'limit. Pay anyway?'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, false),
+                                  child: const Text('Cancel')),
+                              FilledButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  child: const Text('Pay anyway')),
+                            ],
+                          ),
+                        );
+                        if (go != true || !context.mounted) return;
+                      }
+                    }
+                    if (!context.mounted) return;
                     // The transfer may require a security answer. A blank
                     // answer is a valid choice (no question set), so this
                     // dialog distinguishes Pay-with-blank from Cancel.
@@ -1583,6 +1623,11 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       // Web preferred: a dashboard-created Stripe Payment Link — pure
       // Stripe, no backend call to start the payment. client_reference_id
       // ties the payment to this user for the crediting webhook.
+      if (_stripeTopupLink.isNotEmpty && currentUserId == null) {
+        // The cached id loads best-effort at startup; retry before silently
+        // skipping the preferred Stripe link path.
+        await loadCurrentUserId();
+      }
       if (_stripeTopupLink.isNotEmpty && currentUserId != null) {
         await launchUrl(
           Uri.parse(
@@ -1597,8 +1642,23 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         return;
       }
       // Otherwise: Stripe hosted checkout via the backend session endpoint.
-      final session = await api.payments
-          .checkout({'kind': 'topup', 'amount': amount});
+      final Map<String, dynamic> session;
+      try {
+        session =
+            await api.payments.checkout({'kind': 'topup', 'amount': amount});
+      } on ApiException catch (e) {
+        // The known live gap: the backend's checkout handler doesn't accept
+        // a wallet top-up yet ("Invalid recipient"). A raw error here leaves
+        // the user with no way forward — say what's actually wrong.
+        if (mounted) {
+          showInfo(
+              context,
+              'Adding money isn\'t available in this app yet '
+              '(server said: ${e.message}). '
+              'Please try again later or contact support.');
+        }
+        return;
+      }
       final url = session['url'] ??
           session['checkout_url'] ??
           session['session_url'];
@@ -1637,9 +1697,11 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       final secret = '${intent['client_secret'] ?? intent['clientSecret'] ?? intent['payment_intent_client_secret'] ?? ''}';
       if (secret.isEmpty) return null;
       return await stripePaySheet(publishableKey: pk, clientSecret: secret);
-    } on Exception catch (e) {
-      if (mounted) showError(context, e);
-      return false;
+    } on Exception {
+      // A sheet failure (transient Stripe/network error) must not dead-end
+      // the flow: null sends the caller down the hosted fallbacks. False is
+      // reserved for a deliberate user cancel.
+      return null;
     }
   }
 

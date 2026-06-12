@@ -387,65 +387,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showQrFor(PublicUser u) =>
       showProfileQr(context, name: u.name, handle: u.username ?? widget.userId);
 
-  /// Sends money from the wallet to this user (amount, note, security answer).
-  Future<void> _payUser(PublicUser u) async {
-    final amountCtrl = TextEditingController();
-    final noteCtrl = TextEditingController();
-    final answerCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text('Send money to ${u.name}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amountCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                  labelText: 'Amount', prefixText: '\$ '),
-            ),
-            TextField(
-              controller: noteCtrl,
-              decoration: const InputDecoration(labelText: 'Note (optional)'),
-            ),
-            TextField(
-              controller: answerCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Security answer',
-                  helperText: "The recipient's transfer answer"),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Send')),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    final amount = num.tryParse(amountCtrl.text.trim());
-    if (amount == null || amount <= 0) {
-      showInfo(context, 'Enter a valid amount');
-      return;
-    }
-    try {
-      await api.wallet.sendMoney(
-        toUserId: widget.userId,
-        amount: amount,
-        answer: answerCtrl.text.trim(),
-        note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
-      );
-      if (mounted) showInfo(context, 'Sent \$$amount to ${u.name}');
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
-  }
+  /// Sends money to this user via the full send flow — same screen as the
+  /// profile Pay button, so balance/spending-limit checks and the payment
+  /// confirmation all apply (the old inline dialog here bypassed them).
+  Future<void> _payUser(PublicUser u) => Navigator.of(context)
+      .push(MaterialPageRoute(builder: (_) => SendMoneyScreen(recipient: u)));
 
   Future<void> _tip() async {
     final amountText = await promptText(context,

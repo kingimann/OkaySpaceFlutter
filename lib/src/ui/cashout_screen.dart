@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/stripe_connect_embed.dart';
 import 'common.dart';
 
 /// Stripe-backed payouts: onboarding status, identity verification, and
@@ -60,7 +61,26 @@ class _CashOutScreenState extends State<CashOutScreen> {
   String get _symbol =>
       currencySymbol('${_status['currency'] ?? 'USD'}'.toUpperCase());
 
-  Future<void> _setup() async {
+  /// Opens payout setup/management. On the web the Stripe form is embedded
+  /// inside the app (Connect.js + the backend account-session); if the embed
+  /// can't start, or on native, Stripe's hosted link opens instead.
+  Future<void> _setup({String component = 'account-onboarding'}) async {
+    if (stripeEmbedSupported) {
+      final embedded = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+            builder: (_) => EmbeddedPayoutScreen(component: component)),
+      );
+      if (embedded == true) {
+        await _load();
+        return;
+      }
+      if (!mounted) return;
+      // false/null = embed unavailable → hosted fallback below.
+    }
+    await _setupHosted();
+  }
+
+  Future<void> _setupHosted() async {
     setState(() => _busy = true);
     try {
       final res = await api.payments.setupPayouts();
@@ -161,6 +181,13 @@ class _CashOutScreenState extends State<CashOutScreen> {
       showInfo(context, 'That\'s more than your available balance.');
       return;
     }
+    // The backend config doesn't guarantee fee < min; never let a cash-out
+    // through where the fee eats the whole amount.
+    if (amount <= _fee) {
+      showInfo(context,
+          'Amount must be more than the $_symbol${_fee.toStringAsFixed(2)} fee.');
+      return;
+    }
     setState(() => _busy = true);
     try {
       await api.payments.cashout({'amount': amount});
@@ -257,7 +284,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
                                 runSpacing: 10,
                                 children: [
                                   FilledButton.icon(
-                                    onPressed: _busy ? null : _setup,
+                                    onPressed: _busy ? null : () => _setup(),
                                     icon: const Icon(Icons.account_balance),
                                     label: const Text('Set up payouts'),
                                   ),
@@ -285,7 +312,32 @@ class _CashOutScreenState extends State<CashOutScreen> {
                           trailing:
                               Icon(Icons.open_in_new, size: 18,
                                   color: scheme.outline),
-                          onTap: _busy ? null : _setup,
+                          onTap: _busy
+                              ? null
+                              : () =>
+                                  _setup(component: 'account-management'),
+                        ),
+                      ),
+                      // Debit cards (instant payouts) are added in the Stripe
+                      // Express dashboard; connect.stripe.com/express_login
+                      // works for every connected account, no backend needed.
+                      Card(
+                        child: ListTile(
+                          leading: Icon(Icons.credit_card_outlined,
+                              color: scheme.primary),
+                          title: const Text('Add a debit card'),
+                          subtitle: const Text(
+                              'Instant payouts — sign in to your Stripe '
+                              'Express dashboard to add one'),
+                          trailing: Icon(Icons.open_in_new,
+                              size: 18, color: scheme.outline),
+                          onTap: _busy
+                              ? null
+                              : () => launchUrl(
+                                    Uri.parse(
+                                        'https://connect.stripe.com/express_login'),
+                                    mode: LaunchMode.externalApplication,
+                                  ),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -305,6 +357,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
                               ? 'More than your available balance'
                               : null,
                           helperText: (_entered ?? 0) >= _min &&
+                                  (_entered ?? 0) > _fee &&
                                   !_overAvailable
                               ? "You'll receive "
                                   '$_symbol${(_entered! - _fee).toStringAsFixed(2)} '
@@ -349,6 +402,103 @@ class _CashOutScreenState extends State<CashOutScreen> {
                 ),
               ),
             ),
+    );
+  }
+}
+
+/// Stripe's payout forms (onboarding / account management) embedded inside
+/// the app via Connect.js — web only. Pops `true` after the user finishes,
+/// `false` when the embed can't start so the caller can fall back to the
+/// hosted Stripe link.
+class EmbeddedPayoutScreen extends StatefulWidget {
+  const EmbeddedPayoutScreen({super.key, required this.component});
+
+  /// 'account-onboarding' (first-time setup) or 'account-management'
+  /// (edit bank account / debit card).
+  final String component;
+
+  @override
+  State<EmbeddedPayoutScreen> createState() => _EmbeddedPayoutScreenState();
+}
+
+class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
+  String? _publishableKey;
+  bool _popped = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  Future<void> _start() async {
+    try {
+      final cfg = await api.payments.config();
+      final pk = '${cfg['publishable_key'] ?? ''}';
+      if (!mounted) return;
+      if (pk.isEmpty) {
+        _bail();
+      } else {
+        setState(() => _publishableKey = pk);
+      }
+    } catch (_) {
+      if (mounted) _bail();
+    }
+  }
+
+  /// One Account Session per Connect.js request; Stripe re-asks when a
+  /// session expires, so this always fetches a fresh secret.
+  Future<String> _clientSecret() async {
+    final s = await api.payments.payoutAccountSession();
+    final secret =
+        '${s['client_secret'] ?? s['clientSecret'] ?? s['secret'] ?? ''}';
+    if (secret.isEmpty) throw StateError('No account-session client secret');
+    return secret;
+  }
+
+  /// Leaves the screen signalling "use the hosted link instead".
+  void _bail() {
+    if (_popped || !mounted) return;
+    _popped = true;
+    Navigator.of(context).pop(false);
+  }
+
+  void _done() {
+    if (_popped || !mounted) return;
+    _popped = true;
+    Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pk = _publishableKey;
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: Text(widget.component == 'account-management'
+            ? 'Payout method'
+            : 'Set up payouts'),
+        actions: [
+          TextButton(
+            onPressed: _done,
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+      // The Stripe component manages its own scrolling inside the page.
+      body: pk == null
+          ? const Center(child: CircularProgressIndicator())
+          : stripeConnectView(
+                  publishableKey: pk,
+                  fetchClientSecret: _clientSecret,
+                  component: widget.component,
+                  onExit: () {
+                    // Connect.js calls this off the Flutter frame; defer.
+                    WidgetsBinding.instance.addPostFrameCallback((_) => _done());
+                  },
+                  onError: (_) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) => _bail());
+                  },
+                ),
     );
   }
 }

@@ -319,6 +319,7 @@ class _MapScreenState extends State<MapScreen> {
 
   int _tileErrors = 0;
   bool _warnedTiles = false;
+  DateTime? _lastTileError;
 
   List<_TileStyle> get _styles => _mapboxStyles;
 
@@ -326,6 +327,14 @@ class _MapScreenState extends State<MapScreen> {
       orElse: () => _styles.first);
 
   void _onTileError() {
+    // A burst of failures means a bad token/config; isolated blips spread
+    // over the session shouldn't accumulate into a false alarm.
+    final now = DateTime.now();
+    if (_lastTileError != null &&
+        now.difference(_lastTileError!) > const Duration(minutes: 2)) {
+      _tileErrors = 0;
+    }
+    _lastTileError = now;
     _tileErrors++;
     if (_tileErrors < 6 || _warnedTiles) return;
     _warnedTiles = true;
@@ -487,6 +496,7 @@ class _MapScreenState extends State<MapScreen> {
     final ctrl = TextEditingController();
     var results = const <Map<String, dynamic>>[];
     var busy = false;
+    var searchSeq = 0;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -508,10 +518,12 @@ class _MapScreenState extends State<MapScreen> {
                 _loadAll();
                 return;
               }
+              // A slower older search must not overwrite a newer one.
+              final seq = ++searchSeq;
               setSheet(() => busy = true);
               try {
                 final r = await geocodePlaces(q, near: _center);
-                if (!c.mounted) return;
+                if (!c.mounted || seq != searchSeq) return;
                 _addRecent(q);
                 if (r.isEmpty) {
                   showInfo(c, 'No places found for “$q”.');
@@ -522,9 +534,11 @@ class _MapScreenState extends State<MapScreen> {
                   setSheet(() => results = r.cast<Map<String, dynamic>>());
                 }
               } catch (e) {
-                if (c.mounted) showError(c, e);
+                if (c.mounted && seq == searchSeq) showError(c, e);
               } finally {
-                if (c.mounted) setSheet(() => busy = false);
+                if (c.mounted && seq == searchSeq) {
+                  setSheet(() => busy = false);
+                }
               }
             }
 
