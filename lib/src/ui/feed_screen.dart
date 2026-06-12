@@ -119,6 +119,11 @@ class _FeedScreenState extends State<FeedScreen> {
       if (feedPrefs.hideReposts) {
         out = out.where((p) => p.repostOf == null).toList();
       }
+      if (feedPrefs.mutedAuthors.isNotEmpty) {
+        out = out
+            .where((p) => !feedPrefs.isAuthorMuted(p.author.userId))
+            .toList();
+      }
       if (feedPrefs.hideSponsored) {
         out = out.where((p) => !p.promoted).toList();
       }
@@ -153,12 +158,16 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
-  /// Keeps sponsored posts pinned at the top, then orders the rest newest
-  /// first so the feed always shows the latest posts.
+  /// Keeps sponsored posts pinned at the top, then orders the rest by the
+  /// user's sort preference: newest first, or top engagement.
   List<Post> _orderFeed(List<Post> posts) {
+    int engagement(Post p) =>
+        p.likesCount + p.repostsCount + p.repliesCount + p.bookmarksCount;
     final promoted = posts.where((p) => p.promoted).toList();
     final rest = posts.where((p) => !p.promoted).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      ..sort(feedPrefs.sort == 'top'
+          ? (a, b) => engagement(b).compareTo(engagement(a))
+          : (a, b) => b.createdAt.compareTo(a.createdAt));
     return [...promoted, ...rest];
   }
 
