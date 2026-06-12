@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
+import '../core/mapbox_api.dart';
 import 'common.dart';
 
 Color _guideColor(String hex, BuildContext context) {
@@ -61,7 +62,7 @@ class _GuidesScreenState extends State<GuidesScreen> {
         action: 'Search');
     if (query == null) return;
     try {
-      final results = await api.roadside.geocode(query);
+      final results = await geocodePlaces(query);
       if (!mounted) return;
       if (results.isEmpty) {
         showInfo(context, 'No places found for “$query”.');
