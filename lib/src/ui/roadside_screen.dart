@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
+import '../core/device_location.dart';
 import 'common.dart';
 
 const _services = <(String, String, IconData)>[
@@ -69,8 +70,10 @@ class RoadsideScreen extends StatefulWidget {
 }
 
 class _RoadsideScreenState extends State<RoadsideScreen> {
-  // Default search origin until device location is available.
-  static const _lat = 43.6532, _lng = -79.3832;
+  // Search origin: device GPS when granted, downtown Toronto until then.
+  static const _fallbackLat = 43.6532, _fallbackLng = -79.3832;
+  double _lat = _fallbackLat;
+  double _lng = _fallbackLng;
 
   /// Nearby search radius, adjustable from the Nearby tab.
   double _radiusKm = 50;
@@ -88,6 +91,17 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
   void initState() {
     super.initState();
     _load();
+    // Re-run nearby around the real position once GPS resolves.
+    currentLatLng().then((pos) {
+      if (pos != null && mounted) {
+        setState(() {
+          _lat = pos.latitude;
+          _lng = pos.longitude;
+          _nearby =
+              api.roadside.nearby(lat: _lat, lng: _lng, radiusKm: _radiusKm);
+        });
+      }
+    });
   }
 
   void _load() {
@@ -353,7 +367,7 @@ class _RoadsideScreenState extends State<RoadsideScreen> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: FlutterMap(
-              options: const MapOptions(
+              options: MapOptions(
                 initialCenter: LatLng(_lat, _lng),
                 initialZoom: 10,
               ),
@@ -1333,6 +1347,28 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
               ),
             ],
             _sectionTitle(_service == 'tow' ? 'Pickup location' : 'Where are you?'),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.my_location, size: 18),
+              label: const Text('Use my current location'),
+              onPressed: () async {
+                final pos = await currentLatLng();
+                if (!context.mounted) return;
+                if (pos == null) {
+                  showInfo(context,
+                      'Location unavailable — allow location access or search below.');
+                  return;
+                }
+                setState(() {
+                  _pickedLat = pos.latitude;
+                  _pickedLng = pos.longitude;
+                  _pickedName = 'My location '
+                      '(${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)})';
+                  _place.text = _pickedName!;
+                  _geoResults = null;
+                });
+              },
+            ),
+            const SizedBox(height: 10),
             TextField(
               controller: _place,
               onChanged: _onPlaceQuery,

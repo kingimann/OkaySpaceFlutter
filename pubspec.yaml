@@ -29,6 +29,8 @@ dependencies:
   local_auth: ^2.3.0
   # Open external maps for roadside directions.
   url_launcher: ^6.3.0
+  # Device GPS for the map, roadside nearby, and directions origin.
+  geolocator: ^13.0.0
 
 dev_dependencies:
   flutter_test:
