@@ -13,6 +13,7 @@ import 'spending_limits.dart';
 import 'split_bill_screen.dart';
 import 'tap_to_pay_screen.dart';
 import 'wallet_insights_screen.dart';
+import 'wallet_lock.dart';
 
 String _money(num amount, String currency) => formatMoney(amount, currency);
 
@@ -221,6 +222,10 @@ class _WalletScreenState extends State<WalletScreen> {
   /// Masks amounts on the overview (privacy in public places).
   bool _hideBalance = false;
 
+  /// True while the wallet PIN lock is engaged (set on open, cleared on a
+  /// successful unlock).
+  bool _pinLocked = false;
+
   /// Recent-activity direction filter: 'all' | 'in' | 'out'.
   String _txnFilter = 'all';
 
@@ -238,6 +243,11 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     _load();
     _loadFavorites();
+    walletLock.enabled.then((enabled) {
+      if (mounted && enabled && !walletLock.unlocked) {
+        setState(() => _pinLocked = true);
+      }
+    });
   }
 
   @override
@@ -418,6 +428,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 if (v == 'topups') _push(const TopUpHistoryScreen());
                 if (v == 'insights') _push(const WalletInsightsScreen());
                 if (v == 'history') _push(const TransferHistoryScreen());
+                if (v == 'lock') _walletLockSettings();
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'insights', child: Text('Insights')),
@@ -427,6 +438,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 PopupMenuItem(value: 'topups', child: Text('Top-up history')),
                 PopupMenuItem(
                     value: 'history', child: Text('Transfer history')),
+                PopupMenuItem(value: 'lock', child: Text('Wallet lock')),
               ],
             ),
           ],
@@ -439,11 +451,15 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
         ),
         body: MaxWidth(
-          child: TabBarView(
-            children: [_overview(), _requestsTab(), _transfersTab()],
-          ),
+          child: _pinLocked
+              ? _lockGate()
+              : TabBarView(
+                  children: [_overview(), _requestsTab(), _transfersTab()],
+                ),
         ),
-        floatingActionButton: Padding(
+        floatingActionButton: _pinLocked
+            ? null
+            : Padding(
           // Clear the home shell's floating nav pill when embedded.
           padding: EdgeInsets.only(bottom: widget.embedded ? 76 : 0),
           child: FloatingActionButton.extended(
@@ -456,6 +472,84 @@ class _WalletScreenState extends State<WalletScreen> {
         ),
       ),
     );
+  }
+
+  /// Shown instead of the wallet while the PIN lock is engaged.
+  Widget _lockGate() {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.lock_outline, size: 56, color: scheme.primary),
+          const SizedBox(height: 14),
+          const Text('Wallet locked',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          const SizedBox(height: 6),
+          Text('Enter your PIN to see balances and pay',
+              style: TextStyle(color: scheme.outline, fontSize: 13)),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            icon: const Icon(Icons.pin_outlined),
+            label: const Text('Unlock'),
+            onPressed: () async {
+              final ok = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => const WalletPinScreen()));
+              if (ok == true && mounted) setState(() => _pinLocked = false);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Set up, change, or remove the wallet PIN (current PIN required to
+  /// change or remove).
+  Future<void> _walletLockSettings() async {
+    final enabled = await walletLock.enabled;
+    if (!mounted) return;
+    if (!enabled) {
+      final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(
+          builder: (_) => const WalletPinScreen(setup: true)));
+      if (ok == true && mounted) setState(() => _pinLocked = false);
+      return;
+    }
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.pin_outlined),
+              title: const Text('Change PIN'),
+              onTap: () => Navigator.pop(sheetContext, 'change'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_open_outlined),
+              title: const Text('Remove wallet lock'),
+              onTap: () => Navigator.pop(sheetContext, 'remove'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    // Verify the current PIN before any change.
+    final verified = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const WalletPinScreen()));
+    if (verified != true || !mounted) return;
+    if (choice == 'change') {
+      await Navigator.of(context).push<bool>(MaterialPageRoute(
+          builder: (_) => const WalletPinScreen(setup: true)));
+    } else {
+      await walletLock.clear();
+      if (mounted) {
+        showInfo(context, 'Wallet lock removed');
+        setState(() => _pinLocked = false);
+      }
+    }
   }
 
   Widget _overview() {
