@@ -45,7 +45,10 @@ class _SplitBillScreenState extends State<SplitBillScreen> {
   /// to the first few people. Empty until the form is valid.
   List<int> get _shareCents {
     final total = _total;
-    if (total == null || total <= 0 || _people.isEmpty) return const [];
+    // isFinite guards NaN/Infinity input, which would crash cent math.
+    if (total == null || !total.isFinite || total <= 0 || _people.isEmpty) {
+      return const [];
+    }
     final n = _people.length + (_includeMe ? 1 : 0);
     final totalCents = (total * 100).round();
     final base = totalCents ~/ n;

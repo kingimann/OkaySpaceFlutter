@@ -20,7 +20,10 @@ class _WalletInsightsScreenState extends State<WalletInsightsScreen> {
 
   Future<void> _reload() async {
     setState(() => _summary = api.wallet.summary());
-    await _summary;
+    // The FutureBuilder surfaces errors; don't rethrow into RefreshIndicator.
+    try {
+      await _summary;
+    } catch (_) {}
   }
 
   /// Copies recent transactions to the clipboard as CSV.

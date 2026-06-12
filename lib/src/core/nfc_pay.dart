@@ -1,5 +1,7 @@
 import 'nfc_pay_stub.dart' if (dart.library.io) 'nfc_pay_io.dart' as impl;
 
+export 'nfc_cancelled.dart';
+
 /// NFC tap-to-pay plumbing. Real on iOS/Android (via `nfc_manager`); the web
 /// stub reports NFC as unavailable so callers can hide the feature.
 
