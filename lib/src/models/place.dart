@@ -90,6 +90,33 @@ class PlaceReview {
       );
 }
 
+/// Aggregate rating for a place: total count, mean and a 1..5 histogram.
+class ReviewSummary {
+  const ReviewSummary({
+    required this.placeKey,
+    required this.count,
+    required this.average,
+    required this.distribution,
+  });
+
+  final String placeKey;
+  final int count;
+  final double average;
+
+  /// rating (1..5) → number of reviews at that rating.
+  final Map<int, int> distribution;
+
+  factory ReviewSummary.fromJson(Map<String, dynamic> json) {
+    final raw = asMapOrNull(json['distribution']) ?? const {};
+    return ReviewSummary(
+      placeKey: asString(json['place_key']),
+      count: asInt(json['count']),
+      average: asDoubleOrNull(json['average']) ?? 0.0,
+      distribution: {for (var i = 1; i <= 5; i++) i: asInt(raw['$i'])},
+    );
+  }
+}
+
 /// A curated collection of saved places, optionally public via a slug.
 class Guide {
   const Guide({

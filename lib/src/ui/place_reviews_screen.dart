@@ -25,15 +25,20 @@ class PlaceReviewsScreen extends StatefulWidget {
 
 class _PlaceReviewsScreenState extends State<PlaceReviewsScreen> {
   late Future<List<PlaceReview>> _reviews;
+  late Future<ReviewSummary> _summary;
 
   @override
   void initState() {
     super.initState();
     _reviews = api.guides.placeReviews(widget.placeKey);
+    _summary = api.guides.placeReviewSummary(widget.placeKey);
   }
 
   Future<void> _reload() async {
-    setState(() => _reviews = api.guides.placeReviews(widget.placeKey));
+    setState(() {
+      _reviews = api.guides.placeReviews(widget.placeKey);
+      _summary = api.guides.placeReviewSummary(widget.placeKey);
+    });
     await _reviews;
   }
 
@@ -108,8 +113,9 @@ class _PlaceReviewsScreenState extends State<PlaceReviewsScreen> {
                   if (i == 0) {
                     return _Header(
                       placeName: widget.placeName,
-                      average: average,
-                      count: reviews.length,
+                      fallbackAverage: average,
+                      fallbackCount: reviews.length,
+                      summary: _summary,
                     );
                   }
                   return _ReviewTile(
@@ -159,39 +165,111 @@ class _Stars extends StatelessWidget {
 class _Header extends StatelessWidget {
   const _Header({
     required this.placeName,
-    required this.average,
-    required this.count,
+    required this.fallbackAverage,
+    required this.fallbackCount,
+    required this.summary,
   });
 
   final String placeName;
-  final double average;
-  final int count;
+
+  /// Shown while the (more accurate) server summary loads or if it fails.
+  final double fallbackAverage;
+  final int fallbackCount;
+  final Future<ReviewSummary> summary;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(placeName,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 20)),
-          const SizedBox(height: 8),
-          Row(
+      child: FutureBuilder<ReviewSummary>(
+        future: summary,
+        builder: (context, snapshot) {
+          final s = snapshot.data;
+          final average = s?.average ?? fallbackAverage;
+          final count = s?.count ?? fallbackCount;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(average.toStringAsFixed(1),
+              Text(placeName,
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 22)),
-              const SizedBox(width: 8),
-              _Stars(rating: average, size: 20, allowHalf: true),
-              const SizedBox(width: 8),
-              Text(
-                count == 1 ? '1 review' : '$count reviews',
-                style: TextStyle(color: scheme.outline),
+                      fontWeight: FontWeight.bold, fontSize: 20)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(average.toStringAsFixed(1),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 22)),
+                  const SizedBox(width: 8),
+                  _Stars(rating: average, size: 20, allowHalf: true),
+                  const SizedBox(width: 8),
+                  Text(
+                    count == 1 ? '1 review' : '$count reviews',
+                    style: TextStyle(color: scheme.outline),
+                  ),
+                ],
               ),
+              // Rating breakdown bars (5★ → 1★), once the summary lands.
+              if (s != null && s.count > 0) ...[
+                const SizedBox(height: 12),
+                for (var star = 5; star >= 1; star--)
+                  _RatingBar(
+                    star: star,
+                    count: s.distribution[star] ?? 0,
+                    total: s.count,
+                  ),
+              ],
             ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// One row of the rating histogram: "5 ★ ▓▓▓▓░ 12".
+class _RatingBar extends StatelessWidget {
+  const _RatingBar(
+      {required this.star, required this.count, required this.total});
+
+  final int star;
+  final int count;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fraction = total > 0 ? count / total : 0.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            child: Text('$star',
+                textAlign: TextAlign.right,
+                style: TextStyle(color: scheme.outline, fontSize: 12)),
+          ),
+          const SizedBox(width: 2),
+          Icon(Icons.star, size: 12, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: fraction,
+                minHeight: 8,
+                backgroundColor: scheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation(scheme.primary),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 28,
+            child: Text('$count',
+                textAlign: TextAlign.right,
+                style: TextStyle(color: scheme.outline, fontSize: 12)),
           ),
         ],
       ),

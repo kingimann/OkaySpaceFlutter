@@ -97,6 +97,13 @@ class GuidesService {
       await _client.getJson('/reviews', query: {'place_key': placeKey}),
       PlaceReview.fromJson);
 
+  /// Aggregate rating for a place (count, mean, 1..5 histogram). Counts every
+  /// review server-side, so it's more accurate than reducing the capped list.
+  Future<ReviewSummary> placeReviewSummary(String placeKey) async =>
+      ReviewSummary.fromJson(asMapOrNull(await _client
+              .getJson('/reviews/summary', query: {'place_key': placeKey})) ??
+          const {});
+
   /// Posts (or replaces) the current user's review of a place.
   Future<PlaceReview> addReview({
     required String placeKey,

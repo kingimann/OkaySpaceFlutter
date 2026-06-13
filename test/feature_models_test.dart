@@ -110,6 +110,20 @@ void main() {
     expect(review.text, 'Great spot');
   });
 
+  test('ReviewSummary.fromJson parses count, average and histogram', () {
+    final summary = ReviewSummary.fromJson({
+      'place_key': 'geo:43.65,-79.38',
+      'count': 3,
+      'average': 4.33,
+      'distribution': {'1': 0, '2': 0, '3': 1, '4': 0, '5': 2},
+    });
+    expect(summary.count, 3);
+    expect(summary.average, 4.33);
+    expect(summary.distribution[5], 2);
+    expect(summary.distribution[3], 1);
+    expect(summary.distribution[1], 0);
+  });
+
   test('WalletSummary parses balance and recent transactions', () {
     final wallet = WalletSummary.fromJson({
       'currency': 'USD',
