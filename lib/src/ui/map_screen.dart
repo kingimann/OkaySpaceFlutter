@@ -14,6 +14,7 @@ import '../core/mapbox_api.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'eta_view_screen.dart';
 import 'marketplace_screen.dart';
 import 'place_reviews_screen.dart';
 
@@ -793,6 +794,7 @@ class _MapScreenState extends State<MapScreen> {
                 _etaShareId != null ? 'Stop sharing ETA' : 'Share my ETA',
                 _etaShareId != null ? _stopEta : _shareEta,
                 active: _etaShareId != null),
+            item(Icons.location_searching, 'View a shared ETA', _viewSharedEta),
             const Divider(height: 1),
             item(Icons.straighten, 'Measure distance', _toggleMeasure,
                 active: _measuring),
@@ -899,6 +901,24 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
+  }
+
+  /// Opens the in-app live viewer for a shared ETA from a pasted link or code.
+  Future<void> _viewSharedEta() async {
+    final input = await promptText(context,
+        title: 'View a shared ETA',
+        hint: 'Paste the ETA link or code',
+        action: 'View');
+    if (input == null || input.trim().isEmpty || !mounted) return;
+    final trimmed = input.trim();
+    // Accept a full okayspace.ca/eta/<id> URL or a bare share code.
+    var id = trimmed;
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.pathSegments.isNotEmpty) {
+      id = uri.pathSegments.last;
+    }
+    if (id.isEmpty) return;
+    EtaViewScreen.open(context, id);
   }
 
   /// Starts a live ETA share to a searched destination and copies the
