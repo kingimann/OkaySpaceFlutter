@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'admin_settings_screen.dart';
 import 'common.dart';
@@ -34,6 +35,53 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   bool? _testPayments;
   bool? _mobileOnly;
   bool? _mobileWebGate;
+  String _regMode = 'open';
+
+  Future<void> _generateInvites() async {
+    try {
+      final res = await api.admin.createInvites(count: 5);
+      final codes = res['codes'] ?? res['invites'] ?? res['data'];
+      if (!mounted) return;
+      final list = codes is List
+          ? codes.map((c) => c is Map ? '${c['code'] ?? c}' : '$c').toList()
+          : <String>[];
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Invite codes'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (list.isEmpty)
+                const Text('Created — check the invites list.')
+              else
+                for (final c in list)
+                  SelectableText(c,
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 15)),
+            ],
+          ),
+          actions: [
+            if (list.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: list.join('\n')));
+                  Navigator.pop(dialogContext);
+                  if (mounted) showInfo(context, 'Codes copied');
+                },
+                child: const Text('Copy all'),
+              ),
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Done')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
   String _stripeStatus = '';
   String _webBuild = '';
   Map<String, dynamic> _revenue = const {};
@@ -63,9 +111,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         api.admin.revenue().catchError((_) => null),
         api.admin.fees().catchError((_) => null),
         api.admin.mobileWebGate().catchError((_) => null),
+        api.admin.registrationMode().catchError((_) => null),
       ]);
       if (!mounted) return;
       setState(() {
+        final rm = results[6];
+        if (rm is Map) {
+          final m = '${rm['mode'] ?? 'open'}'.toLowerCase();
+          if (const ['open', 'invite', 'closed'].contains(m)) _regMode = m;
+        }
         final tp = results[0];
         if (tp is Map) {
           _testPayments = tp['enabled'] == true || tp['test'] == true;
@@ -145,6 +199,45 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           () => api.admin.setMobileWebGate(v),
                           v ? 'Mobile web gate on' : 'Mobile web gate off'),
                     ),
+                    // Registration mode: open / invite-only / closed.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: Text('REGISTRATION',
+                          style: TextStyle(
+                              color: scheme.outline,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.6)),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final (id, label) in const [
+                            ('open', 'Open'),
+                            ('invite', 'Invite only'),
+                            ('closed', 'Closed'),
+                          ])
+                            ChoiceChip(
+                              label: Text(label),
+                              selected: _regMode == id,
+                              onSelected: (_) => _run(() async {
+                                await api.admin.setRegistrationMode(id);
+                                if (mounted) setState(() => _regMode = id);
+                              }, 'Registration: $label'),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (_regMode == 'invite')
+                      ListTile(
+                        leading: Icon(Icons.confirmation_number_outlined,
+                            color: scheme.primary),
+                        title: const Text('Generate invite codes'),
+                        subtitle: const Text('Create codes to share'),
+                        onTap: _generateInvites,
+                      ),
                     ListTile(
                       leading: Icon(Icons.refresh, color: scheme.primary),
                       title: const Text('Force web update'),

@@ -394,6 +394,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _payUser(PublicUser u) => Navigator.of(context)
       .push(MaterialPageRoute(builder: (_) => SendMoneyScreen(recipient: u)));
 
+  /// Edit profile (own profile only): loads the full [User] then opens the
+  /// editor, refreshing this screen on return.
+  Future<void> _editProfileById(String userId) async {
+    try {
+      final me = await api.auth.me();
+      if (!mounted) return;
+      final saved = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(builder: (_) => EditProfileScreen(user: me)));
+      if (saved == true && mounted) setState(() {});
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _tip() async {
     final amountText = await promptText(context,
         title: 'Send a tip', hint: 'Amount', action: 'Send');
@@ -732,41 +746,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _toggleFollow,
-                    child: Text(_following ? 'Following' : 'Follow'),
+            child: u.userId == currentUserId
+                // Your own profile: owner actions, not Follow/Message/Pay.
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => _editProfileById(u.userId),
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          label: const Text('Edit profile'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => showProfileDecorSheet(context),
+                          icon: const Icon(Icons.palette_outlined, size: 18),
+                          label: const Text('Customize'),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: _toggleFollow,
+                          child: Text(_following ? 'Following' : 'Follow'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _message,
+                          icon: const Icon(Icons.chat_bubble_outline),
+                          label: const Text('Message'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF008CFF),
+                              foregroundColor: Colors.white),
+                          onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      SendMoneyScreen(recipient: u))),
+                          icon: const Icon(Icons.attach_money, size: 18),
+                          label: const Text('Pay'),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _message,
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    label: const Text('Message'),
-                  ),
-                ),
-                // You can't pay yourself — hide Pay on your own profile
-                // (e.g. when previewing via "View as visitor").
-                if (u.userId != currentUserId) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF008CFF),
-                          foregroundColor: Colors.white),
-                      onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => SendMoneyScreen(recipient: u))),
-                      icon: const Icon(Icons.attach_money, size: 18),
-                      label: const Text('Pay'),
-                    ),
-                  ),
-                ],
-              ],
-            ),
           ),
         ],
       ),

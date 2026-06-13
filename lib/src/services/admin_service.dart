@@ -135,6 +135,27 @@ class AdminService {
     await _client.postJson('/admin/mobile-web-gate', body: {'enabled': on});
   }
 
+  // --- Registration & invites --------------------------------------------
+
+  /// Current registration mode ('open' | 'invite' | 'closed').
+  Future<dynamic> registrationMode() =>
+      _client.getJson('/admin/registration');
+
+  Future<void> setRegistrationMode(String mode) async {
+    await _client.postJson('/admin/registration', body: {'mode': mode});
+  }
+
+  /// Existing invite codes.
+  Future<dynamic> invites() => _client.getJson('/admin/invites');
+
+  /// Creates [count] invite codes (returns the new codes).
+  Future<Map<String, dynamic>> createInvites({int count = 1}) async =>
+      _map(await _client.postJson('/admin/invites', body: {'count': count}));
+
+  Future<void> deleteInvite(String code) async {
+    await _client.deleteJson('/admin/invites/$code');
+  }
+
   Future<dynamic> webBuild() => _client.getJson('/admin/web-build');
   Future<void> bumpWebBuild() async {
     await _client.postJson('/admin/web-build/bump');

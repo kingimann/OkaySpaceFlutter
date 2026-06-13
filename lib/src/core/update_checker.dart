@@ -20,6 +20,11 @@ final ValueNotifier<bool> updateAvailable = ValueNotifier<bool>(false);
 /// native app (admin → mobile-web gate). Read from /public/app-config.
 final ValueNotifier<bool> mobileWebGate = ValueNotifier<bool>(false);
 
+/// Server-controlled registration mode: 'open' | 'invite' | 'closed'.
+/// Read from /public/app-config so the sign-up screen can adapt.
+final ValueNotifier<String> registrationMode =
+    ValueNotifier<String>('open');
+
 Timer? _timer;
 String? _killToken;
 
@@ -65,6 +70,10 @@ Future<void> _checkServerConfig() async {
       }
     }
     mobileWebGate.value = data['mobile_web_gate'] == true;
+    final mode = '${data['registration_mode'] ?? 'open'}'.toLowerCase();
+    if (const ['open', 'invite', 'closed'].contains(mode)) {
+      registrationMode.value = mode;
+    }
   } catch (_) {/* offline — try again next tick */}
 }
 
