@@ -70,54 +70,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? _generatedAvatarUrl;
   bool _busy = false;
 
-  /// Tapping the avatar opens a clear chooser so the generate option is
-  /// never hidden behind a tiny icon.
-  Future<void> _changeAvatar() async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-                title: Text('Profile picture',
-                    style: TextStyle(fontWeight: FontWeight.bold))),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome),
-              title: const Text('Generate an avatar'),
-              subtitle: const Text('Pick from cartoon, robots, pixel & more'),
-              onTap: () => Navigator.pop(sheetContext, 'generate'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Upload a photo'),
-              onTap: () => Navigator.pop(sheetContext, 'upload'),
-            ),
-            if (_newPicture != null || _generatedAvatarUrl != null)
-              ListTile(
-                leading: const Icon(Icons.undo),
-                title: const Text('Reset to current'),
-                onTap: () => Navigator.pop(sheetContext, 'reset'),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (!mounted) return;
-    switch (choice) {
-      case 'generate':
-        await _generateAvatar();
-      case 'upload':
-        await _pickPicture();
-      case 'reset':
-        setState(() {
-          _newPicture = null;
-          _generatedAvatarUrl = null;
-        });
-    }
-  }
-
   Future<void> _pickPicture() async {
     final file = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -134,126 +86,169 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  /// Generates random profile pictures (DiceBear): just tap one you like.
-  /// A style filter narrows the grid; "More" reshuffles it.
-  Future<void> _generateAvatar() async {
-    String? style; // null = "Surprise me" (mixed styles)
-    var urls = avatarBatch(style: style);
-    final chosen = await showModalBottomSheet<String>(
+  /// One sheet: a grid of generated avatars to tap, an Upload button, and a
+  /// fun-styles toggle. Identicons render locally (no network) so it always
+  /// works; "Fun styles" pulls DiceBear cartoons when online.
+  Future<void> _changeAvatar() async {
+    var batch = await identiconBatch();
+    if (!mounted) return;
+    String? funStyle; // null = local identicons; set = DiceBear style
+    List<String> urls = const [];
+
+    await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) {
         final scheme = Theme.of(sheetContext).colorScheme;
         return StatefulBuilder(
-          builder: (sheetContext, setSheet) => SafeArea(
-            child: DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.7,
-              maxChildSize: 0.92,
-              builder: (_, scrollCtrl) => Column(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
-                    child: Text('Tap a picture to use it',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                  // Style filter row.
-                  SizedBox(
-                    height: 44,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: ChoiceChip(
-                            label: const Text('Surprise me'),
-                            selected: style == null,
-                            onSelected: (_) => setSheet(() {
-                              style = null;
-                              urls = avatarBatch(style: style);
-                            }),
-                          ),
-                        ),
-                        for (final s in kAvatarStyles)
+          builder: (sheetContext, setSheet) {
+            Future<void> shuffle() async {
+              if (funStyle == null) {
+                final b = await identiconBatch();
+                setSheet(() => batch = b);
+              } else {
+                setSheet(() => urls = avatarBatch(style: funStyle));
+              }
+            }
+
+            return SafeArea(
+              child: DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.75,
+                maxChildSize: 0.95,
+                builder: (_, scrollCtrl) => Column(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text('Tap a picture to use it',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                    ),
+                    // Style chips: Identicons (local) + DiceBear styles.
+                    SizedBox(
+                      height: 44,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        children: [
                           Padding(
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 4),
                             child: ChoiceChip(
-                              label: Text(s.label),
-                              selected: style == s.id,
-                              onSelected: (_) => setSheet(() {
-                                style = s.id;
-                                urls = avatarBatch(style: style);
-                              }),
+                              label: const Text('Patterns'),
+                              selected: funStyle == null,
+                              onSelected: (_) async {
+                                final b = await identiconBatch();
+                                setSheet(() {
+                                  funStyle = null;
+                                  batch = b;
+                                });
+                              },
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: GridView.builder(
-                      controller: scrollCtrl,
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 14,
-                        mainAxisSpacing: 14,
+                          for (final st in kAvatarStyles)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: ChoiceChip(
+                                label: Text(st.label),
+                                selected: funStyle == st.id,
+                                onSelected: (_) => setSheet(() {
+                                  funStyle = st.id;
+                                  urls = avatarBatch(style: st.id);
+                                }),
+                              ),
+                            ),
+                        ],
                       ),
-                      itemCount: urls.length,
-                      itemBuilder: (context, i) => Material(
-                        color: scheme.surfaceContainerHighest,
-                        shape: const CircleBorder(),
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          onTap: () => Navigator.pop(sheetContext, urls[i]),
-                          child: Image.network(
-                            urls[i],
-                            fit: BoxFit.cover,
-                            loadingBuilder: (_, child, progress) =>
-                                progress == null
-                                    ? child
-                                    : const Center(
-                                        child: SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2))),
-                            errorBuilder: (_, __, ___) => Icon(
-                                Icons.person, color: scheme.outline),
+                    ),
+                    Expanded(
+                      child: GridView.builder(
+                        controller: scrollCtrl,
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 14,
+                          mainAxisSpacing: 14,
+                        ),
+                        itemCount: funStyle == null ? batch.length : urls.length,
+                        itemBuilder: (context, i) => Material(
+                          color: scheme.surfaceContainerHighest,
+                          shape: const CircleBorder(),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () {
+                              if (funStyle == null) {
+                                final bytes = batch[i];
+                                setState(() {
+                                  _newPicture = bytes;
+                                  _generatedAvatarUrl = null;
+                                });
+                              } else {
+                                setState(() {
+                                  _generatedAvatarUrl = urls[i];
+                                  _newPicture = null;
+                                });
+                              }
+                              Navigator.pop(sheetContext);
+                            },
+                            child: funStyle == null
+                                ? Image.memory(batch[i], fit: BoxFit.cover)
+                                : Image.network(
+                                    urls[i],
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (_, child, progress) =>
+                                        progress == null
+                                            ? child
+                                            : const Center(
+                                                child: SizedBox(
+                                                    width: 20,
+                                                    height: 20,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                            strokeWidth: 2))),
+                                    errorBuilder: (_, __, ___) => Icon(
+                                        Icons.person, color: scheme.outline),
+                                  ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () =>
-                            setSheet(() => urls = avatarBatch(style: style)),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('More options'),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: shuffle,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('More'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () {
+                                Navigator.pop(sheetContext);
+                                _pickPicture();
+                              },
+                              icon: const Icon(Icons.photo_library_outlined),
+                              label: const Text('Upload'),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
-    if (chosen != null && mounted) {
-      setState(() {
-        _generatedAvatarUrl = chosen;
-        _newPicture = null;
-      });
-    }
   }
 
   Future<void> _pickCover() async {
