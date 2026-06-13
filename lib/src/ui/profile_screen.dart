@@ -748,19 +748,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: const Text('Message'),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF008CFF),
-                        foregroundColor: Colors.white),
-                    onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => SendMoneyScreen(recipient: u))),
-                    icon: const Icon(Icons.attach_money, size: 18),
-                    label: const Text('Pay'),
+                // You can't pay yourself — hide Pay on your own profile
+                // (e.g. when previewing via "View as visitor").
+                if (u.userId != currentUserId) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF008CFF),
+                          foregroundColor: Colors.white),
+                      onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => SendMoneyScreen(recipient: u))),
+                      icon: const Icon(Icons.attach_money, size: 18),
+                      label: const Text('Pay'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

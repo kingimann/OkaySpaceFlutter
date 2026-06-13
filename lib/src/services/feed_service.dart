@@ -29,8 +29,10 @@ class FeedService {
       _posts(await _client.getJson('/feed/reels', query: query));
 
   /// Popular reels — a good fallback when the personalized reels feed is empty.
-  Future<List<Post>> popularReels({int limit = 30}) async =>
-      _posts(await _client.getJson('/reels/popular', query: {'limit': limit}));
+  /// The backend caps limit at 20, so never request more.
+  Future<List<Post>> popularReels({int limit = 20}) async => _posts(
+      await _client.getJson('/reels/popular',
+          query: {'limit': limit.clamp(1, 20)}));
 
   /// Resolves a stored/opaque video [url] into a directly-playable URL.
   /// Returns the original url if the backend gives nothing usable.
