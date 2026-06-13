@@ -471,7 +471,7 @@ class _NavIcon extends StatelessWidget {
       color: active ? Colors.white : scheme.outline,
       size: 24,
     );
-    if (id != 'marketplace') return icon;
+    if (id != 'market') return icon;
     return ValueListenableBuilder<int>(
       valueListenable: marketplaceOffersBadge,
       builder: (context, count, child) => count > 0
