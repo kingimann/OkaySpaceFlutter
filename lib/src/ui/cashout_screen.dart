@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../okayspace_api.dart';
 import '../core/stripe_connect_embed.dart';
+import '../core/stripe_elements.dart';
 import 'common.dart';
 
 /// Stripe-backed payouts: onboarding status, identity verification, and
@@ -75,27 +76,26 @@ class _CashOutScreenState extends State<CashOutScreen> {
         await _load();
         return;
       }
-      if (!mounted) return;
-      // false/null = embed unavailable → hosted fallback below.
+      // Backing out (null) is a cancel — never auto-open a browser. Only
+      // an explicit "Open on Stripe instead" (false) reaches the hosted
+      // flow.
+      if (embedded == null || !mounted) return;
     }
     await _setupHosted();
   }
 
-  /// Debit cards live in Stripe's payouts/account management components;
-  /// embedded first, Express-dashboard login only as the external fallback.
+  /// DoorDash-style: an in-app card form tokenizes the debit card with
+  /// Stripe and the backend attaches it as the instant-payout destination.
+  /// No browser involved.
   Future<void> _addDebitCard() async {
-    if (stripeEmbedSupported) {
-      final embedded = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-            builder: (_) =>
-                const EmbeddedPayoutScreen(component: 'payouts')),
+    if (stripeElementsSupported) {
+      final added = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const AddPayoutCardScreen()),
       );
-      if (embedded == true) {
-        await _load();
-        return;
-      }
-      if (!mounted) return;
+      if (added == true) await _load();
+      return;
     }
+    // Native fallback until the in-app native card form ships.
     await launchUrl(
       Uri.parse('https://connect.stripe.com/express_login'),
       mode: LaunchMode.externalApplication,
@@ -138,6 +138,27 @@ class _CashOutScreenState extends State<CashOutScreen> {
     setState(() => _busy = true);
     try {
       final res = await api.payments.startIdentity();
+      if (!mounted) return;
+      // In-app first: Stripe Identity's in-page modal needs the
+      // verification session's client secret.
+      final vSecret = '${res['client_secret'] ?? res['clientSecret'] ?? ''}';
+      if (stripeElementsSupported && vSecret.isNotEmpty) {
+        final cfg = await api.payments.config();
+        final pk = '${cfg['publishable_key'] ?? ''}';
+        if (pk.isNotEmpty) {
+          final err = await stripeVerifyIdentityModal(
+              publishableKey: pk, clientSecret: vSecret);
+          if (!mounted) return;
+          if (err == null) {
+            showInfo(context,
+                'Thanks — verification is processing. Pull to refresh.');
+            await _load();
+            return;
+          }
+          showInfo(context, err);
+          return;
+        }
+      }
       final url = res['url'] ?? res['verification_url'];
       if (!mounted) return;
       if (url != null && '$url'.startsWith('http')) {
@@ -684,6 +705,118 @@ class _EmbeddedPayoutScreenState extends State<EmbeddedPayoutScreen> {
                     ),
                   ),
                 ),
+    );
+  }
+}
+
+/// In-app debit-card entry for instant payouts (DoorDash-style): Stripe's
+/// card Element tokenizes the number in its iframe and the backend attaches
+/// the token as the payout destination. No browser, no hosted page.
+class AddPayoutCardScreen extends StatefulWidget {
+  const AddPayoutCardScreen({super.key});
+
+  @override
+  State<AddPayoutCardScreen> createState() => _AddPayoutCardScreenState();
+}
+
+class _AddPayoutCardScreenState extends State<AddPayoutCardScreen> {
+  StripeCardTokenHandle? _card;
+  String? _error;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  Future<void> _start() async {
+    setState(() => _error = null);
+    try {
+      final cfg = await api.payments.config();
+      final pk = '${cfg['publishable_key'] ?? ''}';
+      if (pk.isEmpty) throw StateError('No Stripe publishable key');
+      final card = await createCardTokenElement(publishableKey: pk);
+      if (mounted) setState(() => _card = card);
+    } catch (e) {
+      if (mounted) setState(() => _error = messageFor(e));
+    }
+  }
+
+  Future<void> _save() async {
+    final card = _card;
+    if (card == null || _saving) return;
+    setState(() => _saving = true);
+    try {
+      final t = await card.tokenize();
+      if (!mounted) return;
+      final token = t.token;
+      if (token == null) {
+        showInfo(context, t.error ?? 'Check the card details.');
+        return;
+      }
+      await api.payments.addDebitCard(token);
+      if (mounted) {
+        showInfo(context, 'Debit card added — instant payouts enabled.');
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final card = _card;
+    return Scaffold(
+      appBar: const OkayAppBar(title: Text('Add a debit card')),
+      body: MaxWidth(
+        child: _error != null
+            ? CenteredMessage(
+                message: 'The card form couldn\'t load.\n$_error',
+                icon: Icons.error_outline,
+                onRetry: _start)
+            : card == null
+                ? const Center(child: CircularProgressIndicator())
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      const Text('Card for instant payouts',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      Text(
+                          'Use a Visa or Mastercard debit card. Cash-outs '
+                          'with "Instant" arrive in minutes.',
+                          style: TextStyle(
+                              color: scheme.outline, fontSize: 12.5)),
+                      const SizedBox(height: 16),
+                      card.view,
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: _saving ? null : _save,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2))
+                            : const Icon(Icons.lock_outline),
+                        label:
+                            Text(_saving ? 'Saving…' : 'Save debit card'),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                          'Card details go directly to Stripe — OkaySpace '
+                          'never sees the number.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: scheme.outline, fontSize: 11)),
+                    ],
+                  ),
+      ),
     );
   }
 }

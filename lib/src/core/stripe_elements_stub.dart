@@ -19,3 +19,24 @@ Future<StripeElementsHandle> createPaymentElement({
   bool darkTheme = true,
 }) async =>
     throw UnsupportedError('Payment Element is web-only');
+
+class StripeCardTokenHandle {
+  const StripeCardTokenHandle({required this.view, required this.tokenize});
+
+  final Widget view;
+
+  /// Tokenizes the entered card; returns (token, null) or (null, error).
+  final Future<({String? token, String? error})> Function() tokenize;
+}
+
+Future<StripeCardTokenHandle> createCardTokenElement({
+  required String publishableKey,
+  bool darkTheme = true,
+}) async =>
+    throw UnsupportedError('Card Element is web-only');
+
+Future<String?> stripeVerifyIdentityModal({
+  required String publishableKey,
+  required String clientSecret,
+}) async =>
+    'Identity modal is web-only';
