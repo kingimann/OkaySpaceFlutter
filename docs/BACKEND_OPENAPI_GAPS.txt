@@ -10,12 +10,12 @@ against the live OpenAPI, then probed the live server for the mismatches
 (401/403 = route exists but needs auth · 404 = not served · 405 = wrong method).
 
 ################################################################################
-# STATUS 2026-06-13 (re-audited): §1 and §2a are RESOLVED. All 382 distinct
-# (method, path) the app calls now resolve on the backend with the matching
-# method (cross-checked against the generated OpenAPI — 0 broken, 0 method
-# mismatches). Every untyped success response the app reads now declares a
-# response_model (0 remaining). The ONLY open hygiene item is §2b (one error
-# envelope). Section-by-section resolution is noted inline below.
+# STATUS 2026-06-13 (re-audited): ALL audit items are RESOLVED (§1, §2a, §2b,
+# §2c, §3, §4). All 382 distinct (method, path) the app calls resolve on the
+# backend with the matching method (0 broken, 0 method mismatches). Every
+# success response the app reads declares a response_model (0 untyped), and the
+# error envelope is now documented in OpenAPI (ErrorEnvelope on all 492
+# operations). Section-by-section resolution is noted inline below.
 ################################################################################
 
 ================================================================================
@@ -131,17 +131,21 @@ PRIORITY ORDER  (updated 2026-06-13)
 1. §1 broken admin routes ............................... ✔ DONE
 2. §4 registration persistence (separate file) .......... ✔ DONE
 3. §2a response_model on the routes the app key-probes .. ✔ DONE
-4. §2b single documented error envelope ................. ◻ OPEN (only remaining)
+4. §2b single documented error envelope ................. ✔ DONE
 5. §3 optional kind / /feed/videos ...................... ✔ DONE
 
-§2b is intentionally left open as backend hygiene. The app now robustly parses
-ALL the shapes the backend emits — top-level {"error":{code,message}}, a
-business-error {"detail":{code,message}}, a plain {"detail":"msg"}, and the
-FastAPI 422 {"detail":[…]} list — so the dual shape is no longer breaking
-(fixed app-side 2026-06-13: ApiException previously dropped the code/message of
-the {"detail":{code,message}} business errors — rate limits, self-transfer,
-wrong security answer, invite-required — and showed a generic status message).
-Converging on one envelope is now purely an SDK-friendliness cleanup: pick one
-shape, declare it as the 4xx/5xx response_model app-wide, and publish the
-"code" values. Best done as its own coordinated backend pass.
+ALL audit items are now resolved.
+
+§2b: the backend already funnels every non-2xx through one structured shape —
+{"error":{code,message,…}, "detail":{…same…}} (`detail` duplicated for
+backwards compatibility) — and as of 2026-06-13 the OpenAPI spec documents it:
+ErrorEnvelope/ErrorBody are declared in components and attached as the
+`default` (error) response on all 492 operations, with the common `code`
+values published, so generated SDKs get a typed error to branch on. The app
+also robustly parses every shape the backend emits — top-level
+{"error":{code,message}}, business-error {"detail":{code,message}}, a plain
+{"detail":"msg"}, and the FastAPI 422 {"detail":[…]} list (the
+{"detail":{code,message}} business errors — rate limits, self-transfer, wrong
+security answer, invite-required — were being shown as a generic status message
+until the app-side fix on 2026-06-13).
 ================================================================================
