@@ -383,34 +383,39 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 ),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                    // Visible marker so it's obvious this is the new build, and
+                    // a content-sized ETA block (no Expanded — that was
+                    // collapsing to zero width and hiding everything).
+                    Icon(Icons.directions_car_filled,
+                        color: _arrived
+                            ? const Color(0xFF16A34A)
+                            : scheme.primary,
+                        size: 26),
+                    const SizedBox(width: 12),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _arrived
+                              ? 'Arrived'
+                              : (_rerouting ? 'Re-routing…' : '$etaMin min'),
+                          style: TextStyle(
+                              color: _arrived
+                                  ? const Color(0xFF16A34A)
+                                  : scheme.onSurface,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20),
+                        ),
+                        if (!_arrived)
                           Text(
-                            _arrived
-                                ? 'Arrived'
-                                : (_rerouting ? 'Re-routing…' : '$etaMin min'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            '${_fmt(remaining)} · $arrivalClock',
                             style: TextStyle(
-                                color: scheme.onSurface,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 20),
+                                color: scheme.onSurfaceVariant, fontSize: 12),
                           ),
-                          if (!_arrived)
-                            Text(
-                              '${_fmt(remaining)} · arrive $arrivalClock',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  color: scheme.onSurfaceVariant, fontSize: 12),
-                            ),
-                        ],
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: 6),
+                    const Spacer(),
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       color: scheme.onSurfaceVariant,
