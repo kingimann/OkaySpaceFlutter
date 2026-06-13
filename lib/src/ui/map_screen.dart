@@ -108,6 +108,7 @@ class _MapScreenState extends State<MapScreen> {
   // The last search result: a visible pin + result card with directions.
   LatLng? _searchPin;
   String? _searchLabel;
+  String? _searchAddress;
 
   // In-app road route (OSRM) from the location dot to the search pin.
   List<LatLng> _roadRoute = const [];
@@ -436,6 +437,11 @@ class _MapScreenState extends State<MapScreen> {
       _searchPin = _center;
       _searchLabel =
           '${r['name'] ?? r['full_address'] ?? r['display_name'] ?? 'Result'}';
+      final addr = (r['full_address'] ?? r['display_name'])?.toString();
+      // Only show the address line when it adds something beyond the title.
+      _searchAddress = (addr != null && addr.isNotEmpty && addr != _searchLabel)
+          ? addr
+          : null;
     });
     // Addresses deserve a street-level zoom; a bare camera move with no pin
     // looked like the search did nothing.
@@ -2529,12 +2535,25 @@ class _MapScreenState extends State<MapScreen> {
                                     style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16)),
-                                const SizedBox(height: 2),
+                                if (_searchAddress != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(_searchAddress!,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .outline)),
+                                ],
+                                const SizedBox(height: 4),
                                 Text(
                                     _routeSummary ??
                                         (_myLocation != null
                                             ? '${_fmtDistance(_distance(_myLocation!, _searchPin!))} away'
-                                            : 'Tap Route for drive time'),
+                                            : 'Tap Directions to route here'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: _routeSummary != null
@@ -2553,6 +2572,7 @@ class _MapScreenState extends State<MapScreen> {
                             onPressed: () => setState(() {
                               _searchPin = null;
                               _searchLabel = null;
+                              _searchAddress = null;
                               _roadRoute = const [];
                               _routeSummary = null;
                             }),
