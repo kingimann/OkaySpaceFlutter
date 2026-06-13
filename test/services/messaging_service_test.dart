@@ -75,6 +75,17 @@ void main() {
           {'typing': false, 'state': 'idle'});
     });
 
+    test('presence() GETs the conversation presence map', () async {
+      final api = FakeApi()
+        ..on('GET', '/conversations/c1/presence',
+            json: {'typing': true, 'active': true, 'typing_ids': ['u2']});
+      final svc = MessagingService(api.client());
+      final p = await svc.presence('c1');
+      expect(api.request('/conversations/c1/presence').method, 'GET');
+      expect(p['typing'], true);
+      expect(p['typing_ids'], ['u2']);
+    });
+
     test('reactToMessage() posts {emoji}; editMessage() patches {text}', () async {
       final api = FakeApi()
         ..on('POST', '/conversations/c1/messages/m1/react', json: {'id': 'm1', 'type': 'text'})

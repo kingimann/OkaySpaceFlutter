@@ -183,6 +183,13 @@ class MessagingService {
         body: {'typing': state == 'typing', 'state': state});
   }
 
+  /// Other participants' live state in a conversation:
+  /// `{typing, active, typing_ids, active_ids}`. Drives the "typing…" indicator.
+  Future<Map<String, dynamic>> presence(String convId) async =>
+      asMapOrNull(
+          await _client.getJson('/conversations/$convId/presence')) ??
+      const {};
+
   /// Rings the other participant(s) to start a call.
   Future<Map<String, dynamic>> ringCall(String convId) async =>
       asMapOrNull(await _client.postJson('/calls/$convId/ring')) ?? const {};
