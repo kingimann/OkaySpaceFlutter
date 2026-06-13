@@ -11,6 +11,20 @@ final OkaySpaceApi api = OkaySpaceApi();
 /// listens and scrolls to top + refreshes.
 final ValueNotifier<int> feedScrollSignal = ValueNotifier<int>(0);
 
+/// Count of marketplace offers needing the user's action (pending received +
+/// countered to them) — drives an unread badge on the Marketplace tab.
+final ValueNotifier<int> marketplaceOffersBadge = ValueNotifier<int>(0);
+
+/// Refresh the marketplace offers badge. Best-effort: keeps the previous value
+/// if the request fails (e.g. signed out / offline).
+Future<void> refreshMarketplaceOffersBadge() async {
+  try {
+    marketplaceOffersBadge.value = await api.marketplace.offersUnreadCount();
+  } catch (_) {
+    // ignore — leave the last known count
+  }
+}
+
 /// Animated progress of the top & bottom bars: 1.0 = fully shown, 0.0 = fully
 /// hidden. The root app animates this toward [barsVisible]; [OkayAppBar] and
 /// [OkayBottomNav] listen and collapse their reserved space accordingly, so the
@@ -393,13 +407,7 @@ class OkayBottomNav extends StatelessWidget {
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Icon(
-                        id == currentId
-                            ? navDestById(id).activeIcon
-                            : navDestById(id).icon,
-                        color: id == currentId ? Colors.white : scheme.outline,
-                        size: 24,
-                      ),
+                      child: _NavIcon(id: id, active: id == currentId, scheme: scheme),
                     ),
                   ),
                 ),
@@ -421,6 +429,34 @@ class OkayBottomNav extends StatelessWidget {
         ),
       ),
       child: nav,
+    );
+  }
+}
+
+/// A bottom-nav destination icon, with an unread badge on the Marketplace tab
+/// (offers needing the user's action).
+class _NavIcon extends StatelessWidget {
+  const _NavIcon({required this.id, required this.active, required this.scheme});
+
+  final String id;
+  final bool active;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final dest = navDestById(id);
+    final icon = Icon(
+      active ? dest.activeIcon : dest.icon,
+      color: active ? Colors.white : scheme.outline,
+      size: 24,
+    );
+    if (id != 'marketplace') return icon;
+    return ValueListenableBuilder<int>(
+      valueListenable: marketplaceOffersBadge,
+      builder: (context, count, child) => count > 0
+          ? Badge(label: Text(count > 99 ? '99+' : '$count'), child: child)
+          : child!,
+      child: icon,
     );
   }
 }

@@ -67,6 +67,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   void initState() {
     super.initState();
     _query();
+    refreshMarketplaceOffersBadge();
   }
 
   @override
@@ -1190,6 +1191,7 @@ class _ListingOffersSheetState extends State<_ListingOffersSheet> {
     try {
       await op();
       _reload();
+      refreshMarketplaceOffersBadge();
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -1344,6 +1346,7 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
     try {
       await op();
       _reload();
+      refreshMarketplaceOffersBadge();
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {

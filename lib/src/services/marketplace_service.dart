@@ -199,6 +199,13 @@ class MarketplaceService {
   Future<Map<String, dynamic>> myOffers() async =>
       _map(await _client.getJson('/offers'));
 
+  /// Number of offers needing the user's action (received pending + countered
+  /// to them) — for a Marketplace tab badge.
+  Future<int> offersUnreadCount() async {
+    final data = await _client.getJson('/offers/unread-count');
+    return data is Map ? asInt(data['count']) : asInt(data);
+  }
+
   // Seller actions.
   Future<Map<String, dynamic>> acceptOffer(String offerId) async =>
       _map(await _client.postJson('/offers/$offerId/accept'));

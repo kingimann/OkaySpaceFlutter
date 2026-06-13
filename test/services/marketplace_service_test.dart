@@ -84,6 +84,12 @@ void main() {
       expect((out['made'] as List).length, 1);
     });
 
+    test('offersUnreadCount() reads the count', () async {
+      final api = FakeApi()
+        ..on('GET', '/offers/unread-count', json: {'count': 4, 'received_pending': 3});
+      expect(await MarketplaceService(api.client()).offersUnreadCount(), 4);
+    });
+
     test('counterOffer() posts {amount}', () async {
       final api = FakeApi()..on('POST', '/offers/o1/counter', json: {'id': 'o1', 'status': 'countered'});
       await MarketplaceService(api.client()).counterOffer('o1', 48);
