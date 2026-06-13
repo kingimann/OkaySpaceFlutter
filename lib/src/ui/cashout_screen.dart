@@ -124,6 +124,65 @@ class _CashOutScreenState extends State<CashOutScreen> {
     await _setupHosted();
   }
 
+  /// In-app chooser for payout destinations: debit card (instant) or bank
+  /// account (direct deposit), both as native forms. Stripe's embedded
+  /// form remains a labeled advanced option.
+  Future<void> _payoutMethodChooser() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Payout method',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            ListTile(
+              leading: const Icon(Icons.credit_card_outlined),
+              title: const Text('Debit card'),
+              subtitle: const Text('Instant payouts — minutes'),
+              onTap: () => Navigator.pop(sheetContext, 'card'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_balance_outlined),
+              title: const Text('Bank account (direct deposit)'),
+              subtitle: const Text('Standard payouts — 1–2 business days'),
+              onTap: () => Navigator.pop(sheetContext, 'bank'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.manage_accounts_outlined),
+              title: const Text('Manage on the Stripe form'),
+              subtitle: const Text('Identity, address and account details'),
+              onTap: () => Navigator.pop(sheetContext, 'stripe'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'card':
+        await _addDebitCard();
+      case 'bank':
+        await _addBankAccount();
+      case 'stripe':
+        await _setup(component: 'account-management');
+    }
+  }
+
+  /// In-app direct-deposit form: routing/account fields here, tokenized by
+  /// Stripe, attached via the backend. No browser.
+  Future<void> _addBankAccount() async {
+    final added = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const AddBankAccountScreen()),
+    );
+    if (added == true) {
+      await _load();
+      await _loadMethods();
+    }
+  }
+
   /// DoorDash-style: an in-app card form tokenizes the debit card with
   /// Stripe and the backend attaches it as the instant-payout destination.
   /// No browser involved.
@@ -468,14 +527,10 @@ class _CashOutScreenState extends State<CashOutScreen> {
                               color: scheme.primary),
                           title: const Text('Payout method'),
                           subtitle: const Text(
-                              'Change your bank account or debit card'),
-                          trailing:
-                              Icon(Icons.open_in_new, size: 18,
-                                  color: scheme.outline),
-                          onTap: _busy
-                              ? null
-                              : () =>
-                                  _setup(component: 'account-management'),
+                              'Add or change your bank account or debit card'),
+                          trailing: Icon(Icons.chevron_right,
+                              size: 20, color: scheme.outline),
+                          onTap: _busy ? null : _payoutMethodChooser,
                         ),
                       ),
                       // Debit cards (instant payouts): embedded payouts
@@ -902,6 +957,163 @@ class _AddPayoutCardScreenState extends State<AddPayoutCardScreen> {
                               color: scheme.outline, fontSize: 11)),
                     ],
                   ),
+      ),
+    );
+  }
+}
+
+/// In-app direct-deposit setup: the user types their bank details into the
+/// app's own fields, Stripe tokenizes them client-side, and the backend
+/// attaches the token as the payout destination. DoorDash-style — no
+/// browser, no hosted page.
+class AddBankAccountScreen extends StatefulWidget {
+  const AddBankAccountScreen({super.key});
+
+  @override
+  State<AddBankAccountScreen> createState() => _AddBankAccountScreenState();
+}
+
+class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
+  final _name = TextEditingController();
+  final _routing = TextEditingController();
+  final _account = TextEditingController();
+  final _confirm = TextEditingController();
+  String _country = 'CA';
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _routing.dispose();
+    _account.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final name = _name.text.trim();
+    final routing = _routing.text.trim();
+    final account = _account.text.trim();
+    if (name.isEmpty || routing.isEmpty || account.isEmpty) {
+      showInfo(context, 'Fill in every field.');
+      return;
+    }
+    if (account != _confirm.text.trim()) {
+      showInfo(context, 'The account numbers don\'t match.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final cfg = await api.payments.config();
+      final pk = '${cfg['publishable_key'] ?? ''}';
+      if (pk.isEmpty) throw StateError('No Stripe publishable key');
+      final t = await createBankToken(
+        publishableKey: pk,
+        country: _country,
+        currency: _country == 'CA' ? 'cad' : 'usd',
+        routingNumber: routing,
+        accountNumber: account,
+        holderName: name,
+      );
+      if (!mounted) return;
+      final token = t.token;
+      if (token == null) {
+        showInfo(context, t.error ?? 'Check the bank details.');
+        return;
+      }
+      await api.payments.addBankAccount(token);
+      if (mounted) {
+        showInfo(context, 'Bank account added for direct deposit.');
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const OkayAppBar(title: Text('Direct deposit')),
+      body: MaxWidth(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('Bank account for payouts',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text(
+                'Standard payouts arrive in 1–2 business days, no fee from '
+                'Stripe for standard transfers.',
+                style: TextStyle(color: scheme.outline, fontSize: 12.5)),
+            const SizedBox(height: 16),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'CA', label: Text('Canada')),
+                ButtonSegment(value: 'US', label: Text('United States')),
+              ],
+              selected: {_country},
+              onSelectionChanged: (s) => setState(() => _country = s.first),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                  labelText: 'Account holder name',
+                  border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _routing,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                  labelText: _country == 'CA'
+                      ? 'Transit-institution number'
+                      : 'Routing number',
+                  helperText: _country == 'CA'
+                      ? '5-digit transit + 3-digit institution, e.g. 12345-678'
+                      : '9-digit ABA routing number',
+                  border: const OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _account,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                  labelText: 'Account number', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _confirm,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                  labelText: 'Confirm account number',
+                  border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.lock_outline),
+              label: Text(_saving ? 'Saving…' : 'Save bank account'),
+            ),
+            const SizedBox(height: 10),
+            Text(
+                'Bank details are tokenized by Stripe in your browser — '
+                'OkaySpace servers never store the numbers.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.outline, fontSize: 11)),
+          ],
+        ),
       ),
     );
   }

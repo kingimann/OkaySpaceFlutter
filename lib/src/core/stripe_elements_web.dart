@@ -98,9 +98,13 @@ Future<StripeCardTokenHandle> createCardTokenElement({
   ui_web.platformViewRegistry.registerViewFactory(viewType, (int _) {
     final container =
         web.document.createElement('div') as web.HTMLDivElement;
+    // border-box: padding inside the 100% width, or the field overflows
+    // the screen's right edge.
     container.style
       ..width = '100%'
-      ..padding = '14px 12px'
+      ..height = '100%'
+      ..boxSizing = 'border-box'
+      ..padding = '16px 12px'
       ..borderRadius = '12px'
       ..border = '1px solid ${darkTheme ? '#33414C' : '#ddd'}'
       ..background = darkTheme ? '#101A21' : '#fff';
@@ -136,8 +140,65 @@ Future<StripeCardTokenHandle> createCardTokenElement({
   }
 
   return StripeCardTokenHandle(
-      view: SizedBox(height: 52, child: HtmlElementView(viewType: viewType)),
+      view: SizedBox(height: 54, child: HtmlElementView(viewType: viewType)),
       tokenize: tokenize);
+}
+
+/// Tokenizes a bank account (direct deposit) from the app's own form
+/// fields. Bank details aren't card data — Stripe supports collecting them
+/// in your own UI and tokenizing via Stripe.js; the token goes to the
+/// backend's /payments/payouts/bank-account.
+Future<({String? token, String? error})> createBankToken({
+  required String publishableKey,
+  required String country,
+  required String currency,
+  required String routingNumber,
+  required String accountNumber,
+  required String holderName,
+  String holderType = 'individual',
+}) async {
+  try {
+    await _ensureStripeJs();
+    final ctor = web.window.getProperty('Stripe'.toJS);
+    final stripe =
+        (ctor as JSFunction).callAsFunction(null, publishableKey.toJS)
+            as JSObject;
+    final res = await (stripe.callMethod(
+            'createToken'.toJS,
+            'bank_account'.toJS,
+            {
+              'country': country,
+              'currency': currency,
+              'routing_number': routingNumber,
+              'account_number': accountNumber,
+              'account_holder_name': holderName,
+              'account_holder_type': holderType,
+            }.jsify()) as JSPromise)
+        .toDart;
+    if (res.isUndefinedOrNull) {
+      return (token: null, error: 'Tokenization returned nothing.');
+    }
+    final obj = res as JSObject;
+    final err = obj.getProperty('error'.toJS);
+    if (err != null && !err.isUndefinedOrNull) {
+      final msg = (err as JSObject).getProperty('message'.toJS);
+      return (
+        token: null,
+        error: msg.isUndefinedOrNull
+            ? 'The bank account could not be tokenized.'
+            : (msg as JSString).toDart
+      );
+    }
+    final token = obj.getProperty('token'.toJS);
+    final id = token.isUndefinedOrNull
+        ? null
+        : (token as JSObject).getProperty('id'.toJS);
+    return id == null || id.isUndefinedOrNull
+        ? (token: null, error: 'No token id in Stripe\'s reply.')
+        : (token: (id as JSString).toDart, error: null);
+  } catch (e) {
+    return (token: null, error: '$e');
+  }
 }
 
 /// Stripe Identity verification as an in-page modal (no redirect). Returns
@@ -190,6 +251,7 @@ Future<StripeElementsHandle> createPaymentElement({
     container.style
       ..width = '100%'
       ..minHeight = '100%'
+      ..boxSizing = 'border-box'
       ..overflow = 'auto'
       ..padding = '4px';
     payEl.callMethod('mount'.toJS, container);
