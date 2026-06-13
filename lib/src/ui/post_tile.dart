@@ -253,9 +253,10 @@ Future<void> _promotePost(BuildContext context, Post post) async {
   }
 }
 
-/// Long-press the like button to pick an emoji reaction.
+/// Long-press the like button to react — including 👎 to dislike (the dislike
+/// lives here so like + dislike are one button: tap to like, hold to dislike).
 Future<void> _reactToPost(BuildContext context, Post post) async {
-  const emojis = ['❤️', '😂', '😮', '😢', '😡', '👍', '🔥'];
+  const emojis = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🔥'];
   final emoji = await showModalBottomSheet<String>(
     context: context,
     builder: (_) => SafeArea(
@@ -621,7 +622,7 @@ class _PostTileState extends State<PostTile> {
                 onLongPress: _repostMenu,
               ),
               if (post.viewsCount > 0) ...[
-                const Spacer(),
+                const SizedBox(width: 8),
                 _PostAction(
                     icon: Icons.visibility_outlined, count: post.viewsCount),
               ],
