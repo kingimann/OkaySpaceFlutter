@@ -23,6 +23,28 @@ void main() {
     expect(r.mine, isTrue);
   });
 
+  test('RoadsideRequest parses tow destination and before/after photos', () {
+    final r = RoadsideRequest.fromJson({
+      'id': 'r3',
+      'requester_id': 'u1',
+      'service': 'tow',
+      'status': 'completed',
+      'longitude': -79.4,
+      'latitude': 43.7,
+      'dest_name': 'Joe\'s Garage',
+      'dest_longitude': -79.5,
+      'dest_latitude': 43.8,
+      'before_photos': ['https://x/b1.jpg', 'https://x/b2.jpg'],
+      'after_photos': ['https://x/a1.jpg'],
+      'created_at': '2026-01-01T00:00:00Z',
+    });
+    expect(r.destName, "Joe's Garage");
+    expect(r.destLongitude, -79.5);
+    expect(r.destLatitude, 43.8);
+    expect(r.beforePhotos.length, 2);
+    expect(r.afterPhotos, ['https://x/a1.jpg']);
+  });
+
   test('RoadsideRequest.isActive is false when completed', () {
     final r = RoadsideRequest.fromJson({
       'id': 'r2',
