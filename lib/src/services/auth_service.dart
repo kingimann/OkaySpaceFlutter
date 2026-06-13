@@ -48,13 +48,16 @@ class AuthService {
     return _persist(AuthResponse.fromJson(asMapOrNull(data) ?? const {}));
   }
 
-  /// Completes a 2FA login challenge.
+  /// Completes a 2FA login challenge with the texted [code].
+  ///
+  /// [identifier] is the same email/username used to sign in — the login
+  /// response echoes it back as `identifier` alongside `twofa_required`.
   Future<AuthResponse> loginWith2fa({
-    required String challengeId,
+    required String identifier,
     required String code,
   }) async {
     final data = await _client.postJson('/auth/login/2fa', body: {
-      'challenge_id': challengeId,
+      'identifier': identifier,
       'code': code,
     });
     return _persist(AuthResponse.fromJson(asMapOrNull(data) ?? const {}));
