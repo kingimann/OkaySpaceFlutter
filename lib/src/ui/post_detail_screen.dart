@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'engagement_sheet.dart';
 import 'post_tile.dart';
 import 'post_video.dart';
 import 'profile_screen.dart';
@@ -359,10 +360,37 @@ class _PostHeader extends StatelessWidget {
           Row(
             children: [
               _Stat(value: post.repliesCount, label: 'Replies'),
-              _Stat(value: post.repostsCount, label: 'Reposts'),
-              _Stat(value: post.likesCount, label: 'Likes'),
+              _Stat(
+                value: post.repostsCount,
+                label: 'Reposts',
+                onTap: () => showUserListSheet(
+                  context,
+                  title: 'Reposted by',
+                  loader: () => api.feed.reposters(post.id),
+                  emptyMessage: 'No reposts yet.',
+                ),
+              ),
+              _Stat(
+                value: post.likesCount,
+                label: 'Likes',
+                onTap: () => showUserListSheet(
+                  context,
+                  title: 'Liked by',
+                  loader: () => api.feed.likers(post.id),
+                  emptyMessage: 'No likes yet.',
+                ),
+              ),
             ],
           ),
+          if (post.userId == currentUserId)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.bar_chart, color: muted),
+              title: const Text('View insights'),
+              subtitle: Text('${formatCount(post.viewsCount)} views'),
+              trailing: Icon(Icons.chevron_right, color: muted),
+              onTap: () => showPostInsightsSheet(context, post.id),
+            ),
           const Divider(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -419,24 +447,36 @@ class _PostHeader extends StatelessWidget {
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat({required this.value, required this.label});
+  const _Stat({required this.value, required this.label, this.onTap});
 
   final int value;
   final String label;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(formatCount(value),
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(width: 4),
+        Text(label,
+            style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.only(right: 20),
-      child: Row(
-        children: [
-          Text(formatCount(value),
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(color: Theme.of(context).colorScheme.outline)),
-        ],
-      ),
+      child: onTap == null
+          ? row
+          : InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: row,
+              ),
+            ),
     );
   }
 }

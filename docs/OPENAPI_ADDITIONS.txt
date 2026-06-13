@@ -1,129 +1,83 @@
 ================================================================================
-OKAYSPACE API — OPENAPI ADDITIONS (what's still missing from the spec)
+OKAYSPACE API — OPENAPI SCOREBOARD (what the app consumes vs. the spec)
 ================================================================================
-Generated: 2026-06-13 · base https://okayspace-v0vx.onrender.com/api/v1
-Spec: https://okayspace-v0vx.onrender.com/openapi.json
+Updated: 2026-06-13 · base https://okayspace-v0vx.onrender.com/api/v1
+Spec:    https://okayspace-v0vx.onrender.com/openapi.json  (409 paths)
 
-These are the endpoints/fields the Flutter app already calls that are NOT yet
-in the live OpenAPI. Each is verified missing (404 / absent field) as of the
-date above. The app degrades gracefully until they ship; the moment they do,
-the matching feature turns on with no app release.
+The previous "still-missing" wishlist is now CLOSED — every endpoint/field the
+app was waiting on is present in the live spec. This file now tracks (a) what
+the latest spec update let us turn on, and (b) the few remaining nice-to-haves.
 
-Declare every new route with a Pydantic request/response model so it appears
-in /openapi.json (the app and any SDK rely on the spec).
-
-ALREADY DONE (no action — for context):
-  ✔ /payments/config → cashout_min 20.0, cashout_fee 2.00
-  ✔ /wallet/activity items include status, kind, direction, title,
-    subtitle, counterparty_name, client_secret, created_at
-  ✔ /payments/payouts/schedule (GET/POST), /payments/payouts/methods,
-    debit-card/bank-account, /capabilities, /errors, /public/app-config
-    (web_build, mobile_web_gate), /admin/mobile-web-gate
-  ✔ NEW: /admin/registration, /admin/invites(+/{code}), invite_code on
-    /auth/register, registration_mode on /public/app-config  (§2 DONE)
-  ✔ NEW: /money/auto-deposit, security_question/security_answer on
-    /money/send  (§1 — auto-deposit + protected transfers DONE; accept
-    answer still TBD, see 1c)
-  ✔ NEW: /playlists (+/{id}, /{id}/videos)  (§3d DONE — app now creates/
-    reuses a playlist on upload and adds the video)
-  ✔ NEW: /admin/money-alerts (anti-cheat alerting)
+Declare every new route with a Pydantic request/response model so it appears in
+/openapi.json (the app and any SDK rely on the spec).
 
 --------------------------------------------------------------------------------
-1. INTERAC-STYLE PROTECTED TRANSFERS + AUTO-DEPOSIT
+NEWLY WIRED — this update (spec shipped → app now consumes)
 --------------------------------------------------------------------------------
-1a. POST /money/send — add two optional body fields:
-      security_question : string|null
-      security_answer   : string|null   (store hashed; compare case-insensitive)
-    When present, HOLD the transfer as pending (don't credit yet).
-    Current body: {to_user_id, amount, note, answer} → add the two above.
-
-1b. GET /money/transfers — include on each item:
-      security_question : string|null   (NOT the answer — drives the
-                                          recipient's Accept dialog)
-
-1c. POST /money/transfers/{tid}/accept — accept an optional body:
-      { "answer": "string" }
-    If the transfer has a security_answer, require a case-insensitive match
-    → 200 credits the recipient; wrong answer → 400/403 (rate-limit attempts).
-    No answer set → accept as today.
-    Response: { "ok": true }
-
-1d. NEW  GET  /money/auto-deposit            → { "enabled": bool }
-    NEW  POST /money/auto-deposit  body {"enabled": bool} → { "ok": true }
-    When the recipient has auto-deposit ON, a protected transfer credits
-    immediately (no pending/accept), Interac-style.
-
---------------------------------------------------------------------------------
-2. INVITE-ONLY / CLOSED REGISTRATION (admin)
---------------------------------------------------------------------------------
-2a. NEW  GET  /admin/registration   → { "mode": "open" | "invite" | "closed" }
-    NEW  POST /admin/registration  body {"mode": "..."} → { "mode": "..." }
-
-2b. GET /public/app-config — add:
-      registration_mode : "open" | "invite" | "closed"   (default "open")
-    (The sign-up screen reads this: invite → require a code; closed →
-     disable sign-up.)
-
-2c. NEW  GET    /admin/invites
-      → { "data": [ { "code": str, "used": bool, "used_by": str|null,
-                      "created_at": iso } ] }
-    NEW  POST   /admin/invites  body {"count": int}
-      → { "codes": ["ABC123", ...] }
-    NEW  DELETE /admin/invites/{code}  → { "ok": true }
-
-2d. POST /auth/register — add optional body field:
-      invite_code : string|null
-    When mode == "invite": require a valid, unused code; consume it on
-    success; reject otherwise with a clear message.
-    When mode == "closed": reject all registration.
+✔ Engagement detail
+    GET /posts/{id}/likers     → [PublicUser]
+    GET /posts/{id}/reposters  → [PublicUser]
+    GET /posts/{id}/viewers    → {count, unique, viewers:[ViewerOut]}
+    GET /posts/{id}/analytics  → {impressions, unique_viewers, clicks,
+                                  reactions_total, comments, reposts, quotes,
+                                  bookmarks, interactions, engagement_rate}
+    App: tappable like/repost counts open "who liked / reposted" sheets; the
+    post author gets a read-only "View insights" sheet (analytics + recent
+    viewers).
+✔ Post drafts (server-side, replacing local-only multi-drafts)
+    GET    /drafts                → [Draft{id,payload,created_at,updated_at}]
+    POST   /drafts   {payload}    → Draft
+    PATCH  /drafts/{id} {payload} → Draft
+    DELETE /drafts/{id}           → {ok}
+    App: composer "Save to drafts" + the Drafts sheet now read/write the
+    server; local secure-storage remains a transparent offline fallback.
+✔ Subscription tiers
+    GET /subscription-tiers      → {tiers:[...]}   (+ tier on /users/{id}/subscribe)
+    App: subscribing to a creator shows a tier picker when tiers exist; falls
+    back to a plain subscribe when the list is empty.
+✔ Place reviews
+    GET    /reviews?place_key=…   → [Review]
+    POST   /reviews  {place_key, place_name, rating, longitude, latitude, text}
+    DELETE /reviews/{id}          → {ok}
+    App: a saved place on the map opens a Reviews screen (average rating +
+    list, write/delete your own review).
 
 --------------------------------------------------------------------------------
-3. VIDEOS (YouTube-style section)
+ALREADY DONE (shipped earlier — for context)
 --------------------------------------------------------------------------------
-3a. PostMedia — add (for video items):
-      duration : number|null   (seconds → the app shows a duration badge)
-
-3b. (Optional) a post `kind` field on Post / PostCreate:
-      kind : "post" | "reel" | "video"
-    The app currently treats a TITLED video post as a "video" and an
-    untitled one as a "reel"; an explicit kind removes that heuristic.
-
-3c. NEW  GET /feed/videos   (landscape/titled videos only, same Post shape)
-    Optional — today the app reads /feed/reels + /reels/popular and keeps
-    the titled ones client-side.
-
-3d. NEW  Playlists (so the upload form's Playlist field builds real pages):
-      GET  /playlists                       → { "data": [ {id,name,count} ] }
-      POST /playlists  {"name": str}         → { id, name }
-      POST /playlists/{id}/videos {"post_id": str} → { "ok": true }
-      GET  /playlists/{id}                   → { id, name, videos: [Post] }
-    For now the app stores the playlist name as a #hashtag on the post.
+✔ §1 Interac-style protected transfers + auto-deposit:
+    security_question/security_answer on /money/send; security_question on
+    /money/transfers items; answer body on /money/transfers/{tid}/accept;
+    GET/POST /money/auto-deposit.
+✔ §2 Invite-only / closed registration:
+    GET/POST /admin/registration; /admin/invites(+/{code}); invite_code on
+    /auth/register; registration_mode on /public/app-config.
+✔ §3 Videos: duration on PostMedia; playlists
+    (/playlists, /playlists/{id}, /playlists/{id}/videos).
+✔ §4 Payout nice-to-haves: instant_eligible on /payments/payouts/methods;
+    arrival_date on /stripe/payout & /payments/payouts/cashout; wallet_balance
+    / stripe_available / stripe_pending on /payments/payouts/status.
+✔ Misc: /payments/config (cashout_min/fee), /wallet/activity item fields,
+    /admin/money-alerts.
 
 --------------------------------------------------------------------------------
-4. PAYOUT NICE-TO-HAVES (app renders these when present)
+REMAINING NICE-TO-HAVES (optional — app works without them)
 --------------------------------------------------------------------------------
-4a. GET /payments/payouts/methods items — add:
-      instant_eligible : bool   (app shows an "Instant eligible" chip)
-
-4b. POST /stripe/payout and /payments/payouts/cashout responses — add:
-      arrival_date : int (unix)   (app shows "Arrives by Tue")
-
-4c. GET /payments/payouts/status — add (saves the app two extra calls):
-      wallet_balance   : number
-      stripe_available : number
-      stripe_pending   : number
-
---------------------------------------------------------------------------------
-5. SPEC HYGIENE (not new endpoints — makes the whole spec usable)
---------------------------------------------------------------------------------
-[ ] Declare response_model on the money/payout/stripe routes that still
-    have an empty 200 schema, so SDKs can be generated and the app stops
-    key-probing (client_secret ?? clientSecret ?? secret, etc).
-[ ] One error envelope: responses currently carry BOTH {"error":{...}} and
-    {"detail":{...}} — pick one and document the "code" values.
-[ ] Auth before body-validation on protected routes (some 422 on a missing
-    field before checking the token; should 401 first).
-[ ] Timestamps ISO-8601 UTC with trailing Z; IDs always strings in JSON.
+[ ] §3b  kind field on Post / PostCreate ("post" | "reel" | "video"). The app
+         still infers a "video" from a titled video post and a "reel" from an
+         untitled one; an explicit kind removes that heuristic.
+[ ] §3c  GET /feed/videos (landscape/titled videos only). Still absent — the
+         Videos screen merges /feed/reels + /reels/popular and keeps the
+         titled ones client-side.
+[ ] §5   Spec hygiene (makes the whole spec SDK-generatable):
+         - Declare response_model on the money/payout/stripe routes that still
+           have an empty 200 schema, so the app can stop key-probing
+           (client_secret ?? clientSecret ?? secret, etc).
+         - One error envelope: responses still carry BOTH {"error":{...}} and
+           {"detail":{...}} — pick one and document the "code" values.
+         - Auth before body-validation on protected routes (some 422 before
+           checking the token; should 401 first).
+         - Timestamps ISO-8601 UTC with trailing Z; IDs always strings in JSON.
 
 (Separately — NOT OpenAPI, but the most important backend work before real
  users: the server-side anti-cheat checklist in BACKEND_TODO.txt — atomic

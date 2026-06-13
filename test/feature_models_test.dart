@@ -91,6 +91,25 @@ void main() {
     expect(listing.savedByMe, isTrue);
   });
 
+  test('PlaceReview.fromJson parses rating, place and author', () {
+    final review = PlaceReview.fromJson({
+      'id': 'r1',
+      'user_id': 'u1',
+      'user_name': 'Ada',
+      'place_key': 'geo:43.65,-79.38',
+      'place_name': 'Cafe',
+      'longitude': -79.38,
+      'latitude': 43.65,
+      'rating': 4,
+      'text': 'Great spot',
+      'created_at': '2026-01-01T00:00:00Z',
+    });
+    expect(review.rating, 4);
+    expect(review.placeName, 'Cafe');
+    expect(review.userName, 'Ada');
+    expect(review.text, 'Great spot');
+  });
+
   test('WalletSummary parses balance and recent transactions', () {
     final wallet = WalletSummary.fromJson({
       'currency': 'USD',
