@@ -358,8 +358,6 @@ class _PostTileState extends State<PostTile> {
   // full list refetch (and survive re-parenting).
   late bool _liked;
   late int _likes;
-  late bool _disliked;
-  late int _dislikes;
   late bool _bookmarked;
   late bool _reposted;
   late int _reposts;
@@ -387,8 +385,6 @@ class _PostTileState extends State<PostTile> {
   void _sync() {
     _liked = post.likedByMe;
     _likes = post.likesCount;
-    _disliked = post.dislikedByMe;
-    _dislikes = post.dislikesCount;
     _bookmarked = post.bookmarkedByMe;
     _reposted = post.repostedByMe;
     _reposts = post.repostsCount;
@@ -413,24 +409,6 @@ class _PostTileState extends State<PostTile> {
         } else {
           _liked = true;
           _likes++;
-          if (_disliked) {
-            _disliked = false;
-            _dislikes--;
-          }
-        }
-      });
-
-  void _dislike() => _toggle(() => api.feed.toggleDislike(post.id), () {
-        if (_disliked) {
-          _disliked = false;
-          _dislikes--;
-        } else {
-          _disliked = true;
-          _dislikes++;
-          if (_liked) {
-            _liked = false;
-            _likes--;
-          }
         }
       });
 
@@ -616,51 +594,25 @@ class _PostTileState extends State<PostTile> {
             _PostPoll(postId: post.id, poll: post.poll!),
           ],
           const SizedBox(height: 4),
+          // Like, comment and repost grouped together on the left; views (if
+          // any) sit on the right. Like is a single control — long-press it to
+          // pick any reaction (👎 included), so like/dislike are combined.
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Like and dislike combined into one segmented pill.
-              Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
-                      .withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _PostAction(
-                      icon: _liked ? Icons.favorite : Icons.favorite_border,
-                      count: _likes,
-                      color: _liked ? OkayColors.danger : null,
-                      onTap: _like,
-                      onLongPress: () => _reactToPost(context, post),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 16,
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                    _PostAction(
-                      icon: _disliked
-                          ? Icons.thumb_down
-                          : Icons.thumb_down_outlined,
-                      count: _dislikes,
-                      color: _disliked
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
-                      onTap: _dislike,
-                    ),
-                  ],
-                ),
+              _PostAction(
+                icon: _liked ? Icons.favorite : Icons.favorite_border,
+                count: _likes,
+                color: _liked ? OkayColors.danger : null,
+                onTap: _like,
+                onLongPress: () => _reactToPost(context, post),
               ),
+              const SizedBox(width: 8),
               _PostAction(
                 icon: Icons.mode_comment_outlined,
                 count: post.repliesCount,
                 onTap: () => PostDetailScreen.open(context, post),
               ),
+              const SizedBox(width: 8),
               _PostAction(
                 icon: Icons.repeat,
                 count: _reposts,
@@ -668,9 +620,11 @@ class _PostTileState extends State<PostTile> {
                 onTap: _repost,
                 onLongPress: _repostMenu,
               ),
-              if (post.viewsCount > 0)
+              if (post.viewsCount > 0) ...[
+                const Spacer(),
                 _PostAction(
                     icon: Icons.visibility_outlined, count: post.viewsCount),
+              ],
             ],
           ),
         ],

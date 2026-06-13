@@ -403,6 +403,36 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         }
                       },
                     ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: scheme.error,
+                          side: BorderSide(color: scheme.error)),
+                      icon: const Icon(Icons.person_off_outlined),
+                      label: const Text('Remove deleted-user posts'),
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        if (!await adminConfirm(
+                            context,
+                            'Remove deleted-user posts',
+                            'Permanently deletes every post whose author no '
+                                'longer exists, plus their reactions and '
+                                'comments. This cannot be undone.',
+                            action: 'Remove',
+                            destructive: true)) {
+                          return;
+                        }
+                        try {
+                          final res = await api.admin.cleanupOrphanedPosts();
+                          messenger.showSnackBar(SnackBar(
+                              content: Text(
+                                  'Removed ${res['removed'] ?? 0} deleted-user post(s)')));
+                        } catch (e) {
+                          messenger.showSnackBar(
+                              SnackBar(content: Text('Failed: $e')));
+                        }
+                      },
+                    ),
                   ],
                 ),
               ),
