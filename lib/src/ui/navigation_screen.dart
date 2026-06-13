@@ -383,15 +383,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 ),
                 child: Row(
                   children: [
-                    // Visible marker so it's obvious this is the new build, and
-                    // a content-sized ETA block (no Expanded — that was
-                    // collapsing to zero width and hiding everything).
-                    Icon(Icons.directions_car_filled,
-                        color: _arrived
-                            ? const Color(0xFF16A34A)
-                            : scheme.primary,
-                        size: 26),
-                    const SizedBox(width: 12),
+                    // Plain content-sized ETA block (no flex — Expanded was
+                    // collapsing it to zero; the ETA strings are short).
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -400,18 +393,20 @@ class _NavigationScreenState extends State<NavigationScreen> {
                           _arrived
                               ? 'Arrived'
                               : (_rerouting ? 'Re-routing…' : '$etaMin min'),
-                          style: TextStyle(
-                              color: _arrived
-                                  ? const Color(0xFF16A34A)
-                                  : scheme.onSurface,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Color(0xFF22C55E),
                               fontWeight: FontWeight.bold,
-                              fontSize: 20),
+                              fontSize: 22),
                         ),
                         if (!_arrived)
                           Text(
                             '${_fmt(remaining)} · $arrivalClock',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                color: scheme.onSurfaceVariant, fontSize: 12),
+                                color: scheme.onSurfaceVariant, fontSize: 13),
                           ),
                       ],
                     ),
