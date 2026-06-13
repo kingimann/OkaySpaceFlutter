@@ -743,6 +743,36 @@ class _MapScreenState extends State<MapScreen> {
                               },
                             )
                         else ...[
+                          // Apple-Maps-style "Find nearby" category shortcuts.
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final (label, icon, q)
+                                    in const <(String, IconData, String)>[
+                                  ('Restaurants', Icons.restaurant, 'restaurant'),
+                                  ('Coffee', Icons.local_cafe, 'coffee'),
+                                  ('Gas', Icons.local_gas_station, 'gas station'),
+                                  ('Groceries', Icons.local_grocery_store,
+                                      'grocery store'),
+                                  ('Pharmacy', Icons.local_pharmacy, 'pharmacy'),
+                                  ('Hotels', Icons.hotel, 'hotel'),
+                                  ('ATMs', Icons.local_atm, 'atm'),
+                                  ('Parks', Icons.park, 'park'),
+                                ])
+                                  ActionChip(
+                                    avatar: Icon(icon, size: 16),
+                                    label: Text(label),
+                                    onPressed: () {
+                                      ctrl.text = q;
+                                      run();
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
                           if (_recent.isNotEmpty)
                             ListTile(
                               dense: true,
