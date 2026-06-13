@@ -1401,11 +1401,21 @@ class _MapScreenState extends State<MapScreen> {
 
   // --- External maps / share ----------------------------------------------
 
-  void _openExternal(LatLng p) {
-    final url =
-        'https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}';
-    Clipboard.setData(ClipboardData(text: url));
-    showInfo(context, 'Maps link copied');
+  /// Opens turn-by-turn directions to [p] in the device's maps app (Google
+  /// Maps web/app — it fills in the current location as the origin, or we pass
+  /// our known pin). Falls back to copying the link if nothing can handle it.
+  Future<void> _openExternal(LatLng p) async {
+    final origin = _myLocation != null
+        ? '&origin=${_myLocation!.latitude},${_myLocation!.longitude}'
+        : '';
+    final url = Uri.parse('https://www.google.com/maps/dir/?api=1$origin'
+        '&destination=${p.latitude},${p.longitude}');
+    try {
+      final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (ok) return;
+    } catch (_) {/* fall through to copy */}
+    await Clipboard.setData(ClipboardData(text: url.toString()));
+    if (mounted) showInfo(context, 'Directions link copied');
   }
 
   void _shareThisLocation() {
