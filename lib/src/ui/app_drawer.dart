@@ -41,6 +41,20 @@ class AppDrawer extends StatefulWidget {
 class _AppDrawerState extends State<AppDrawer> {
   late Future<User> _me = api.auth.me();
 
+  /// Opens the signed-in user's OWN profile (the owner view). Prefers the
+  /// home Profile tab; otherwise the self-aware ProfileScreen, which shows
+  /// owner actions (Edit profile) for yourself — never the visitor view.
+  void _openMyProfile() {
+    if (navController.value.contains('profile')) {
+      final nav = Navigator.of(context);
+      nav.pop();
+      nav.popUntil((r) => r.isFirst);
+      homeTabSignal.select('profile');
+    } else {
+      _pushWithUser((u) => ProfileScreen(userId: u.userId));
+    }
+  }
+
   void _push(Widget screen) {
     // Capture the navigator before popping: when the drawer is shown as a
     // modal (on pushed routes), the pop deactivates this context.
@@ -120,7 +134,9 @@ class _AppDrawerState extends State<AppDrawer> {
           case 'groups':
             _push(const GroupsScreen());
           case 'profile':
-            _pushWithUser((u) => ProfileScreen(userId: u.userId));
+            // Your own profile = the owner view (MyProfileScreen on the
+            // home Profile tab), not the public visitor view.
+            _openMyProfile();
           case 'friends':
             _push(const FriendsScreen());
           case 'connections':
@@ -278,12 +294,7 @@ class _AppDrawerState extends State<AppDrawer> {
             borderRadius: BorderRadius.circular(16),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
-              onTap: u == null
-                  ? null
-                  : () {
-                      Navigator.pop(context);
-                      ProfileScreen.open(context, u.userId);
-                    },
+              onTap: u == null ? null : _openMyProfile,
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Column(

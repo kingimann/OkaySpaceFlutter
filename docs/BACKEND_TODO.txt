@@ -137,6 +137,28 @@ auto-deposit on. Wire these:
     refunding the sender — Interac returns after 30 days.
 
 ================================================================================
+PRIORITY 4c — INVITE-ONLY / CLOSED REGISTRATION (admin)
+================================================================================
+The app has admin controls + a sign-up flow for this; wire the endpoints:
+
+[ ] Registration mode (admin-settable, surfaced publicly):
+      GET  /admin/registration            → {"mode": "open|invite|closed"}
+      POST /admin/registration {"mode": ...}
+    And add to GET /public/app-config: "registration_mode": "open".
+    The sign-up screen reads it: invite → shows an invite-code field;
+    closed → shows "registration is closed" and disables submit.
+
+[ ] Invite codes:
+      GET    /admin/invites               → {"data": [{"code","used","used_by","created_at"}]}
+      POST   /admin/invites {"count": 5}   → {"codes": ["ABC123", ...]}
+      DELETE /admin/invites/{code}
+
+[ ] POST /auth/register accepts an optional "invite_code". When mode ==
+    "invite", require a valid, unused code (consume it on success);
+    reject with a clear error otherwise. When mode == "closed", reject
+    all registration.
+
+================================================================================
 PRIORITY 5 — API HYGIENE (helps every current + future SDK)
 ================================================================================
 [ ] Declare response_model on money/payout routes — many 200s have NO

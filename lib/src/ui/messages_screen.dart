@@ -2680,6 +2680,31 @@ class _ChatScreenState extends State<ChatScreen> {
                 _attachTip();
               },
             ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.emoji_emotions_outlined),
+              title: const Text('Emoji'),
+              onTap: () {
+                Navigator.pop(context);
+                _emojiPicker();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.text_format),
+              title: const Text('Formatting'),
+              onTap: () {
+                Navigator.pop(context);
+                _formatMenu();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.schedule_send_outlined),
+              title: const Text('Schedule send'),
+              onTap: () {
+                Navigator.pop(context);
+                _scheduleMessage();
+              },
+            ),
           ],
         ),
       ),
@@ -3647,20 +3672,12 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.all(8),
               child: Row(
                 children: [
+                  // One "+" holds every compose action (photo, file, poll,
+                  // tip, emoji, formatting, schedule).
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline),
-                    tooltip: 'Attach',
+                    tooltip: 'Add',
                     onPressed: _sending ? null : _attachMenu,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.emoji_emotions_outlined),
-                    tooltip: 'Emoji',
-                    onPressed: _sending ? null : _emojiPicker,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.text_format),
-                    tooltip: 'Format',
-                    onPressed: _sending ? null : _formatMenu,
                   ),
                   Expanded(
                     child: TextField(
@@ -3677,46 +3694,38 @@ class _ChatScreenState extends State<ChatScreen> {
                       onSubmitted: _sendOnEnter ? (_) => _send() : null,
                       decoration: InputDecoration(
                         hintText: 'Message',
-                        border: const OutlineInputBorder(),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24)),
                         isDense: true,
                         counterText: '',
-                        suffixIcon: _charCount == 0
-                            ? null
-                            : Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_charCount > 200)
-                                    Padding(
-                                      padding:
-                                          const EdgeInsets.only(right: 4),
-                                      child: Text('$_charCount',
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .outline)),
-                                    ),
-                                  IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    tooltip: 'Clear',
-                                    onPressed: () => setState(() {
-                                      _input.clear();
-                                      _charCount = 0;
-                                    }),
-                                  ),
-                                ],
+                        contentPadding: const EdgeInsets.fromLTRB(
+                            16, 10, 4, 10),
+                        // The send key lives inside the field.
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_charCount > 200)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 2),
+                                child: Text('$_charCount',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outline)),
                               ),
+                            IconButton(
+                              onPressed: _sending ? null : _send,
+                              tooltip: 'Send',
+                              icon: Icon(Icons.send,
+                                  color: _charCount == 0
+                                      ? Theme.of(context).colorScheme.outline
+                                      : Theme.of(context).colorScheme.primary),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.schedule_send_outlined),
-                    tooltip: 'Schedule',
-                    onPressed: _sending ? null : _scheduleMessage,
-                  ),
-                  IconButton(
-                    onPressed: _sending ? null : _send,
-                    icon: const Icon(Icons.send),
                   ),
                 ],
               ),

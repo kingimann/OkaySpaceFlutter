@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/update_checker.dart';
 import 'common.dart';
 
 /// Account creation. On success the session token is stored and [onSignedIn]
@@ -20,6 +21,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _username = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _invite = TextEditingController();
+
+  // Server registration mode: 'open' | 'invite' | 'closed'.
+  String _mode = registrationMode.value;
 
   bool _busy = false;
   bool _obscure = true;
@@ -34,6 +39,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void initState() {
     super.initState();
     _username.addListener(_onUsernameChanged);
+    _loadMode();
+  }
+
+  /// Reads the public app-config so the form can show closed / invite-only.
+  Future<void> _loadMode() async {
+    try {
+      final cfg = await api.client.getJson('/public/app-config');
+      final m = cfg is Map
+          ? '${cfg['registration_mode'] ?? 'open'}'.toLowerCase()
+          : 'open';
+      if (mounted && const ['open', 'invite', 'closed'].contains(m)) {
+        setState(() => _mode = m);
+      }
+    } catch (_) {/* default open */}
   }
 
   @override
@@ -43,6 +62,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _username.dispose();
     _email.dispose();
     _password.dispose();
+    _invite.dispose();
     super.dispose();
   }
 
@@ -80,6 +100,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         password: _password.text,
         name: _name.text.trim(),
         username: _username.text.trim(),
+        inviteCode: _invite.text.trim().isEmpty ? null : _invite.text.trim(),
       );
       if (!mounted) return;
       if (result.hasToken) {
@@ -115,6 +136,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool get _canSubmit =>
       !_busy &&
+      _mode != 'closed' &&
+      (_mode != 'invite' || _invite.text.trim().isNotEmpty) &&
       _name.text.trim().isNotEmpty &&
       _username.text.trim().length >= 3 &&
       _email.text.contains('@') &&
@@ -185,6 +208,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   border: const OutlineInputBorder(),
                 ),
               ),
+              // Invite-only: require a code.
+              if (_mode == 'invite') ...[
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _invite,
+                  textCapitalization: TextCapitalization.characters,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Invite code',
+                    helperText: 'OkaySpace is invite-only right now',
+                    prefixIcon: Icon(Icons.confirmation_number_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: 16),
                 Container(
@@ -205,6 +243,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onErrorContainer)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_mode == 'closed') ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lock_outline),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                            'Registration is currently closed. Check back '
+                            'soon.',
+                            style: TextStyle(
+                                color:
+                                    Theme.of(context).colorScheme.onSurface)),
                       ),
                     ],
                   ),

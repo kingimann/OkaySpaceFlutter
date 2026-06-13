@@ -20,12 +20,15 @@ class AuthService {
     required String password,
     required String name,
     required String username,
+    String? inviteCode,
   }) async {
     final data = await _client.postJson('/auth/register', body: {
       'email': email,
       'password': password,
       'name': name,
       'username': username,
+      if (inviteCode != null && inviteCode.isNotEmpty)
+        'invite_code': inviteCode,
     });
     return _persist(AuthResponse.fromJson(asMapOrNull(data) ?? const {}));
   }

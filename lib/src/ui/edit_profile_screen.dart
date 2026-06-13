@@ -204,15 +204,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         mainAxisSpacing: 14,
                       ),
                       itemCount: urls.length,
-                      itemBuilder: (context, i) => GestureDetector(
-                        onTap: () => Navigator.pop(sheetContext, urls[i]),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest,
-                            shape: BoxShape.circle,
-                            image: DecorationImage(
-                                image: NetworkImage(urls[i]),
-                                fit: BoxFit.cover),
+                      itemBuilder: (context, i) => Material(
+                        color: scheme.surfaceContainerHighest,
+                        shape: const CircleBorder(),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(sheetContext, urls[i]),
+                          child: Image.network(
+                            urls[i],
+                            fit: BoxFit.cover,
+                            loadingBuilder: (_, child, progress) =>
+                                progress == null
+                                    ? child
+                                    : const Center(
+                                        child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2))),
+                            errorBuilder: (_, __, ___) => Icon(
+                                Icons.person, color: scheme.outline),
                           ),
                         ),
                       ),
