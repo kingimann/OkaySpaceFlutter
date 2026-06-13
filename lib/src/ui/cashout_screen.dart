@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../okayspace_api.dart';
 import '../core/stripe_connect_embed.dart';
 import '../core/stripe_elements.dart';
 import 'common.dart';
@@ -75,6 +74,15 @@ class _CashOutScreenState extends State<CashOutScreen> {
     super.dispose();
   }
 
+  // The money lives in two pots: the in-app wallet ledger (cashed out via
+  // /payments/payouts/cashout) and the user's Stripe balance from received
+  // transfers (paid out via /stripe/payout). payouts/status carries no
+  // balance at all.
+  num _ledger = 0;
+  num _stripeAvail = 0;
+  num _stripePending = 0;
+  bool _gotBalance = false;
+
   Future<void> _load() async {
     // Full-screen spinner only before the first payload; refreshes keep the
     // current UI (so pull-to-refresh isn't torn down mid-gesture).
@@ -86,6 +94,22 @@ class _CashOutScreenState extends State<CashOutScreen> {
       // A failed load must read as an error, not as a $0 balance.
       if (_status.isEmpty) _error = true;
     }
+    try {
+      final b = await api.wallet.balance();
+      final v = b is Map ? b['balance'] : null;
+      if (v is num) {
+        _ledger = v;
+        _gotBalance = true;
+      }
+    } catch (_) {/* ledger balance unavailable */}
+    try {
+      final s = await api.payments.stripeBalance();
+      if (s['connected'] == true) {
+        _stripeAvail = s['available'] is num ? s['available'] as num : 0;
+        _stripePending = s['pending'] is num ? s['pending'] as num : 0;
+      }
+      _gotBalance = true;
+    } catch (_) {/* stripe balance unavailable */}
     if (mounted) setState(() => _loading = false);
   }
 
@@ -95,8 +119,11 @@ class _CashOutScreenState extends State<CashOutScreen> {
       _status['charges_enabled'] == true;
 
   num get _available {
-    final v = _status['available'] ?? _status['balance'] ?? _status['payout_balance'];
-    return v is num ? v : (num.tryParse('$v') ?? 0);
+    final v = _status['available'] ??
+        _status['balance'] ??
+        _status['payout_balance'];
+    final legacy = v is num ? v : num.tryParse('$v');
+    return legacy ?? (_ledger + _stripeAvail);
   }
 
   String get _symbol =>
@@ -322,8 +349,9 @@ class _CashOutScreenState extends State<CashOutScreen> {
 
   num? get _entered => num.tryParse(_amount.text.trim());
 
-  /// Whether the payload actually carried a balance (0 may mean "unknown").
+  /// Whether any balance source actually answered (0 may mean "unknown").
   bool get _knowsBalance =>
+      _gotBalance ||
       _status['available'] != null ||
       _status['balance'] != null ||
       _status['payout_balance'] != null;
@@ -351,16 +379,21 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
     setState(() => _busy = true);
     try {
-      // Stripe rails first (/stripe/payout, supports instant-to-debit-card);
-      // the ledger cash-out remains the fallback for backends without it.
-      try {
+      // Route to the pot that holds the money: the in-app ledger uses the
+      // DoorDash-style cash-out endpoint; the Stripe balance (received
+      // transfers) pays out via /stripe/payout.
+      if (amount <= _ledger || _stripeAvail <= 0) {
+        await api.payments.cashout({'amount': amount});
+      } else if (amount <= _stripeAvail) {
         await api.payments.stripePayout(amount: amount, instant: _instant);
-      } on ApiException catch (e) {
-        if (e.isNotFound || e.statusCode == 405 || e.statusCode == 501) {
-          await api.payments.cashout({'amount': amount});
-        } else {
-          rethrow;
-        }
+      } else {
+        showInfo(
+            context,
+            'That amount spans both balances — cash out up to '
+            '$_symbol${_ledger.toStringAsFixed(2)} (in-app) or '
+            '$_symbol${_stripeAvail.toStringAsFixed(2)} (Stripe) at once.');
+        setState(() => _busy = false);
+        return;
       }
       if (mounted) {
         showInfo(
@@ -427,6 +460,18 @@ class _CashOutScreenState extends State<CashOutScreen> {
                                   color: Colors.white,
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold)),
+                          if (_stripeAvail > 0 || _stripePending > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                  'In-app $_symbol${_ledger.toStringAsFixed(2)}'
+                                  ' · Stripe $_symbol${_stripeAvail.toStringAsFixed(2)}'
+                                  '${_stripePending > 0 ? ' (+$_symbol${_stripePending.toStringAsFixed(2)} pending)' : ''}',
+                                  style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.8),
+                                      fontSize: 12)),
+                            ),
                         ],
                       ),
                     ),
