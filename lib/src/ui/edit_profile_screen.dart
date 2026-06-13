@@ -86,79 +86,108 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  /// Generates a random profile picture (DiceBear): pick a style, shuffle
-  /// until you like it. The chosen URL is saved as the avatar.
+  /// Generates random profile pictures (DiceBear): just tap one you like.
+  /// A style filter narrows the grid; "More" reshuffles it.
   Future<void> _generateAvatar() async {
-    var style = kAvatarStyles.first.id;
-    var url = avatarUrl(style: style);
+    String? style; // null = "Surprise me" (mixed styles)
+    var urls = avatarBatch(style: style);
     final chosen = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, setSheet) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Generate a profile picture',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 12),
-                Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: Theme.of(sheetContext)
-                        .colorScheme
-                        .surfaceContainerHighest,
-                    shape: BoxShape.circle,
-                    image: DecorationImage(image: NetworkImage(url)),
+      builder: (sheetContext) {
+        final scheme = Theme.of(sheetContext).colorScheme;
+        return StatefulBuilder(
+          builder: (sheetContext, setSheet) => SafeArea(
+            child: DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.7,
+              maxChildSize: 0.92,
+              builder: (_, scrollCtrl) => Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+                    child: Text('Tap a picture to use it',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    for (final s in kAvatarStyles)
-                      ChoiceChip(
-                        label: Text(s.label),
-                        selected: style == s.id,
-                        onSelected: (_) => setSheet(() {
-                          style = s.id;
-                          url = avatarUrl(style: style);
-                        }),
+                  // Style filter row.
+                  SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: ChoiceChip(
+                            label: const Text('Surprise me'),
+                            selected: style == null,
+                            onSelected: (_) => setSheet(() {
+                              style = null;
+                              urls = avatarBatch(style: style);
+                            }),
+                          ),
+                        ),
+                        for (final s in kAvatarStyles)
+                          Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 4),
+                            child: ChoiceChip(
+                              label: Text(s.label),
+                              selected: style == s.id,
+                              onSelected: (_) => setSheet(() {
+                                style = s.id;
+                                urls = avatarBatch(style: style);
+                              }),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: GridView.builder(
+                      controller: scrollCtrl,
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 14,
+                        mainAxisSpacing: 14,
                       ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
+                      itemCount: urls.length,
+                      itemBuilder: (context, i) => GestureDetector(
+                        onTap: () => Navigator.pop(sheetContext, urls[i]),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest,
+                            shape: BoxShape.circle,
+                            image: DecorationImage(
+                                image: NetworkImage(urls[i]),
+                                fit: BoxFit.cover),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: SizedBox(
+                      width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: () =>
-                            setSheet(() => url = avatarUrl(style: style)),
-                        icon: const Icon(Icons.shuffle),
-                        label: const Text('Shuffle'),
+                            setSheet(() => urls = avatarBatch(style: style)),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('More options'),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () => Navigator.pop(sheetContext, url),
-                        icon: const Icon(Icons.check),
-                        label: const Text('Use this'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
     if (chosen != null && mounted) {
       setState(() {

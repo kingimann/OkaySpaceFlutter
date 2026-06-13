@@ -525,7 +525,7 @@ class _WalletScreenState extends State<WalletScreen>
     // unlocked already — honor the shared lock state.
     if (_pinLocked && walletLock.unlocked) _pinLocked = false;
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: OkayAppBar(
           title: const Text('Wallet'),
@@ -564,8 +564,10 @@ class _WalletScreenState extends State<WalletScreen>
             ),
           ],
           bottom: TabBar(
+            isScrollable: true,
             tabs: [
               const Tab(text: 'Overview'),
+              const Tab(text: 'Activity'),
               _countedTab('Requests', _pendingRequests),
               _countedTab('Transfers', _pendingTransfers),
             ],
@@ -575,7 +577,12 @@ class _WalletScreenState extends State<WalletScreen>
           child: _pinLocked
               ? _lockGate()
               : TabBarView(
-                  children: [_overview(), _requestsTab(), _transfersTab()],
+                  children: [
+                    _overview(),
+                    _activityTab(),
+                    _requestsTab(),
+                    _transfersTab()
+                  ],
                 ),
         ),
         floatingActionButton: _pinLocked
@@ -699,18 +706,6 @@ class _WalletScreenState extends State<WalletScreen>
           }
           final w = snapshot.data!;
           final scheme = Theme.of(context).colorScheme;
-          final query = _searching ? _txnSearch.text.trim().toLowerCase() : '';
-          bool matches(WalletTxn t) =>
-              query.isEmpty ||
-              [t.counterpartyName, t.note, t.type]
-                  .any((s) => s != null && s.toLowerCase().contains(query));
-          // Sorted defensively: month grouping relies on newest-first order.
-          final txns = switch (_txnFilter) {
-            'in' => w.recent.where((t) => t.amount >= 0 && matches(t)).toList(),
-            'out' => w.recent.where((t) => t.amount < 0 && matches(t)).toList(),
-            _ => w.recent.where(matches).toList(),
-          }
-            ..sort(_byNewest);
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -751,25 +746,71 @@ class _WalletScreenState extends State<WalletScreen>
                 _earningsCard(w, scheme),
               ],
               const SizedBox(height: 24),
+              // Recent activity lives on its own Activity tab now (so a tap
+              // on the Overview doesn't open a transaction by accident).
+              OutlinedButton.icon(
+                onPressed: () =>
+                    DefaultTabController.of(context).animateTo(1),
+                icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                label: const Text('View recent activity'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Recent activity, on its own tab so a stray tap on the Overview can't
+  /// open a transaction by accident.
+  Widget _activityTab() {
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: FutureBuilder<WalletSummary>(
+        future: _summary,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return CenteredMessage(
+                message: messageFor(snapshot.error),
+                icon: Icons.error_outline,
+                onRetry: _reload);
+          }
+          final w = snapshot.data!;
+          final scheme = Theme.of(context).colorScheme;
+          final query =
+              _searching ? _txnSearch.text.trim().toLowerCase() : '';
+          bool matches(WalletTxn t) =>
+              query.isEmpty ||
+              [t.counterpartyName, t.note, t.type]
+                  .any((s) => s != null && s.toLowerCase().contains(query));
+          final txns = switch (_txnFilter) {
+            'in' =>
+              w.recent.where((t) => t.amount >= 0 && matches(t)).toList(),
+            'out' =>
+              w.recent.where((t) => t.amount < 0 && matches(t)).toList(),
+            _ => w.recent.where(matches).toList(),
+          }..sort(_byNewest);
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
               Row(
                 children: [
                   Expanded(
-                    child: Row(
-                      children: [
-                        Text('Recent activity',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold)),
-                        TextButton(
-                          style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact),
-                          onPressed: () =>
-                              _push(const WalletActivityScreen()),
-                          child: const Text('See all'),
-                        ),
-                      ],
-                    ),
+                    child: Text('Recent activity',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold)),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact),
+                    onPressed: () => _push(const WalletActivityScreen()),
+                    child: const Text('See all'),
                   ),
                   IconButton(
                     icon: Icon(_searching ? Icons.search_off : Icons.search,
@@ -781,19 +822,21 @@ class _WalletScreenState extends State<WalletScreen>
                       if (!_searching) _txnSearch.clear();
                     }),
                   ),
+                ],
+              ),
+              Wrap(
+                spacing: 6,
+                children: [
                   for (final (id, label) in const [
                     ('all', 'All'),
                     ('in', 'In'),
                     ('out', 'Out')
                   ])
-                    Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: ChoiceChip(
-                        label: Text(label),
-                        selected: _txnFilter == id,
-                        visualDensity: VisualDensity.compact,
-                        onSelected: (_) => setState(() => _txnFilter = id),
-                      ),
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: _txnFilter == id,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => setState(() => _txnFilter = id),
                     ),
                 ],
               ),
@@ -816,7 +859,7 @@ class _WalletScreenState extends State<WalletScreen>
               const SizedBox(height: 4),
               if (txns.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  padding: const EdgeInsets.symmetric(vertical: 48),
                   child: Center(
                       child: Text(query.isNotEmpty
                           ? 'No matches for "${_txnSearch.text.trim()}".'
@@ -825,14 +868,14 @@ class _WalletScreenState extends State<WalletScreen>
                               : 'Nothing ${_txnFilter == 'in' ? 'incoming' : 'outgoing'} yet.')),
                 )
               else
-                // Venmo-style: transactions grouped under month headers.
                 ...() {
                   final now = DateTime.now();
                   final widgets = <Widget>[];
                   String? lastKey;
                   for (final t in txns) {
                     final d = t.createdAt;
-                    final key = d == null ? 'earlier' : '${d.year}-${d.month}';
+                    final key =
+                        d == null ? 'earlier' : '${d.year}-${d.month}';
                     if (key != lastKey) {
                       lastKey = key;
                       final label = d == null

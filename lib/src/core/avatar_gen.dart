@@ -33,3 +33,10 @@ String avatarUrl({String? style, String? seed, int size = 256}) {
   return 'https://api.dicebear.com/9.x/$s/png'
       '?seed=${Uri.encodeQueryComponent(sd)}&size=$size';
 }
+
+/// A batch of [count] distinct random avatar URLs. When [style] is null each
+/// one uses a random style (a varied "surprise me" grid); otherwise all use
+/// the same style with different seeds.
+List<String> avatarBatch({String? style, int count = 12}) =>
+    [for (var i = 0; i < count; i++) avatarUrl(style: style)];
+
