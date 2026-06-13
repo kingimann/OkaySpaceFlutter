@@ -167,7 +167,10 @@ class _CashOutScreenState extends State<CashOutScreen> {
       case 'bank':
         await _addBankAccount();
       case 'stripe':
-        await _setup(component: 'account-management');
+        // account-onboarding in update mode renders inline for Express
+        // accounts; account-management would show Stripe's sign-in wall
+        // (whose button opens an external browser).
+        await _setup();
     }
   }
 
