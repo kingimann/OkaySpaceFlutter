@@ -8,6 +8,11 @@ import '../core/stripe_elements.dart';
 import 'common.dart';
 import 'money_guards.dart';
 
+const _monthAbbr = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+];
+
 /// Stripe-backed payouts: onboarding status, identity verification, and
 /// cashing out the available balance.
 class CashOutScreen extends StatefulWidget {
@@ -98,26 +103,44 @@ class _CashOutScreenState extends State<CashOutScreen> {
           .contains(sched)) {
         _schedule = sched;
       }
+      // The status payload now carries both balance pots — use them and
+      // skip the two extra calls below when present.
+      if (_status['wallet_balance'] is num) {
+        _ledger = _status['wallet_balance'] as num;
+        _gotBalance = true;
+      }
+      if (_status['stripe_available'] is num) {
+        _stripeAvail = _status['stripe_available'] as num;
+        _gotBalance = true;
+      }
+      if (_status['stripe_pending'] is num) {
+        _stripePending = _status['stripe_pending'] as num;
+      }
     } catch (_) {
       // A failed load must read as an error, not as a $0 balance.
       if (_status.isEmpty) _error = true;
     }
-    try {
-      final b = await api.wallet.balance();
-      final v = b is Map ? b['balance'] : null;
-      if (v is num) {
-        _ledger = v;
+    // Fallbacks for backends that don't put balances on the status payload.
+    if (_status['wallet_balance'] == null) {
+      try {
+        final b = await api.wallet.balance();
+        final v = b is Map ? b['balance'] : null;
+        if (v is num) {
+          _ledger = v;
+          _gotBalance = true;
+        }
+      } catch (_) {/* ledger balance unavailable */}
+    }
+    if (_status['stripe_available'] == null) {
+      try {
+        final s = await api.payments.stripeBalance();
+        if (s['connected'] == true) {
+          _stripeAvail = s['available'] is num ? s['available'] as num : 0;
+          _stripePending = s['pending'] is num ? s['pending'] as num : 0;
+        }
         _gotBalance = true;
-      }
-    } catch (_) {/* ledger balance unavailable */}
-    try {
-      final s = await api.payments.stripeBalance();
-      if (s['connected'] == true) {
-        _stripeAvail = s['available'] is num ? s['available'] as num : 0;
-        _stripePending = s['pending'] is num ? s['pending'] as num : 0;
-      }
-      _gotBalance = true;
-    } catch (_) {/* stripe balance unavailable */}
+      } catch (_) {/* stripe balance unavailable */}
+    }
     try {
       final s = await api.payments.payoutSchedule();
       final interval = '${s['interval'] ?? ''}'.toLowerCase();
@@ -573,11 +596,14 @@ class _CashOutScreenState extends State<CashOutScreen> {
       // - Stripe balance (received transfers) → /stripe/payout, where the
       //   toggle chooses instant-to-card vs standard-to-bank.
       final bool wasInstant;
+      Map<String, dynamic> result;
       if (amount <= _ledger || _stripeAvail <= 0) {
-        await api.payments.cashout({'amount': amount, 'instant': _instant});
+        result =
+            await api.payments.cashout({'amount': amount, 'instant': _instant});
         wasInstant = true;
       } else if (amount <= _stripeAvail) {
-        await api.payments.stripePayout(amount: amount, instant: _instant);
+        result =
+            await api.payments.stripePayout(amount: amount, instant: _instant);
         wasInstant = _instant;
       } else {
         showInfo(
@@ -589,11 +615,19 @@ class _CashOutScreenState extends State<CashOutScreen> {
         return;
       }
       if (mounted) {
+        // The backend returns arrival_date (unix) — show "arrives by …".
+        final arrival = result['arrival_date'];
+        final when = arrival is num
+            ? DateTime.fromMillisecondsSinceEpoch(arrival.toInt() * 1000)
+            : null;
+        final by = when != null
+            ? ' — arrives by ${_monthAbbr[when.month - 1]} ${when.day}'
+            : '';
         showInfo(
             context,
             wasInstant
-                ? 'Instant payout requested — usually minutes to your card.'
-                : 'Cash-out requested — 1–2 business days to your bank.');
+                ? 'Instant payout requested$by.'
+                : 'Cash-out requested$by.');
         _amount.clear();
         await _load();
       }
