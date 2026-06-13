@@ -1,0 +1,150 @@
+================================================================================
+OKAYSPACE BACKEND — WORK NEEDED (handoff)
+================================================================================
+Date: 2026-06-13
+API base: https://okayspace-v0vx.onrender.com/api/v1
+Spec:     https://okayspace-v0vx.onrender.com/openapi.json  (keep this current)
+
+The Flutter app (web + iOS/Android) is ALREADY wired for everything below.
+Each item turns on automatically the moment the backend ships it — no app
+release needed. Ordered by priority. Items marked DONE are for context only.
+
+Stripe is LIVE (pk_live_…). The platform takes a cash-out fee; users fund a
+wallet (top-up), send money to each other, and cash out to bank/debit card.
+
+================================================================================
+PRIORITY 1 — SECURITY / ANTI-CHEAT (do before real users move money)
+================================================================================
+The app has client-side guards (caps, self-pay blocks, duplicate detection,
+type-to-confirm). A modified client bypasses ALL of them. Enforce server-side:
+
+  BALANCE CORRECTNESS
+  [ ] Atomic balance updates: debit + credit in ONE DB transaction with a
+      row lock (SELECT … FOR UPDATE). Two concurrent sends must never
+      double-spend the same balance.
+  [ ] Reject amounts <= 0, non-finite, or > 2 decimal places.
+  [ ] Server caps per transaction (suggest: top-up $1,000, send $2,000).
+  [ ] Reject self-transfer (from == to) → 400.
+  [ ] Never trust client-sent balances or fees — recompute everything.
+
+  REPLAY / DOUBLE-SUBMIT
+  [ ] Honor the Idempotency-Key header on every money POST (store key →
+      response for 24h; a replay returns the stored response). The app
+      already sends keys on /stripe/transfer and /stripe/payout.
+  [ ] Stripe webhooks: verify the signature, and dedupe by event id (a
+      replayed event must not credit twice).
+  [ ] Confirm /wallet/topup/confirm-intent and /wallet/topup/sync are
+      idempotent by intent/session id (add tests).
+
+  VELOCITY / ABUSE (per user AND per IP/device)
+  [ ] Rate limits: e.g. sends 10/hr & $2,000/day; top-ups 5/day pending;
+      cash-outs 2/day. Return HTTP 429 with the standard error envelope.
+  [ ] New accounts: lower limits for the first 7 days until id_verified.
+  [ ] Cash-out only allowed when id_verified (gate outflows on KYC).
+
+  INTEGRITY
+  [ ] State machines: a top-up cancels only from "pending"; a transfer
+      can't be reversed twice. Check CURRENT state inside the same
+      transaction that changes it.
+  [ ] Every money mutation appends to the immutable audit log (who/what/
+      when/request-id/IP). The admin audit endpoint already exists.
+  [ ] Admin money endpoints (set wallet / add transaction) need a second
+      factor or at minimum heavy audit + alerting.
+  [ ] Alert on anomalies: any negative balance, a credit with no matching
+      Stripe event, velocity spikes.
+
+================================================================================
+PRIORITY 2 — CASH-OUT FEE POLICY
+================================================================================
+[ ] /payments/config currently returns cashout_min: 5.0, cashout_fee: 1.99.
+    Owner wants: cashout_min = 20.0, cashout_fee = 2.00.
+    The app displays and enforces whatever config returns — just change the
+    served values.
+[ ] Make them admin-settable so future changes don't need a deploy:
+    extend POST /admin/fees to accept cashout_fee_cents and
+    cashout_min_cents, and have /payments/config read the stored settings.
+
+ECONOMICS NOTE: Stripe charges the PLATFORM ~1–1.5% (min ~$0.50) per INSTANT
+payout. At a $20 minimum the $2 fee covers it; on a very large instant
+cash-out (~$200+) Stripe's % can exceed $2. Standard (bank) payouts cost $0
+extra. If big instant cash-outs become common, price instant as
+max($2, 1.5%) or cap the instant amount.
+
+================================================================================
+PRIORITY 3 — RESUME PENDING TOP-UPS
+================================================================================
+[ ] On GET /wallet/activity items where kind == "topup" and status ==
+    "pending", include the PaymentIntent's client_secret:
+        "client_secret": "pi_…_secret_…"
+    The app's "Resume payment" button reopens the in-app card form against
+    it (then /wallet/topup/confirm-intent credits). Without it, Resume can
+    only tell the user to start a new top-up. Cancel already works.
+
+================================================================================
+PRIORITY 4 — FULLY-INLINE PAYOUT ONBOARDING (optional, nice)
+================================================================================
+[ ] New connected accounts are EXPRESS type, so Stripe's embedded
+    onboarding delegates data entry to a hosted page (the one browser hop
+    left in the wallet). To keep it 100% in-app for NEW users, create
+    accounts as platform-controlled:
+        stripe.Account.create(
+          controller={
+            "stripe_dashboard": {"type": "none"},
+            "fees": {"payer": "application"},
+            "losses": {"payments": "application"},
+            "requirement_collection": "stripe",
+          },
+          capabilities={"transfers": {"requested": True},
+                        "card_payments": {"requested": True}},
+          country=…, email=…)
+    Then enable on the AccountSession:
+        components={"account_onboarding": {"enabled": True},
+                    "account_management": {"enabled": True},
+                    "payouts":            {"enabled": True}}
+    NOTE: existing Express accounts can't be converted — they keep the
+    current flow. This only helps future users.
+
+================================================================================
+PRIORITY 5 — API HYGIENE (helps every current + future SDK)
+================================================================================
+[ ] Declare response_model on money/payout routes — many 200s have NO
+    schema in OpenAPI, so the app guesses keys (client_secret ?? clientSecret
+    ?? secret). One Pydantic model per route makes generated clients
+    possible.
+[ ] One error envelope. Errors currently return BOTH {"error":{…}} and
+    {"detail":{…}}; pick one canonical shape and publish the "code" values.
+[ ] Auth before body validation everywhere (some routes 422 on a missing
+    field before checking the token; should 401 first).
+[ ] Timestamps: ISO-8601 UTC with trailing Z. IDs: always strings in JSON.
+
+================================================================================
+NICE-TO-HAVES (app already renders these if present)
+================================================================================
+[ ] "instant_eligible": true per method in GET /payments/payouts/methods
+    (app shows an "Instant eligible" chip).
+[ ] "arrival_date": <unix> on /stripe/payout and payouts/cashout responses
+    (app can show "Arrives by Tuesday").
+[ ] Push/webhook to the user when a payout lands or a top-up credits.
+[ ] Balance fields on GET /payments/payouts/status (wallet_balance,
+    stripe_available, stripe_pending) so the Cash out screen skips two
+    extra calls. Works today via /wallet/balance + /stripe/balance.
+
+================================================================================
+ALREADY SHIPPED — for context, no action
+================================================================================
+  ✔ /wallet/topup/intent → client_secret + publishable_key + intent_id
+  ✔ /wallet/topup/confirm-intent, /wallet/topup/sync (idempotent)
+  ✔ /payments/checkout kind enum incl. "topup"
+  ✔ /payments/identity/start → client_secret (+ already_verified)
+  ✔ /payments/payouts/methods + DELETE /{id} + POST /{id}/default
+  ✔ /payments/payouts/debit-card, /bank-account  ({token})
+  ✔ /payments/payouts/schedule GET + POST (weekly_anchor/monthly_anchor)
+  ✔ /payments/payouts/account-session (embedded components list)
+  ✔ /stripe/account | balance | transfer | payout | transactions | webhook
+  ✔ /wallet/activity items → status + kind + direction + title + subtitle
+  ✔ /roadside/verification GET + POST (insurance + ownership docs)
+  ✔ /roadside/admin/calls CRUD (moved from /admin/roadside/calls)
+  ✔ /capabilities, /errors, /public/app-config (web kill-switch + gate),
+    /admin/mobile-web-gate
+  ✔ bool query params accepted, {data,total} list envelopes
+================================================================================
