@@ -102,23 +102,10 @@ class _VideosScreenState extends State<VideosScreen> {
               }
               final videos = snap.data ?? const <Post>[];
               if (videos.isEmpty) {
+                // Never an empty grey screen: a branded placeholder card.
                 return ListView(
-                  children: [
-                    const SizedBox(height: 120),
-                    Icon(Icons.smart_display_outlined,
-                        size: 48,
-                        color: Theme.of(context).colorScheme.outline),
-                    const SizedBox(height: 12),
-                    const Center(child: Text('No videos yet.')),
-                    const SizedBox(height: 16),
-                    Center(
-                      child: FilledButton.icon(
-                        onPressed: _upload,
-                        icon: const Icon(Icons.upload),
-                        label: const Text('Upload a video'),
-                      ),
-                    ),
-                  ],
+                  padding: const EdgeInsets.all(16),
+                  children: [_VideoPlaceholder(onUpload: _upload)],
                 );
               }
               return ListView.builder(
@@ -770,6 +757,116 @@ class _VideoComposerScreenState extends State<VideoComposerScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Branded placeholder shown when there are no videos yet — a 16:9 card
+/// with a Ken Burns photo, an "OkaySpace Videos" overlay and a play badge,
+/// so the screen is never just empty. Tapping uploads.
+class _VideoPlaceholder extends StatefulWidget {
+  const _VideoPlaceholder({required this.onUpload});
+  final VoidCallback onUpload;
+
+  @override
+  State<_VideoPlaceholder> createState() => _VideoPlaceholderState();
+}
+
+class _VideoPlaceholderState extends State<_VideoPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 5),
+  )..repeat(reverse: true);
+
+  static const _photo = 'https://picsum.photos/seed/okayspacevideos/1280/720';
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                AnimatedBuilder(
+                  animation: _c,
+                  builder: (context, child) => Transform.scale(
+                    scale: 1.04 + 0.08 * _c.value,
+                    child: child,
+                  ),
+                  child: Image.network(
+                    _photo,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [OkayColors.primary, Color(0xFF0B141A)],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black38, Colors.black87],
+                    ),
+                  ),
+                ),
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: const BoxDecoration(
+                          color: OkayColors.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.play_arrow,
+                            color: Colors.white, size: 36),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text('OkaySpace Videos',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text('No videos yet — upload the first one.',
+            style: TextStyle(
+                color: scheme.outline, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: widget.onUpload,
+          icon: const Icon(Icons.upload),
+          label: const Text('Upload a video'),
+        ),
+      ],
     );
   }
 }
