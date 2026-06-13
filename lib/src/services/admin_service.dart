@@ -129,6 +129,12 @@ class AdminService {
     await _client.postJson('/admin/mobile-only', body: {'enabled': on});
   }
 
+  /// Whether phone browsers are nudged toward the native app.
+  Future<dynamic> mobileWebGate() => _client.getJson('/admin/mobile-web-gate');
+  Future<void> setMobileWebGate(bool on) async {
+    await _client.postJson('/admin/mobile-web-gate', body: {'enabled': on});
+  }
+
   Future<dynamic> webBuild() => _client.getJson('/admin/web-build');
   Future<void> bumpWebBuild() async {
     await _client.postJson('/admin/web-build/bump');
