@@ -563,11 +563,6 @@ class _MapScreenState extends State<MapScreen> {
                       ],
                     ),
                   ),
-                  TextButton.icon(
-                    icon: const Icon(Icons.open_in_new, size: 18),
-                    label: const Text('Maps'),
-                    onPressed: () => _openExternal(dest),
-                  ),
                 ],
               ),
             ),
@@ -2628,34 +2623,26 @@ class _MapScreenState extends State<MapScreen> {
                       const SizedBox(height: 8),
                       // Secondary actions.
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                  visualDensity: VisualDensity.compact),
-                              icon: const Icon(Icons.open_in_new, size: 18),
-                              label: const Text('Open in Maps'),
-                              onPressed: () => _openExternal(_searchPin!),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.send_outlined, size: 20),
-                            tooltip: 'Send to chat',
+                          TextButton.icon(
+                            icon: const Icon(Icons.send_outlined, size: 18),
+                            label: const Text('Send'),
                             onPressed: () => _sendPlaceToChat(
                               name: _searchLabel ?? 'Dropped pin',
                               lat: _searchPin!.latitude,
                               lng: _searchPin!.longitude,
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.star_outline, size: 22),
-                            tooltip: 'Reviews',
+                          TextButton.icon(
+                            icon: const Icon(Icons.star_outline, size: 18),
+                            label: const Text('Reviews'),
                             onPressed: _reviewSearchPin,
                           ),
-                          IconButton(
+                          TextButton.icon(
                             icon: const Icon(Icons.bookmark_add_outlined,
-                                size: 22),
-                            tooltip: 'Save this spot',
+                                size: 18),
+                            label: const Text('Save'),
                             onPressed: _saveSearchPin,
                           ),
                         ],
