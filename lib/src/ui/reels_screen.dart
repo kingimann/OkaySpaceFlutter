@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'compose_screen.dart';
 import 'post_detail_screen.dart';
 import 'post_video.dart';
 import 'profile_screen.dart';
@@ -65,6 +66,12 @@ class _ReelsScreenState extends State<ReelsScreen> {
   Future<void> _reload() async {
     setState(() => _future = _load());
     await _future;
+  }
+
+  Future<void> _createReel() async {
+    final created = await Navigator.of(context)
+        .push<bool>(MaterialPageRoute(builder: (_) => const ComposeScreen()));
+    if (created == true && mounted) _reload();
   }
 
   Future<void> _like(int i) async {
@@ -180,11 +187,12 @@ class _ReelsScreenState extends State<ReelsScreen> {
                       message: messageFor(snapshot.error), onRetry: _reload);
                 }
                 if (_reels.isEmpty) {
-                  return _DarkMessage(
-                      message: _tab == 1
-                          ? 'No reels from people you follow yet.'
-                          : 'No reels yet.',
-                      onRetry: _reload);
+                  // Never a black screen: a branded placeholder reel.
+                  return _PlaceholderReel(
+                    following: _tab == 1,
+                    onRefresh: _reload,
+                    onCreate: _createReel,
+                  );
                 }
                 return RefreshIndicator(
                   onRefresh: _reload,
@@ -569,6 +577,188 @@ class _DarkMessage extends StatelessWidget {
               child: const Text('Retry'),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A branded placeholder reel shown when the feed is empty — a photo with a
+/// slow Ken Burns zoom, an "OkaySpace Reels" overlay, a 5-second story-style
+/// progress bar, and a create/refresh CTA. Never a black screen.
+class _PlaceholderReel extends StatefulWidget {
+  const _PlaceholderReel({
+    required this.following,
+    required this.onRefresh,
+    required this.onCreate,
+  });
+
+  final bool following;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onCreate;
+
+  @override
+  State<_PlaceholderReel> createState() => _PlaceholderReelState();
+}
+
+class _PlaceholderReelState extends State<_PlaceholderReel>
+    with SingleTickerProviderStateMixin {
+  // 5-second loop drives both the progress bar and the Ken Burns zoom.
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 5),
+  )..repeat();
+
+  // A stable, brand-seeded stock photo; falls back to a gradient on error.
+  static const _photo =
+      'https://picsum.photos/seed/okayspacereels/800/1400';
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: widget.onRefresh,
+      child: ListView(
+        // ListView so pull-to-refresh works over the full-bleed placeholder.
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        children: [
+          SizedBox(
+            height: MediaQuery.of(context).size.height,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Ken Burns photo.
+                AnimatedBuilder(
+                  animation: _c,
+                  builder: (context, child) => Transform.scale(
+                    scale: 1.05 + 0.12 * _c.value,
+                    child: child,
+                  ),
+                  child: Image.network(
+                    _photo,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            OkayColors.primary,
+                            Color(0xFF0B141A),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Darkening scrim for legibility.
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black54, Colors.black26, Colors.black87],
+                    ),
+                  ),
+                ),
+                // Story-style 5-second progress bar.
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 10,
+                  left: 12,
+                  right: 12,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: AnimatedBuilder(
+                      animation: _c,
+                      builder: (context, _) => LinearProgressIndicator(
+                        value: _c.value,
+                        minHeight: 3,
+                        backgroundColor: Colors.white24,
+                        valueColor: const AlwaysStoppedAnimation(Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+                // Branding + CTA.
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 76,
+                        height: 76,
+                        decoration: BoxDecoration(
+                          color: OkayColors.primary,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.4),
+                                blurRadius: 20),
+                          ],
+                        ),
+                        child: const Icon(Icons.play_arrow,
+                            color: Colors.white, size: 44),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('OkaySpace',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 30,
+                              fontWeight: FontWeight.bold)),
+                      Text('REELS',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 6)),
+                      const SizedBox(height: 14),
+                      Text(
+                          widget.following
+                              ? 'No reels from people you follow yet.'
+                              : 'Be the first to post a reel.',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.85),
+                              fontSize: 14)),
+                    ],
+                  ),
+                ),
+                // Bottom actions.
+                Positioned(
+                  left: 24,
+                  right: 24,
+                  bottom: MediaQuery.of(context).padding.bottom + 96,
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                              backgroundColor: OkayColors.primary,
+                              foregroundColor: Colors.white),
+                          onPressed: widget.onCreate,
+                          icon: const Icon(Icons.video_call),
+                          label: const Text('Create a reel'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () => widget.onRefresh(),
+                        icon: const Icon(Icons.refresh, color: Colors.white70),
+                        label: const Text('Refresh',
+                            style: TextStyle(color: Colors.white70)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
