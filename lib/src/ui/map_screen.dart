@@ -182,6 +182,12 @@ class _MapScreenState extends State<MapScreen> {
   String? _etaShareId;
   String? _etaDestination;
 
+  /// Destination coords for the active share (for recomputing the live ETA),
+  /// the GPS subscription pushing position, and a throttle on those pushes.
+  LatLng? _etaDest;
+  StreamSubscription<GeoFix>? _etaSub;
+  DateTime _lastEtaPush = DateTime.fromMillisecondsSinceEpoch(0);
+
   static const _prefsKey = 'okayspace.map.prefs';
   static const _recentKey = 'okayspace.map.recent';
   static const _bookmarksKey = 'okayspace.map.bookmarks';
@@ -200,6 +206,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _followSub?.cancel();
+    _etaSub?.cancel();
     _chromeTimer?.cancel();
     // Don't leave the bars hidden if we leave mid-pan.
     showBars();
@@ -753,7 +760,11 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _etaShareId = shareId;
         _etaDestination = destName;
+        _etaDest = (dLat != null && dLng != null) ? LatLng(dLat, dLng) : null;
       });
+      // Keep the share live: push the device position as it moves so the
+      // recipient sees us actually travelling, not a frozen pin.
+      _startEtaUpdates(shareId);
       final url = 'https://okayspace.ca/eta/$shareId';
       Clipboard.setData(ClipboardData(text: url));
       showInfo(context, 'ETA link copied: $url');
@@ -762,9 +773,52 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Streams GPS fixes to the server for an active ETA share (throttled to one
+  /// push per 10s), recomputing the ETA from remaining distance and speed.
+  void _startEtaUpdates(String shareId) {
+    _etaSub?.cancel();
+    _etaSub = fixStream().listen((fix) async {
+      if (!mounted || _etaShareId != shareId) return;
+      final now = DateTime.now();
+      if (now.difference(_lastEtaPush).inSeconds < 10) return;
+      _lastEtaPush = now;
+      int? mins;
+      final dest = _etaDest;
+      if (dest != null) {
+        final metres = _distance(fix.point, dest);
+        // Use live speed when actually moving, else a sane road default.
+        final kmh = fix.speedKmh > 5 ? fix.speedKmh : 40.0;
+        mins = (metres / 1000 / kmh * 60).round();
+      }
+      try {
+        await api.roadside.updateEta(shareId,
+            latitude: fix.point.latitude,
+            longitude: fix.point.longitude,
+            etaMinutes: mins);
+      } on ApiException catch (e) {
+        // 410/404 → the share ended or expired server-side; stop locally.
+        if (mounted &&
+            _etaShareId == shareId &&
+            (e.statusCode == 410 || e.statusCode == 404)) {
+          await _etaSub?.cancel();
+          _etaSub = null;
+          if (!mounted) return;
+          setState(() {
+            _etaShareId = null;
+            _etaDestination = null;
+            _etaDest = null;
+          });
+          showInfo(context, 'ETA sharing ended');
+        }
+      } catch (_) {/* transient — retry on the next fix */}
+    });
+  }
+
   Future<void> _stopEta() async {
     final id = _etaShareId;
     if (id == null) return;
+    await _etaSub?.cancel();
+    _etaSub = null;
     try {
       await api.roadside.stopEta(id);
     } catch (_) {/* already expired is fine */}
@@ -772,6 +826,7 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _etaShareId = null;
         _etaDestination = null;
+        _etaDest = null;
       });
       showInfo(context, 'ETA sharing stopped');
     }
