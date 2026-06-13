@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../okayspace_api.dart';
 import '../core/device_location.dart';
 import '../core/mapbox_api.dart';
 import '../core/tts.dart';
+import 'common.dart';
 
 /// Live, in-app turn-by-turn navigation ("Go"): follows the device location,
 /// advances the maneuver as you reach each turn, speaks guidance (web), and
@@ -19,6 +21,7 @@ class NavigationScreen extends StatefulWidget {
     required this.steps,
     required this.destination,
     this.destName,
+    this.stops = const [],
   });
 
   final List<LatLng> line;
@@ -26,19 +29,24 @@ class NavigationScreen extends StatefulWidget {
   final LatLng destination;
   final String? destName;
 
+  /// Intermediate stops (waypoints) before the destination, in order.
+  final List<LatLng> stops;
+
   static Future<void> open(
     BuildContext context, {
     required List<LatLng> line,
     required List<RouteStep> steps,
     required LatLng destination,
     String? destName,
+    List<LatLng> stops = const [],
   }) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => NavigationScreen(
             line: line,
             steps: steps,
             destination: destination,
-            destName: destName),
+            destName: destName,
+            stops: stops),
       ));
 
   @override
@@ -52,6 +60,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   late List<LatLng> _route = widget.line;
   late List<RouteStep> _steps = widget.steps;
+  // Remaining stops (waypoints) ahead; dropped as we reach each one.
+  late final List<LatLng> _stops = [...widget.stops];
   // Index of the maneuver we're heading toward (the next turn).
   late int _step = _steps.length > 1 ? 1 : 0;
 
@@ -70,6 +80,29 @@ class _NavigationScreenState extends State<NavigationScreen> {
   int? _farSpokenStep;
   int? _nearSpokenStep;
 
+  // Crowd-reported incidents/hazards shown along the route.
+  List<Hazard> _hazards = const [];
+  Timer? _hazardPoll;
+
+  // Reportable incident types: (api type, label, icon).
+  static const _incidentTypes = <(String, String, IconData)>[
+    ('police', 'Police', Icons.local_police),
+    ('accident', 'Accident', Icons.car_crash),
+    ('traffic', 'Traffic', Icons.traffic),
+    ('hazard', 'Hazard', Icons.warning_amber),
+    ('road_closed', 'Road closed', Icons.do_not_disturb_on),
+    ('construction', 'Construction', Icons.construction),
+    ('pothole', 'Pothole', Icons.report_problem),
+    ('stalled', 'Stalled car', Icons.car_repair),
+  ];
+
+  IconData _hazardIcon(String type) {
+    for (final (t, _, icon) in _incidentTypes) {
+      if (t == type) return icon;
+    }
+    return Icons.warning_amber;
+  }
+
   void _say(String text) {
     if (!_muted) speak(text);
   }
@@ -80,14 +113,134 @@ class _NavigationScreenState extends State<NavigationScreen> {
     final first = widget.steps.isNotEmpty ? widget.steps.first.instruction : '';
     _say(first.isEmpty ? 'Starting navigation' : 'Starting. $first');
     _sub = fixStream().listen(_onFix);
+    _refreshHazards();
+    _hazardPoll =
+        Timer.periodic(const Duration(seconds: 25), (_) => _refreshHazards());
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _hazardPoll?.cancel();
     stopSpeaking();
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshHazards() async {
+    final p = _pos;
+    if (p == null) return;
+    try {
+      final h = await api.hazards
+          .nearby(lat: p.latitude, lng: p.longitude, radius: 12000);
+      if (mounted) setState(() => _hazards = h);
+    } catch (_) {/* hazards are best-effort */}
+  }
+
+  /// Opens the "report incident" sheet and reports the chosen type at the
+  /// current location (Waze-style).
+  Future<void> _reportIncident() async {
+    final p = _pos;
+    if (p == null) return;
+    final type = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text('Report an incident',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 4,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.85,
+                children: [
+                  for (final (t, label, icon) in _incidentTypes)
+                    InkWell(
+                      onTap: () => Navigator.pop(context, t),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircleAvatar(
+                            radius: 24,
+                            backgroundColor: const Color(0x33EF4444),
+                            child: Icon(icon, color: const Color(0xFFEF4444)),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(label,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (type == null || !mounted) return;
+    try {
+      await api.hazards.report(type, lat: p.latitude, lng: p.longitude);
+      if (mounted) showInfo(context, 'Reported — thanks for the heads-up');
+      _refreshHazards();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Tapping a hazard marker: confirm it's still there or clear it.
+  Future<void> _tapHazard(Hazard h) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(_hazardIcon(h.type), color: const Color(0xFFEF4444)),
+              title: Text(h.type.replaceAll('_', ' ')),
+              subtitle: Text('${h.confirmations} confirmed'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.thumb_up_outlined),
+              title: const Text('Still here'),
+              onTap: () => Navigator.pop(context, 'confirm'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.clear),
+              title: const Text('Not there / gone'),
+              onTap: () => Navigator.pop(context, 'dismiss'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null) return;
+    try {
+      if (action == 'confirm') {
+        await api.hazards.confirm(h.id);
+      } else {
+        await api.hazards.dismiss(h.id);
+      }
+      _refreshHazards();
+    } catch (_) {}
   }
 
   void _onFix(GeoFix fix) {
@@ -96,6 +249,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _heading = fix.heading;
     _speedKmh = fix.speedKmh;
     if (_mapReady && _following) _controller.move(fix.point, 16.5);
+
+    // Drop a stop once we reach it (so re-routes don't send us back to it).
+    if (_stops.isNotEmpty && _distance(fix.point, _stops.first) < 40) {
+      _stops.removeAt(0);
+      _say('Stop reached');
+    }
 
     // Advance past any maneuvers we've reached.
     while (_step < _steps.length - 1) {
@@ -155,7 +314,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _lastReroute = DateTime.now();
     _say('Re-routing');
     try {
-      final r = await driveRoute([from, widget.destination]);
+      final r =
+          await driveRoute([from, ..._stops, widget.destination]);
       if (mounted && r != null && r.line.length >= 2) {
         setState(() {
           _route = r.line;
@@ -247,6 +407,38 @@ class _NavigationScreenState extends State<NavigationScreen> {
                   height: 36,
                   child: const Icon(Icons.flag, color: Color(0xFFEF4444), size: 30),
                 ),
+                // Upcoming stops (waypoints).
+                for (final s in _stops)
+                  Marker(
+                    point: s,
+                    width: 28,
+                    height: 28,
+                    child: const Icon(Icons.trip_origin,
+                        color: Color(0xFF2563EB), size: 22),
+                  ),
+                // Crowd-reported incidents along the way.
+                for (final h in _hazards)
+                  Marker(
+                    point: LatLng(h.latitude, h.longitude),
+                    width: 34,
+                    height: 34,
+                    child: GestureDetector(
+                      onTap: () => _tapHazard(h),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                          border: Border.all(
+                              color: const Color(0xFFEF4444), width: 2),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black26, blurRadius: 3),
+                          ],
+                        ),
+                        child: Icon(_hazardIcon(h.type),
+                            color: const Color(0xFFEF4444), size: 18),
+                      ),
+                    ),
+                  ),
                 if (_pos != null)
                   Marker(
                     point: _pos!,
@@ -351,6 +543,21 @@ class _NavigationScreenState extends State<NavigationScreen> {
               ),
             ),
           ),
+
+          // Report an incident (Waze-style) — bottom-left.
+          if (_pos != null && !_arrived)
+            Positioned(
+              left: 16,
+              bottom: 96,
+              child: FloatingActionButton.small(
+                heroTag: 'nav-report',
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+                tooltip: 'Report an incident',
+                onPressed: _reportIncident,
+                child: const Icon(Icons.add_alert),
+              ),
+            ),
 
           // Recenter button — only while the user has panned away.
           if (!_following && _pos != null)
