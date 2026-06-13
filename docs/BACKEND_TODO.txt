@@ -5,6 +5,30 @@ Date: 2026-06-13
 API base: https://okayspace-v0vx.onrender.com/api/v1
 Spec:     https://okayspace-v0vx.onrender.com/openapi.json  (keep this current)
 
+################################################################################
+# RE-AUDIT 2026-06-13: this backlog is essentially CLEARED. Verified against the
+# backend source + generated OpenAPI:
+#   • P1 anti-cheat — DONE: atomic debit+credit under a row lock (SELECT … FOR
+#     UPDATE in db.py), amount validation (<=0 / non-finite / >2dp rejected),
+#     per-txn caps, self-transfer 400, idempotency-key storage, Stripe webhook
+#     signature + event-id dedupe, velocity limits (429), KYC-gated cash-out,
+#     immutable money audit log + anomaly alerts.
+#   • P2 cash-out fee policy — DONE and admin-settable (POST /admin/fees accepts
+#     cashout_fee_cents / cashout_min_cents; /payments/config reads them).
+#   • P3 resume pending top-ups — DONE (client_secret on activity items).
+#   • P4 platform-controlled connected accounts — DONE (CONNECT_CONTROLLER).
+#   • P4b protected transfers + auto-deposit — DONE (/money/auto-deposit,
+#     security Q/A on send, accept-with-answer).
+#   • P4c invite-only / closed registration — DONE (/admin/registration,
+#     /admin/invites, /auth/register invite_code, public registration_mode).
+#   • P5 API hygiene — response_models: DONE for every app-called route.
+#     Timestamps/IDs: DONE. ONLY remaining: one unified error envelope.
+#   • Nice-to-haves — DONE: instant_eligible, arrival_date, counterparty_name,
+#     payouts/status balance fields, payout/top-up push.  Videos: kind +
+#     duration + /feed/videos + playlists all DONE.
+# Items below are kept for historical context; checkboxes are no longer current.
+################################################################################
+
 The Flutter app (web + iOS/Android) is ALREADY wired for everything below.
 Each item turns on automatically the moment the backend ships it — no app
 release needed. Ordered by priority. Items marked DONE are for context only.

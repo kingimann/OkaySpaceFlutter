@@ -13,6 +13,36 @@ void main() {
       expect(e.isNotFound, isTrue);
     });
 
+    test('extracts code + message from a business-error detail map', () {
+      // The backend uses {"detail": {"code", "message"}} for rate limits,
+      // self-transfer blocks, wrong security answers, invite-required, etc.
+      final e = ApiException.fromResponse(429, {
+        'detail': {
+          'code': 'rate_limited',
+          'message': 'Too many transfers in the last hour. Try again later.',
+        },
+      });
+      expect(e.statusCode, 429);
+      expect(e.code, 'rate_limited');
+      expect(e.message, 'Too many transfers in the last hour. Try again later.');
+    });
+
+    test('reads a plain string detail', () {
+      final e = ApiException.fromResponse(400, {
+        'detail': "You can't send money to yourself",
+      });
+      expect(e.message, "You can't send money to yourself");
+    });
+
+    test('prefers the top-level error envelope over detail', () {
+      final e = ApiException.fromResponse(403, {
+        'error': {'code': 'forbidden', 'message': 'Not allowed'},
+        'detail': {'code': 'other', 'message': 'ignored'},
+      });
+      expect(e.code, 'forbidden');
+      expect(e.message, 'Not allowed');
+    });
+
     test('reads FastAPI 422 detail lists', () {
       final e = ApiException.fromResponse(422, {
         'detail': [

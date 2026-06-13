@@ -3,6 +3,21 @@ OKAYSPACE BACKEND — REMAINING APIs FOR FULLY IN-APP MONEY FLOWS
 ================================================================================
 Updated: 2026-06-13 02:00 UTC (verified against the live OpenAPI spec)
 
+################################################################################
+# RE-AUDIT 2026-06-13: ALL items below are now shipped.
+#   1. client_secret on pending top-up activity items .............. DONE
+#   2. balance fields on GET /payments/payouts/status ............... DONE
+#      (wallet_balance / stripe_available / stripe_pending)
+#   3. platform-controlled connected accounts ....................... DONE
+#   4. cash-out $20 min / $2 fee, admin-settable .................... DONE
+#   5. server-side anti-cheat checklist ............................. DONE
+#      (row-locked atomic balance, idempotency, webhook dedupe,
+#       velocity 429s, KYC-gated cash-out, audit log + anomaly alerts)
+#   nice-to-haves (instant_eligible, arrival_date, counterparty_name,
+#   payout/top-up push) ............................................. DONE
+# Detail below retained for context.
+################################################################################
+
 The Flutter app is fully wired for everything below — each item lights up
 automatically when the backend ships it. No app changes needed.
 

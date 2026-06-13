@@ -9,9 +9,22 @@ Method: cross-referenced every (method, path) the Flutter app calls (382 distinc
 against the live OpenAPI, then probed the live server for the mismatches
 (401/403 = route exists but needs auth · 404 = not served · 405 = wrong method).
 
+################################################################################
+# STATUS 2026-06-13 (re-audited): ALL audit items are RESOLVED (§1, §2a, §2b,
+# §2c, §3, §4). All 382 distinct (method, path) the app calls resolve on the
+# backend with the matching method (0 broken, 0 method mismatches). Every
+# success response the app reads declares a response_model (0 untyped), and the
+# error envelope is now documented in OpenAPI (ErrorEnvelope on all 492
+# operations). Section-by-section resolution is noted inline below.
+################################################################################
+
 ================================================================================
 §1. BROKEN ROUTES — app calls a path/method the backend does NOT serve
 ================================================================================
+*** RESOLVED 2026-06-13 — app paths fixed (see inline notes) and the two
+    "needs a decision" routes were added: GET /admin/badges (list) and
+    GET/POST /admin/mobile-only (PC gate) now exist on the backend. ***
+
 These silently fail today (like the registration bug). Live probe results:
 
   App call (method path)                     Live  Backend actually serves
@@ -50,10 +63,22 @@ Classification + recommended fix:
 ================================================================================
 §2. OPENAPI HYGIENE — what the spec needs (so the app can stop key-probing)
 ================================================================================
-2a. EMPTY / UNTYPED SUCCESS SCHEMAS — 57 of 487 operations declare no response
-    model (200 with no/loose schema). The app must guess field names
-    (e.g. token ?? access_token, data ?? items ?? results). Declare a
-    response_model on each. The 33 the app actively calls (highest priority):
+2a. EMPTY / UNTYPED SUCCESS SCHEMAS
+    *** RESOLVED 2026-06-13 — every operation the app actively calls now
+        declares a response_model (0 untyped app-called operations remain, down
+        from 33). Newly typed in this pass: GET/POST/PATCH /circles,
+        GET/POST /games + GET /games/{id}, GET/POST/POST /forms[/{id}],
+        GET /admin/ad-revenue, POST /promoted/links, POST /promoted/reels,
+        POST /admin/bot/run, GET /promoted/account, POST /media/resolve-video,
+        POST /pub/sites, GET /admin/roadside/verifications,
+        GET /roadside/active, GET /roadside/helping. Models use
+        extra="allow" so no field the app reads was dropped — responses are
+        byte-for-byte identical, only the spec changed. The app can stop
+        key-probing these. (A handful of operations the app does NOT call are
+        still untyped; harmless.)
+
+    Original finding (for context) — 57 of 487 operations declared no response
+    model; the 33 the app actively called (all now done):
 
     POST /auth/login                 (the app key-probes the SESSION TOKEN here)
     GET  /money/requests             POST /money/request
@@ -78,34 +103,49 @@ Classification + recommended fix:
     Pick ONE error envelope, declare it as the response_model on 4xx/5xx, and
     document the "code" values so the app/SDK can branch on them.
 
-2c. AUTH-BEFORE-VALIDATION — some protected routes 422 on a missing field
-    before checking the token; they should 401 first.
+2c. AUTH-BEFORE-VALIDATION — *** RESOLVED 2026-06-13 *** protected routes now
+    check the token before validating the body (401 before 422).
 
 2d. CONSISTENCY — timestamps ISO-8601 UTC with trailing Z; IDs always strings.
 
 ================================================================================
 §3. FEATURE GAPS — optional, app works without them
 ================================================================================
-3a. kind field on Post / PostCreate ("post" | "reel" | "video"). CONFIRMED
-    ABSENT. The app still infers "video" from a titled video post and "reel"
-    from an untitled one; an explicit kind removes the heuristic.
-3b. GET /feed/videos (landscape/titled videos only). CONFIRMED ABSENT. The
-    Videos screen merges /feed/reels + /reels/popular and filters client-side.
+*** RESOLVED 2026-06-13 — both shipped. ***
+3a. kind field on Post / PostCreate ("post" | "reel" | "video") — now present
+    (PostCreate.kind + Post.kind), derived from media+title when omitted.
+3b. GET /feed/videos (landscape/titled videos only) — now served, so the
+    Videos screen no longer has to filter the reels feed client-side.
 
 ================================================================================
 §4. KNOWN BACKEND BUG (already written up separately)
 ================================================================================
-Registration mode (open/invite/closed) doesn't persist to /public/app-config.
-Full spec + acceptance test in docs/REGISTRATION_MODE_BACKEND.txt.
+*** RESOLVED 2026-06-13 — registration mode now persists (upsert) and is
+    surfaced on /public/app-config as "registration_mode". ***
+Original: registration mode (open/invite/closed) didn't persist to
+/public/app-config. Full spec + acceptance test in REGISTRATION_MODE_BACKEND.txt.
 
 ================================================================================
-PRIORITY ORDER
+PRIORITY ORDER  (updated 2026-06-13)
 ================================================================================
-1. §1 broken admin routes — features are dead today (fix app paths; add the two
-   missing backend routes or drop those toggles).
-2. §4 registration persistence (separate file).
-3. §2a response_model on /auth/login + the money/* and support/* routes the app
-   key-probes.
-4. §2b single documented error envelope.
-5. §3 optional kind / /feed/videos.
+1. §1 broken admin routes ............................... ✔ DONE
+2. §4 registration persistence (separate file) .......... ✔ DONE
+3. §2a response_model on the routes the app key-probes .. ✔ DONE
+4. §2b single documented error envelope ................. ✔ DONE
+5. §3 optional kind / /feed/videos ...................... ✔ DONE
+
+ALL audit items are now resolved.
+
+§2b: the backend already funnels every non-2xx through one structured shape —
+{"error":{code,message,…}, "detail":{…same…}} (`detail` duplicated for
+backwards compatibility) — and as of 2026-06-13 the OpenAPI spec documents it:
+ErrorEnvelope/ErrorBody are declared in components and attached as the
+`default` (error) response on all 492 operations, with the common `code`
+values published, so generated SDKs get a typed error to branch on. The app
+also robustly parses every shape the backend emits — top-level
+{"error":{code,message}}, business-error {"detail":{code,message}}, a plain
+{"detail":"msg"}, and the FastAPI 422 {"detail":[…]} list (the
+{"detail":{code,message}} business errors — rate limits, self-transfer, wrong
+security answer, invite-required — were being shown as a generic status message
+until the app-side fix on 2026-06-13).
 ================================================================================

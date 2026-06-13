@@ -31,7 +31,7 @@ class SupportService {
   /// Adds a reply to a ticket.
   Future<Map<String, dynamic>> reply(String ticketId, String message) async =>
       _map(await _client.postJson('/support/tickets/$ticketId/messages',
-          body: {'message': message}));
+          body: {'text': message}));
 
   /// Updates a ticket's status (e.g. close/reopen).
   Future<void> setStatus(String ticketId, String status) async {
