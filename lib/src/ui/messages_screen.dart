@@ -742,6 +742,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = true;
   Object? _error;
   Timer? _poll;
+  // Live presence of the other participant(s): polled while the chat is open.
+  Timer? _presencePoll;
+  bool _otherTyping = false;
   final _input = TextEditingController();
   final _scroll = ScrollController();
   bool _showJump = false;
@@ -847,11 +850,27 @@ class _ChatScreenState extends State<ChatScreen> {
       _fetch(silent: true);
       api.messaging.pingPresence().ignore();
     });
+    // Faster, lightweight presence poll so the "typing…" indicator is timely
+    // (the backend's typing window is ~6s).
+    _refreshPresence();
+    _presencePoll = Timer.periodic(
+        const Duration(seconds: 3), (_) => _refreshPresence());
+  }
+
+  Future<void> _refreshPresence() async {
+    try {
+      final p = await api.messaging.presence(_convId);
+      final typing = p['typing'] == true;
+      if (mounted && typing != _otherTyping) {
+        setState(() => _otherTyping = typing);
+      }
+    } catch (_) {/* presence is best-effort */}
   }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _presencePoll?.cancel();
     _typingTimer?.cancel();
     _highlightTimer?.cancel();
     _draftTimer?.cancel();
@@ -3498,7 +3517,13 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                     ],
                   ),
-                  if (other != null)
+                  if (_otherTyping)
+                    Text('typing…',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                            color: Theme.of(context).colorScheme.primary))
+                  else if (other != null)
                     Text(other.online ? 'Online' : 'Offline',
                         style: TextStyle(
                             fontSize: 12,
