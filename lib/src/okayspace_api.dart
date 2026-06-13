@@ -19,6 +19,7 @@ import 'services/notifications_service.dart';
 import 'services/oauth_service.dart';
 import 'services/payments_service.dart';
 import 'services/roadside_service.dart';
+import 'services/hazards_service.dart';
 import 'services/stories_service.dart';
 import 'services/support_service.dart';
 import 'services/users_service.dart';
@@ -67,6 +68,7 @@ class OkaySpaceApi {
     friends = FriendsService(this.client);
     notifications = NotificationsService(this.client);
     roadside = RoadsideService(this.client);
+    hazards = HazardsService(this.client);
     payments = PaymentsService(this.client);
     ads = AdsService(this.client);
     support = SupportService(this.client);
@@ -124,6 +126,9 @@ class OkaySpaceApi {
 
   /// `/roadside` — roadside assistance requests and lifecycle.
   late final RoadsideService roadside;
+
+  /// `/hazards` — crowd-reported road incidents.
+  late final HazardsService hazards;
 
   /// `/payments` — checkout, payment intents, identity and payout setup.
   late final PaymentsService payments;
