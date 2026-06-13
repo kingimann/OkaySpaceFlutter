@@ -1600,9 +1600,19 @@ class _MapScreenState extends State<MapScreen> {
         for (final r in _roadside)
           if (_roadsideStatus == 'all' ||
               r.status.toLowerCase() == _roadsideStatus)
-            _marker(LatLng(r.latitude, r.longitude), Icons.car_repair,
-                const Color(0xFFF59E0B), () => _showRoadsideReq(r),
-                label: r.service),
+            ...[
+              _marker(LatLng(r.latitude, r.longitude), Icons.car_repair,
+                  const Color(0xFFF59E0B), () => _showRoadsideReq(r),
+                  label: r.service),
+              // Tow drop-off, flagged and linked to the pickup (line below).
+              if (r.destLatitude != null && r.destLongitude != null)
+                _marker(
+                    LatLng(r.destLatitude!, r.destLongitude!),
+                    Icons.flag,
+                    const Color(0xFFF59E0B),
+                    () => _showRoadsideReq(r),
+                    label: r.destName ?? 'Drop-off'),
+            ],
       if (_showTransit)
         for (final t in _transit)
           if (_num(t['lat'] ?? t['latitude']) != null &&
@@ -1733,6 +1743,23 @@ class _MapScreenState extends State<MapScreen> {
                     strokeWidth: 5,
                     color: const Color(0xFF2563EB),
                   ),
+                ]),
+              // Tow pickup → drop-off connectors.
+              if (_showRoadside)
+                PolylineLayer(polylines: [
+                  for (final r in _roadside)
+                    if (r.destLatitude != null &&
+                        r.destLongitude != null &&
+                        (_roadsideStatus == 'all' ||
+                            r.status.toLowerCase() == _roadsideStatus))
+                      Polyline(
+                        points: [
+                          LatLng(r.latitude, r.longitude),
+                          LatLng(r.destLatitude!, r.destLongitude!),
+                        ],
+                        strokeWidth: 2,
+                        color: const Color(0xFFF59E0B),
+                      ),
                 ]),
               // GPS accuracy ring under the location dot (Apple Maps style).
               if (_myLocation != null && _gpsAccuracyM > 10)
@@ -2414,13 +2441,26 @@ class _MapScreenState extends State<MapScreen> {
           subtitle: Text([
             if (r.placeName != null) r.placeName!,
             'Status: ${r.status}',
+            if (r.destName != null && r.destName!.isNotEmpty)
+              'Drop-off: ${r.destName}',
             if (r.distanceKm != null) '${r.distanceKm!.toStringAsFixed(1)} km away',
           ].join(' · ')),
-          trailing: IconButton(
-            icon: const Icon(Icons.directions_outlined),
-            tooltip: 'Open in Maps',
-            onPressed: () =>
-                _openExternal(LatLng(r.latitude, r.longitude)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (r.destLatitude != null && r.destLongitude != null)
+                IconButton(
+                  icon: const Icon(Icons.flag_outlined),
+                  tooltip: 'Drop-off in Maps',
+                  onPressed: () => _openExternal(
+                      LatLng(r.destLatitude!, r.destLongitude!)),
+                ),
+              IconButton(
+                icon: const Icon(Icons.directions_outlined),
+                tooltip: 'Open in Maps',
+                onPressed: () => _openExternal(LatLng(r.latitude, r.longitude)),
+              ),
+            ],
           ),
         ),
       ),
