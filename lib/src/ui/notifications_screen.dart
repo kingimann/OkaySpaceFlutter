@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'messages_screen.dart';
 import 'post_detail_screen.dart';
 import 'profile_screen.dart';
 
@@ -73,8 +74,38 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       } catch (e) {
         if (mounted) showError(context, e);
       }
+    } else if (n.conversationId != null) {
+      await _openConversation(n.conversationId!);
     } else if (n.actorId != null) {
       if (mounted) ProfileScreen.open(context, n.actorId!);
+    }
+  }
+
+  /// Opens the chat a message/group notification points at (looked up in the
+  /// conversation list, since ChatScreen needs the full conversation).
+  Future<void> _openConversation(String convId) async {
+    try {
+      final convs = await api.messaging.conversations();
+      ConversationView? match;
+      for (final c in convs) {
+        if (c.id == convId) {
+          match = c;
+          break;
+        }
+      }
+      if (!mounted) return;
+      if (match == null) {
+        showInfo(context, 'Conversation not found');
+        return;
+      }
+      final conv = match;
+      final title = (conv.name != null && conv.name!.isNotEmpty)
+          ? conv.name!
+          : (conv.otherUser?.name ?? 'Conversation');
+      Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => ChatScreen(conversation: conv, title: title)));
+    } catch (e) {
+      if (mounted) showError(context, e);
     }
   }
 
@@ -125,6 +156,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
+  /// Activity rows point at a post (open the thread) or, failing that, the
+  /// actor's profile. Previously these rows were inert.
+  Future<void> _openActivity(Map<String, dynamic> a) async {
+    final postId = a['post_id']?.toString();
+    final actorId = a['actor_id']?.toString();
+    if (postId != null && postId.isNotEmpty) {
+      try {
+        final post = await api.feed.getPost(postId);
+        if (mounted) PostDetailScreen.open(context, post);
+      } catch (e) {
+        if (mounted) showError(context, e);
+      }
+    } else if (actorId != null && actorId.isNotEmpty) {
+      if (mounted) ProfileScreen.open(context, actorId);
+    }
+  }
+
   Widget _buildActivity() {
     return AsyncList<Map<String, dynamic>>(
       future: _activity,
@@ -142,6 +190,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 url: '${a['actor_picture'] ?? a['picture'] ?? ''}',
                 name: actor.isEmpty ? '?' : actor),
             title: Text(actor.isEmpty ? text : '$actor $text'),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: () => _openActivity(a),
           );
         },
       ),
