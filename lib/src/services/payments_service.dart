@@ -80,6 +80,12 @@ class PaymentsService {
   Future<Map<String, dynamic>> cashout(Map<String, dynamic> body) async =>
       _map(await _client.postJson('/payments/payouts/cashout', body: body));
 
+  /// Sets how often the user gets paid automatically:
+  /// manual | weekly | biweekly | monthly.
+  Future<Map<String, dynamic>> setPayoutSchedule(String interval) async =>
+      _map(await _client.postJson('/payments/payouts/schedule',
+          body: {'interval': interval}));
+
   /// Adds a debit card as payout destination ([token] is a Stripe card
   /// token created client-side; raw card numbers never reach the backend).
   Future<Map<String, dynamic>> addDebitCard(String token) async =>
