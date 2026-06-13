@@ -66,7 +66,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // button appears).
   bool _following = true;
   DateTime _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
-  int? _spokenStep;
+  // Per-step voice cues: a heads-up further out, then a final cue at the turn.
+  int? _farSpokenStep;
+  int? _nearSpokenStep;
 
   void _say(String text) {
     if (!_muted) speak(text);
@@ -100,7 +102,6 @@ class _NavigationScreenState extends State<NavigationScreen> {
       final loc = _steps[_step].location;
       if (loc != null && _distance(fix.point, loc) < 25) {
         _step++;
-        _spokenStep = null;
       } else {
         break;
       }
@@ -112,14 +113,23 @@ class _NavigationScreenState extends State<NavigationScreen> {
       _say('You have arrived${widget.destName != null ? ' at ${widget.destName}' : ''}.');
     }
 
-    // Voice the upcoming maneuver once we're close (or immediately after a turn).
-    if (_step < _steps.length && _spokenStep != _step) {
+    // Two-stage voice for the upcoming maneuver: a heads-up (scaled by speed,
+    // ~10s of travel, 250–600 m) then a final cue right at the turn.
+    if (_step < _steps.length && !_arrived) {
       final cur = _steps[_step];
-      final d = cur.location != null ? _distance(fix.point, cur.location!) : 0.0;
-      if (d < 250) {
-        final say = cur.instruction.isEmpty ? 'Continue' : cur.instruction;
-        _say(say);
-        _spokenStep = _step;
+      final loc = cur.location;
+      if (loc != null) {
+        final d = _distance(fix.point, loc);
+        final instr = cur.instruction.isEmpty ? 'Continue' : cur.instruction;
+        final farTrigger = (_speedKmh * 10).clamp(250.0, 600.0);
+        if (_farSpokenStep != _step && d <= farTrigger && d > 120) {
+          _say('In ${_fmt(d)}, $instr');
+          _farSpokenStep = _step;
+        }
+        if (_nearSpokenStep != _step && d <= 120) {
+          _say(instr);
+          _nearSpokenStep = _step;
+        }
       }
     }
 
@@ -151,7 +161,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
           _route = r.line;
           _steps = r.steps;
           _step = _steps.length > 1 ? 1 : 0;
-          _spokenStep = null;
+          _farSpokenStep = null;
+          _nearSpokenStep = null;
         });
       }
     } catch (_) {/* keep the old route on failure */} finally {
@@ -346,22 +357,21 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _arrived ? 'Arrived' : '~$etaMin min · ${_fmt(remaining)}',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 17),
-                          ),
-                          if (_rerouting)
-                            Text('Re-routing…',
-                                style: TextStyle(
-                                    color: scheme.outline, fontSize: 12)),
-                        ],
+                      child: Text(
+                        _arrived
+                            ? 'Arrived'
+                            : (_rerouting
+                                ? 'Re-routing…'
+                                : '~$etaMin min · ${_fmt(remaining)}'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 17),
                       ),
                     ),
                     IconButton(
+                      visualDensity: VisualDensity.compact,
                       icon: Icon(
                           _muted ? Icons.volume_off : Icons.volume_up_outlined),
                       tooltip: _muted ? 'Unmute voice' : 'Mute voice',
@@ -374,7 +384,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
                           backgroundColor: scheme.error,
-                          foregroundColor: scheme.onError),
+                          foregroundColor: scheme.onError,
+                          visualDensity: VisualDensity.compact),
                       icon: const Icon(Icons.close),
                       label: const Text('End'),
                       onPressed: () => Navigator.of(context).pop(),
