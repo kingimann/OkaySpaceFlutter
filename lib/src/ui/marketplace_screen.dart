@@ -283,6 +283,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'mine') _openMine();
+              if (v == 'offers') {
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const MyOffersScreen()));
+              }
               if (v == 'business') {
                 Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => const BusinessScreen()));
@@ -290,6 +294,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'mine', child: Text('My listings')),
+              PopupMenuItem(value: 'offers', child: Text('My offers')),
               PopupMenuItem(value: 'business', child: Text('My storefront')),
             ],
           ),
@@ -575,6 +580,31 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     );
   }
 
+  Future<void> _markSold(Listing l) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as sold?'),
+        content: const Text("Buyers won't be able to make new offers, and it'll "
+            'show as sold.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Mark sold')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await api.marketplace.update(l.id, {'status': 'sold'});
+      if (mounted) {
+        setState(() => _listing = api.marketplace.get(widget.listingId));
+        showInfo(context, 'Marked as sold');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _copyLink() async {
     await Clipboard.setData(ClipboardData(
         text: 'https://okayspace.ca/listing/${widget.listingId}'));
@@ -766,13 +796,26 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     ],
                     if (currentUserId != null && currentUserId == l.userId) ...[
                       const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () => _viewOffers(l),
-                          icon: const Icon(Icons.local_offer_outlined),
-                          label: const Text('View offers'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _viewOffers(l),
+                              icon: const Icon(Icons.local_offer_outlined),
+                              label: const Text('View offers'),
+                            ),
+                          ),
+                          if (l.status != 'sold') ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => _markSold(l),
+                                icon: const Icon(Icons.sell_outlined),
+                                label: const Text('Mark sold'),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                     if (_moreFromSeller != null)
@@ -1226,6 +1269,181 @@ class _ListingOffersSheetState extends State<_ListingOffersSheet> {
           },
         ),
       ),
+    );
+  }
+}
+
+
+/// The current user's offers: ones they received (on their listings) and ones
+/// they made. Sellers accept/counter/decline; buyers accept a counter or
+/// withdraw. Completes the offers flow begun on the listing detail screen.
+class MyOffersScreen extends StatefulWidget {
+  const MyOffersScreen({super.key});
+
+  @override
+  State<MyOffersScreen> createState() => _MyOffersScreenState();
+}
+
+class _MyOffersScreenState extends State<MyOffersScreen> {
+  late Future<Map<String, dynamic>> _offers;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _offers = api.marketplace.myOffers();
+  }
+
+  void _reload() => setState(() => _offers = api.marketplace.myOffers());
+
+  Future<void> _act(Future<void> Function() op) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await op();
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _counter(String offerId) async {
+    final ctl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Counter offer'),
+        content: TextField(
+          controller: ctl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Your price'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Counter')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final amount = num.tryParse(ctl.text.trim());
+    if (amount == null || amount <= 0) {
+      if (mounted) showInfo(context, 'Enter a valid amount');
+      return;
+    }
+    await _act(() => api.marketplace.counterOffer(offerId, amount));
+  }
+
+  String _money(Object? v) =>
+      '\$${(num.tryParse('${v ?? 0}') ?? 0).toStringAsFixed(2)}';
+
+  List<Map<String, dynamic>> _asList(Object? v) => v is List
+      ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+      : const [];
+
+  Widget _receivedTile(Map<String, dynamic> o) {
+    final status = '${o['status'] ?? 'pending'}';
+    final open = status == 'pending' || status == 'countered';
+    final id = '${o['id']}';
+    return ListTile(
+      title: Text('${o['buyer_name'] ?? 'A buyer'} · ${_money(o['amount'])}'),
+      subtitle: Text([
+        '${o['listing_title'] ?? 'Listing'}',
+        status,
+        if (o['counter_amount'] != null) 'you countered ${_money(o['counter_amount'])}',
+      ].join(' · ')),
+      trailing: open
+          ? Wrap(spacing: 4, children: [
+              IconButton(
+                  tooltip: 'Accept',
+                  icon: const Icon(Icons.check_circle_outline),
+                  onPressed: _busy ? null : () => _act(() => api.marketplace.acceptOffer(id))),
+              IconButton(
+                  tooltip: 'Counter',
+                  icon: const Icon(Icons.swap_horiz),
+                  onPressed: _busy ? null : () => _counter(id)),
+              IconButton(
+                  tooltip: 'Decline',
+                  icon: const Icon(Icons.cancel_outlined),
+                  onPressed: _busy ? null : () => _act(() => api.marketplace.declineOffer(id))),
+            ])
+          : null,
+    );
+  }
+
+  Widget _madeTile(Map<String, dynamic> o) {
+    final status = '${o['status'] ?? 'pending'}';
+    final id = '${o['id']}';
+    final countered = status == 'countered' && o['counter_amount'] != null;
+    final open = status == 'pending' || status == 'countered';
+    return ListTile(
+      title: Text('${o['listing_title'] ?? 'Listing'} · ${_money(o['amount'])}'),
+      subtitle: Text(countered
+          ? 'Seller countered ${_money(o['counter_amount'])}'
+          : status),
+      trailing: Wrap(spacing: 4, children: [
+        if (countered)
+          IconButton(
+              tooltip: 'Accept counter',
+              icon: const Icon(Icons.check_circle_outline),
+              onPressed: _busy ? null : () => _act(() => api.marketplace.acceptCounter(id))),
+        if (open)
+          IconButton(
+              tooltip: 'Withdraw',
+              icon: const Icon(Icons.undo),
+              onPressed: _busy ? null : () => _act(() => api.marketplace.withdrawOffer(id))),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('My offers'),
+          bottom: const TabBar(tabs: [Tab(text: 'Received'), Tab(text: 'Made')]),
+        ),
+        body: FutureBuilder<Map<String, dynamic>>(
+          future: _offers,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snap.hasError) {
+              return Center(child: Text('Couldn\'t load offers: ${snap.error}'));
+            }
+            final received = _asList(snap.data?['received']);
+            final made = _asList(snap.data?['made']);
+            return TabBarView(children: [
+              _OfferList(items: received, empty: 'No offers received yet.', tile: _receivedTile),
+              _OfferList(items: made, empty: "You haven't made any offers yet.", tile: _madeTile),
+            ]);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _OfferList extends StatelessWidget {
+  const _OfferList({required this.items, required this.empty, required this.tile});
+
+  final List<Map<String, dynamic>> items;
+  final String empty;
+  final Widget Function(Map<String, dynamic>) tile;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return Center(child: Text(empty));
+    }
+    return ListView.separated(
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (_, i) => tile(items[i]),
     );
   }
 }
