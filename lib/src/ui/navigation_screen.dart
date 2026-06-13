@@ -278,7 +278,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 margin: const EdgeInsets.all(12),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1B2430),
+                  // Turn green on arrival as a clear success state.
+                  color: _arrived
+                      ? const Color(0xFF16A34A)
+                      : const Color(0xFF1B2430),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: const [
                     BoxShadow(color: Colors.black38, blurRadius: 12),
@@ -286,8 +289,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 ),
                 child: Row(
                   children: [
-                    Icon(cur != null ? _icon(cur) : Icons.navigation,
-                        color: Colors.white, size: 38),
+                    Icon(
+                        _arrived
+                            ? Icons.check_circle
+                            : (cur != null ? _icon(cur) : Icons.navigation),
+                        color: Colors.white,
+                        size: 38),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -299,7 +306,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                                     color: Colors.white70, fontSize: 13)),
                           Text(
                             _arrived
-                                ? 'You have arrived'
+                                ? 'You\'ve arrived${widget.destName != null ? ' at ${widget.destName}' : ''}'
                                 : (cur?.instruction.isNotEmpty == true
                                     ? cur!.instruction
                                     : 'Continue'),
@@ -414,11 +421,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     const SizedBox(width: 4),
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
-                          backgroundColor: scheme.error,
-                          foregroundColor: scheme.onError,
+                          backgroundColor:
+                              _arrived ? const Color(0xFF16A34A) : scheme.error,
+                          foregroundColor: Colors.white,
                           visualDensity: VisualDensity.compact),
-                      icon: const Icon(Icons.close),
-                      label: const Text('End'),
+                      icon: Icon(_arrived ? Icons.check : Icons.close),
+                      label: Text(_arrived ? 'Done' : 'End'),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
