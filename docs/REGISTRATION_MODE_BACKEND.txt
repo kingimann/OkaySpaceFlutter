@@ -1,0 +1,92 @@
+================================================================================
+REGISTRATION MODE — BACKEND FIX SPEC (open / invite-only / closed)
+================================================================================
+Written: 2026-06-13 · backend repo: kingimann/OkaySpace (TypeScript)
+Base: https://okayspace-v0vx.onrender.com/api/v1
+
+SYMPTOM (reported)
+  Setting registration to "Invite only" or "Closed" in Admin → Payments & data
+  has no effect — sign-up stays open.
+
+DIAGNOSIS
+  The Flutter app is wired correctly on both sides:
+    - Admin set:  POST /admin/registration  body {"mode": "..."}   (matches spec)
+    - Sign-up read: GET /public/app-config → registration_mode  (no client cache)
+    - register_screen gating is correct: "closed" disables submit + shows a
+      banner; "invite" requires a code (_canSubmit enforces both).
+  But the LIVE config still reports the default:
+    GET /public/app-config →
+      { "web_build": "...", "mobile_web_gate": true, "registration_mode": "open" }
+  So the admin write is NOT reaching what the public config returns. This is a
+  backend bug — fix it in kingimann/OkaySpace.
+
+--------------------------------------------------------------------------------
+1. ONE PERSISTED SOURCE OF TRUTH  (the actual bug)
+--------------------------------------------------------------------------------
+- Store the mode in a PERSISTENT store (DB row / settings table / KV), NOT a
+  module-level variable. On Render, in-memory state is lost on every
+  deploy/restart and isn't shared across instances — that alone explains
+  "it doesn't stick."
+- POST /admin/registration {mode} writes that row.
+- GET /admin/registration AND GET /public/app-config BOTH read the same row.
+- Validate mode ∈ {open, invite, closed}; reject otherwise with 400.
+- Default to "open" when unset.
+- Confirm: set "closed", then `curl …/public/app-config` → registration_mode
+  must read "closed".
+
+--------------------------------------------------------------------------------
+2. ENDPOINT CONTRACTS  (match what the app already sends/reads)
+--------------------------------------------------------------------------------
+GET  /admin/registration   (admin) → { "mode": "open"|"invite"|"closed" }
+POST /admin/registration   (admin)   body { "mode": "..." }
+                                    → { "mode": "..." }   (persist, return saved)
+GET  /public/app-config              → must include "registration_mode"
+                                       reflecting the saved value (the field
+                                       already exists; wire it to the same store)
+
+--------------------------------------------------------------------------------
+3. ENFORCE THE MODE AT /auth/register  (server-side — the gate that matters)
+--------------------------------------------------------------------------------
+The app disables its button, but the server MUST enforce regardless of client:
+- closed: reject ALL registration → 403, clear message
+          ("Registration is currently closed").
+- invite: require invite_code in the body; missing/invalid/already-used
+          → 400/403 ("A valid invite code is required"). On success, CONSUME
+          the code (mark used) ATOMICALLY in the same transaction as account
+          creation, so a code can't be reused via a race.
+- open:   ignore invite_code, register normally.
+
+  Register body (already sent by the app):
+    { email, password, name, username, invite_code?:string|null }
+
+--------------------------------------------------------------------------------
+4. INVITE CODES LIFECYCLE  (admin)
+--------------------------------------------------------------------------------
+GET    /admin/invites
+       → { "data": [ { "code": str, "used": bool, "used_by": str|null,
+                       "created_at": iso } ] }
+POST   /admin/invites   body { "count": int }
+       → { "codes": ["ABC123", ...] }     (N unique, hard-to-guess codes)
+DELETE /admin/invites/{code}  → { "ok": true }
+- Single-use: consumed on a successful invite registration; used/used_by set.
+
+--------------------------------------------------------------------------------
+5. AUTH + EDGE CASES
+--------------------------------------------------------------------------------
+- All /admin/* routes: require an authenticated ADMIN; check token/role BEFORE
+  validating the body (return 401 for non-admins, not 422).
+- The mode is read on every /public/app-config poll (~every 3 min per client):
+  cache in-process with a short TTL if needed, but the WRITE must
+  invalidate/update it so changes show up promptly.
+
+--------------------------------------------------------------------------------
+ACCEPTANCE TEST
+--------------------------------------------------------------------------------
+1. As admin, POST /admin/registration {"mode":"closed"} → 200 {"mode":"closed"}.
+2. GET /public/app-config → registration_mode: "closed".
+3. POST /auth/register {...} (no code) → 403.
+4. Switch to "invite"; register without a code → 400/403; generate a code via
+   POST /admin/invites; register with it → success; reuse same code → rejected.
+5. Restart/redeploy the service → the mode is still whatever you last set
+   (proves it's persisted).
+================================================================================

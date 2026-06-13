@@ -1,0 +1,111 @@
+================================================================================
+BACKEND + OPENAPI GAP AUDIT
+================================================================================
+Generated: 2026-06-13 · base https://okayspace-v0vx.onrender.com/api/v1
+Spec: https://okayspace-v0vx.onrender.com/openapi.json (409 paths · 487 operations)
+Backend repo: kingimann/OkaySpace (TypeScript)
+
+Method: cross-referenced every (method, path) the Flutter app calls (382 distinct)
+against the live OpenAPI, then probed the live server for the mismatches
+(401/403 = route exists but needs auth · 404 = not served · 405 = wrong method).
+
+================================================================================
+§1. BROKEN ROUTES — app calls a path/method the backend does NOT serve
+================================================================================
+These silently fail today (like the registration bug). Live probe results:
+
+  App call (method path)                     Live  Backend actually serves
+  -----------------------------------------  ----  ----------------------------
+  POST /admin/reset-money                    404   POST /admin/reset/money   (401)
+  POST /admin/reset-analytics                404   POST /admin/reset/analytics (401)
+  GET  /admin/mobile-only                    404   (only /admin/mobile-web-gate)
+  POST /admin/mobile-only                    404   (only /admin/mobile-web-gate)
+  POST /admin/web-build/bump                 404   POST /admin/web-build     (401)
+  POST /admin/render/.../env-vars            405   PUT  /admin/render/.../env-vars/{key}
+  GET  /admin/badges                         405   (only POST + DELETE/{id})
+  PATCH  /admin/users/{id}/transactions/{t}  404   PATCH  /admin/users/{id}/transaction (422)
+  DELETE /admin/users/{id}/transactions/{t}  404   DELETE /admin/users/{id}/transaction
+
+Classification + recommended fix:
+
+  APP-SIDE PATH/METHOD FIXES (backend route exists under another name):
+    [FIXED 2026-06-13 in admin_service.dart]
+    - "Reset money" / "Reset analytics": now call /admin/reset/money and
+      /admin/reset/analytics (slash, not hyphen).
+    - "Force web update": now POST /admin/web-build (there is no /bump route).
+    - Render env-var set: now PUT /admin/render/services/{sid}/env-vars/{key}
+      with {value} (was POST .../env-vars).
+    - Edit/delete a user transaction: now use /admin/users/{id}/transaction
+      (singular) with ref=txnId in the body (edit) / query (delete) and
+      adjust_balance — the plural/{txn} path didn't exist.
+
+  NEEDS A DECISION (no backend route at all):
+    - /admin/mobile-only (PC gate): the app's "Mobile only (PC gate)" toggle
+      has no endpoint. Either add GET/POST /admin/mobile-only on the backend,
+      or drop the toggle / fold it into mobile-web-gate.
+    - GET /admin/badges: the app lists badge definitions, but the backend only
+      has POST /admin/badges + DELETE /admin/badges/{id}. Add a GET to list,
+      or remove the app's badge-list read.
+
+================================================================================
+§2. OPENAPI HYGIENE — what the spec needs (so the app can stop key-probing)
+================================================================================
+2a. EMPTY / UNTYPED SUCCESS SCHEMAS — 57 of 487 operations declare no response
+    model (200 with no/loose schema). The app must guess field names
+    (e.g. token ?? access_token, data ?? items ?? results). Declare a
+    response_model on each. The 33 the app actively calls (highest priority):
+
+    POST /auth/login                 (the app key-probes the SESSION TOKEN here)
+    GET  /money/requests             POST /money/request
+    POST /money/requests/{id}/pay    POST /money/requests/{id}/decline
+    POST /money/requests/{id}/cancel
+    GET  /money/security             POST /money/security
+    GET  /circles                    POST /circles            PATCH /circles/{id}
+    GET  /forms/{id}                 POST /forms              POST /forms/{id}
+    GET  /games                      GET  /games/{id}         POST /games
+    GET  /support/tickets            GET  /support/tickets/{id}
+    POST /support/tickets            POST /support/tickets/{id}/messages
+    POST /support/tickets/{id}/status
+    GET  /admin/ad-revenue           GET  /admin/roadside/verifications
+    GET  /admin/support/tickets      POST /admin/bot/run
+    GET  /promoted/account           POST /promoted/links     POST /promoted/reels
+    GET  /roadside/active            GET  /roadside/helping
+    POST /media/resolve-video        POST /pub/sites
+
+2b. ERROR ENVELOPE — the spec declares ONLY 422 HTTPValidationError (471x) and
+    NO schema for 4xx/5xx business errors. Today responses carry both
+    {"error":{...}} and {"detail":{...}} shapes with undocumented "code"s.
+    Pick ONE error envelope, declare it as the response_model on 4xx/5xx, and
+    document the "code" values so the app/SDK can branch on them.
+
+2c. AUTH-BEFORE-VALIDATION — some protected routes 422 on a missing field
+    before checking the token; they should 401 first.
+
+2d. CONSISTENCY — timestamps ISO-8601 UTC with trailing Z; IDs always strings.
+
+================================================================================
+§3. FEATURE GAPS — optional, app works without them
+================================================================================
+3a. kind field on Post / PostCreate ("post" | "reel" | "video"). CONFIRMED
+    ABSENT. The app still infers "video" from a titled video post and "reel"
+    from an untitled one; an explicit kind removes the heuristic.
+3b. GET /feed/videos (landscape/titled videos only). CONFIRMED ABSENT. The
+    Videos screen merges /feed/reels + /reels/popular and filters client-side.
+
+================================================================================
+§4. KNOWN BACKEND BUG (already written up separately)
+================================================================================
+Registration mode (open/invite/closed) doesn't persist to /public/app-config.
+Full spec + acceptance test in docs/REGISTRATION_MODE_BACKEND.txt.
+
+================================================================================
+PRIORITY ORDER
+================================================================================
+1. §1 broken admin routes — features are dead today (fix app paths; add the two
+   missing backend routes or drop those toggles).
+2. §4 registration persistence (separate file).
+3. §2a response_model on /auth/login + the money/* and support/* routes the app
+   key-probes.
+4. §2b single documented error envelope.
+5. §3 optional kind / /feed/videos.
+================================================================================

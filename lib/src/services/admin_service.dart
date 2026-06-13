@@ -108,13 +108,13 @@ class AdminService {
 
   Future<Map<String, dynamic>> editTransaction(String userId, String txnId,
           Map<String, dynamic> changes) async =>
-      _map(await _client.patchJson('/admin/users/$userId/transactions/$txnId',
-          body: changes));
+      _map(await _client.patchJson('/admin/users/$userId/transaction',
+          body: {'ref': txnId, ...changes}));
 
   Future<void> deleteTransaction(String userId, String txnId,
       {bool adjust = false}) async {
-    await _client.deleteJson('/admin/users/$userId/transactions/$txnId',
-        query: {'adjust': adjust});
+    await _client.deleteJson('/admin/users/$userId/transaction',
+        query: {'ref': txnId, 'adjust_balance': adjust});
   }
 
   // --- Platform switches & resets ------------------------------------------
@@ -157,16 +157,18 @@ class AdminService {
   }
 
   Future<dynamic> webBuild() => _client.getJson('/admin/web-build');
+  /// Bumps the web-build token so open tabs prompt to reload. Posting with no
+  /// build lets the backend mint a fresh token.
   Future<void> bumpWebBuild() async {
-    await _client.postJson('/admin/web-build/bump');
+    await _client.postJson('/admin/web-build');
   }
 
   Future<void> resetMoney() async {
-    await _client.postJson('/admin/reset-money');
+    await _client.postJson('/admin/reset/money');
   }
 
   Future<void> resetAnalytics() async {
-    await _client.postJson('/admin/reset-analytics');
+    await _client.postJson('/admin/reset/analytics');
   }
 
   // --- Test bot -------------------------------------------------------------
@@ -234,8 +236,8 @@ class AdminService {
       _client.getJson('/admin/render/services/$serviceId/env-vars');
 
   Future<void> renderSetEnv(String serviceId, String key, String value) async {
-    await _client.postJson('/admin/render/services/$serviceId/env-vars',
-        body: {'key': key, 'value': value});
+    await _client.putJson('/admin/render/services/$serviceId/env-vars/$key',
+        body: {'value': value});
   }
 
   Future<void> renderDeleteEnv(String serviceId, String key) async {
