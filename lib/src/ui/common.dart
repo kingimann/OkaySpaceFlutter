@@ -167,7 +167,6 @@ const List<NavDest> kAllNavDests = [
   NavDest('reels', 'Reels', Icons.play_circle_outline, Icons.play_circle),
   NavDest('videos', 'Videos', Icons.smart_display_outlined,
       Icons.smart_display),
-  NavDest('messages', 'Messages', Icons.chat_bubble_outline, Icons.chat_bubble),
   NavDest('market', 'Market', Icons.storefront_outlined, Icons.storefront),
   NavDest('profile', 'Profile', Icons.person_outline, Icons.person),
   NavDest('map', 'Map', Icons.map_outlined, Icons.map),
@@ -176,9 +175,8 @@ const List<NavDest> kAllNavDests = [
   NavDest('wallet', 'Wallet', Icons.account_balance_wallet_outlined,
       Icons.account_balance_wallet),
   NavDest('search', 'Search', Icons.search, Icons.search),
-  NavDest('notifications', 'Alerts', Icons.notifications_outlined,
-      Icons.notifications),
-  NavDest('guides', 'Places', Icons.place_outlined, Icons.place),
+  // Messages, Alerts and Places are reached from the feed header / drawer,
+  // so they're not bottom-bar options.
 ];
 
 NavDest navDestById(String id) =>
@@ -186,7 +184,7 @@ NavDest navDestById(String id) =>
 
 /// The user's chosen bottom-nav destinations (ordered ids, max 5), persisted.
 class NavController extends ValueNotifier<List<String>> {
-  NavController() : super(const ['feed', 'reels', 'messages', 'market', 'profile']) {
+  NavController() : super(const ['feed', 'reels', 'videos', 'market', 'profile']) {
     _load();
   }
 

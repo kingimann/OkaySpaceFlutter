@@ -61,19 +61,29 @@ class WalletService {
 
   // --- Money: send / request ----------------------------------------------
 
-  /// Sends money to another user. [answer] satisfies the recipient's or
-  /// sender's security challenge when one is configured.
+  /// Sends money to another user.
+  ///
+  /// [answer] satisfies the recipient's own pre-set security challenge.
+  /// [securityQuestion]/[securityAnswer] add an Interac-style per-transfer
+  /// challenge the SENDER sets: if the recipient doesn't auto-deposit, they
+  /// must answer it to accept. Share the answer with them out of band.
   Future<Map<String, dynamic>> sendMoney({
     required String toUserId,
     required num amount,
     required String answer,
     String? note,
+    String? securityQuestion,
+    String? securityAnswer,
   }) async =>
       asMapOrNull(await _client.postJson('/money/send', body: {
         'to_user_id': toUserId,
         'amount': amount,
         'answer': answer,
         if (note != null) 'note': note,
+        if (securityQuestion != null && securityQuestion.isNotEmpty)
+          'security_question': securityQuestion,
+        if (securityAnswer != null && securityAnswer.isNotEmpty)
+          'security_answer': securityAnswer,
       })) ??
       const {};
 
@@ -111,8 +121,19 @@ class WalletService {
 
   Future<dynamic> transferHistory() => _client.getJson('/money/transfers/history');
 
-  Future<void> acceptTransfer(String transferId) async {
-    await _client.postJson('/money/transfers/$transferId/accept');
+  /// Accepts a pending incoming transfer. [answer] satisfies the sender's
+  /// per-transfer security question when one was set (Interac-style).
+  Future<void> acceptTransfer(String transferId, {String? answer}) async {
+    await _client.postJson('/money/transfers/$transferId/accept',
+        body: {if (answer != null && answer.isNotEmpty) 'answer': answer});
+  }
+
+  /// Whether incoming transfers auto-deposit (skip the security question).
+  Future<dynamic> autoDeposit() => _client.getJson('/money/auto-deposit');
+
+  Future<void> setAutoDeposit(bool enabled) async {
+    await _client
+        .postJson('/money/auto-deposit', body: {'enabled': enabled});
   }
 
   Future<void> declineTransfer(String transferId) async {

@@ -453,6 +453,59 @@ class _WalletScreenState extends State<WalletScreen>
     );
   }
 
+  /// Auto-deposit: when on, incoming protected transfers land without the
+  /// recipient answering a security question (Interac-style).
+  Future<void> _autoDeposit() async {
+    var on = false;
+    try {
+      final s = await api.wallet.autoDeposit();
+      if (s is Map) on = s['enabled'] == true;
+    } catch (_) {/* default off */}
+    if (!mounted) return;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialog) => AlertDialog(
+          title: const Text('Auto-deposit'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'When on, money sent to you is deposited automatically — '
+                  'you won\'t need to answer a sender\'s security question.'),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Auto-deposit incoming money'),
+                value: on,
+                onChanged: (v) => setDialog(() => on = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, on),
+                child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    try {
+      await api.wallet.setAutoDeposit(result);
+      if (mounted) {
+        showInfo(context,
+            result ? 'Auto-deposit on' : 'Auto-deposit off');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   /// A tab whose label carries a count badge when [count] is non-zero.
   Widget _countedTab(String label, int count) {
     return Tab(
@@ -491,6 +544,7 @@ class _WalletScreenState extends State<WalletScreen>
                 if (v == 'cashout') _push(const CashOutScreen());
                 if (v == 'currency') _changeCurrency();
                 if (v == 'security') _security();
+                if (v == 'autodeposit') _autoDeposit();
                 if (v == 'topups') _push(const TopUpHistoryScreen());
                 if (v == 'insights') _push(const WalletInsightsScreen());
                 if (v == 'history') _push(const TransferHistoryScreen());
@@ -501,6 +555,7 @@ class _WalletScreenState extends State<WalletScreen>
                 PopupMenuItem(value: 'cashout', child: Text('Cash out')),
                 PopupMenuItem(value: 'currency', child: Text('Change currency')),
                 PopupMenuItem(value: 'security', child: Text('Transfer security')),
+                PopupMenuItem(value: 'autodeposit', child: Text('Auto-deposit')),
                 PopupMenuItem(value: 'topups', child: Text('Top-up history')),
                 PopupMenuItem(
                     value: 'history', child: Text('Transfer history')),
@@ -1187,6 +1242,55 @@ class _TransferTile extends StatelessWidget {
       }
     }
 
+    // Interac-style: if the sender set a security question, the recipient
+    // must answer it to accept. Otherwise accept directly.
+    final question = _pick(transfer, ['security_question', 'question']);
+
+    Future<void> accept() async {
+      if (question.isEmpty) {
+        await act(() => api.wallet.acceptTransfer(id), 'Accepted');
+        return;
+      }
+      final ctrl = TextEditingController();
+      try {
+        final answer = await showDialog<String>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Security question'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(question),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                      hintText: 'Your answer',
+                      border: OutlineInputBorder()),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () =>
+                      Navigator.pop(dialogContext, ctrl.text.trim()),
+                  child: const Text('Accept')),
+            ],
+          ),
+        );
+        if (answer == null || answer.isEmpty) return;
+        await act(
+            () => api.wallet.acceptTransfer(id, answer: answer), 'Accepted');
+      } finally {
+        ctrl.dispose();
+      }
+    }
+
     return ListTile(
       leading: CircleAvatar(
         backgroundColor:
@@ -1215,8 +1319,7 @@ class _TransferTile extends StatelessWidget {
                 FilledButton(
                   style:
                       FilledButton.styleFrom(minimumSize: const Size(0, 40)),
-                  onPressed: () =>
-                      act(() => api.wallet.acceptTransfer(id), 'Accepted'),
+                  onPressed: accept,
                   child: const Text('Accept'),
                 ),
               ],
@@ -2601,6 +2704,10 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   late final _amount = TextEditingController(text: widget.initialAmount);
   late final _note = TextEditingController(text: widget.initialNote);
   final _answer = TextEditingController();
+  // Interac-style per-transfer security question the sender sets.
+  final _secQuestion = TextEditingController();
+  final _secAnswer = TextEditingController();
+  bool _protect = false;
 
   Future<List<PublicUser>>? _results;
   late PublicUser? _recipient = widget.recipient;
@@ -2648,6 +2755,8 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     _amount.dispose();
     _note.dispose();
     _answer.dispose();
+    _secQuestion.dispose();
+    _secAnswer.dispose();
     super.dispose();
   }
 
@@ -2735,6 +2844,11 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
       showInfo(context, 'That\'s more than your available balance.');
       return;
     }
+    if (_protect &&
+        (_secQuestion.text.trim().isEmpty || _secAnswer.text.trim().isEmpty)) {
+      showInfo(context, 'Add a security question and answer, or turn it off.');
+      return;
+    }
     if (!await confirmLargeAmount(context, amount) || !mounted) return;
     final dupKey = 'send:${_recipient!.userId}:$amount';
     if (isRecentDuplicate(dupKey)) {
@@ -2775,24 +2889,38 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     markMoneyAction(dupKey);
     setState(() => _busy = true);
     try {
-      // Stripe rails first (/stripe/transfer); the ledger transfer remains
-      // the fallback for backends without the Stripe Connect endpoints.
-      try {
-        await api.payments.stripeTransfer(
+      if (_protect) {
+        // Interac-style protected transfer is a ledger feature (held until
+        // the recipient answers the question), not an instant Stripe move —
+        // route straight to /money/send with the question + answer.
+        await api.wallet.sendMoney(
           toUserId: _recipient!.userId,
           amount: amount,
+          answer: _answer.text.trim(),
           note: note,
+          securityQuestion: _secQuestion.text.trim(),
+          securityAnswer: _secAnswer.text.trim(),
         );
-      } on ApiException catch (e) {
-        if (e.isNotFound || e.statusCode == 405 || e.statusCode == 501) {
-          await api.wallet.sendMoney(
+      } else {
+        // Stripe rails first (/stripe/transfer); the ledger transfer remains
+        // the fallback for backends without the Stripe Connect endpoints.
+        try {
+          await api.payments.stripeTransfer(
             toUserId: _recipient!.userId,
             amount: amount,
-            answer: _answer.text.trim(),
             note: note,
           );
-        } else {
-          rethrow;
+        } on ApiException catch (e) {
+          if (e.isNotFound || e.statusCode == 405 || e.statusCode == 501) {
+            await api.wallet.sendMoney(
+              toUserId: _recipient!.userId,
+              amount: amount,
+              answer: _answer.text.trim(),
+              note: note,
+            );
+          } else {
+            rethrow;
+          }
         }
       }
       if (mounted) {
@@ -3001,6 +3129,38 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 8),
+            // Interac e-Transfer style: the sender sets a question + answer
+            // the recipient must give to accept (unless they auto-deposit).
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Protect with a security question'),
+              subtitle: const Text(
+                  'The recipient answers it to accept — unless they have '
+                  'auto-deposit on. Share the answer with them yourself.'),
+              value: _protect,
+              onChanged: (v) => setState(() => _protect = v),
+            ),
+            if (_protect) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _secQuestion,
+                decoration: const InputDecoration(
+                  labelText: 'Security question',
+                  hintText: 'e.g. What city were we in?',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _secAnswer,
+                decoration: const InputDecoration(
+                  labelText: 'Answer',
+                  helperText: 'Not case-sensitive. Don\'t send it in the chat.',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _busy ? null : _send,

@@ -105,6 +105,38 @@ PRIORITY 4 — FULLY-INLINE PAYOUT ONBOARDING (optional, nice)
     current flow. This only helps future users.
 
 ================================================================================
+PRIORITY 4b — INTERAC-STYLE PROTECTED TRANSFERS (sender-set security Q)
+================================================================================
+The app now lets a SENDER attach a per-transfer security question + answer
+(distinct from the existing /money/security, which is the RECIPIENT's own
+global answer). The recipient must answer it to accept — unless they have
+auto-deposit on. Wire these:
+
+[ ] POST /money/send accepts two new optional fields:
+        "security_question": "What city were we in?",
+        "security_answer":   "toronto"   (store hashed; compare case-insensitive)
+    When present, the transfer is HELD as pending (don't credit yet) and the
+    recipient sees it under /money/transfers.
+
+[ ] GET /money/transfers items include "security_question" (NOT the answer)
+    so the app can show it on the Accept dialog.
+
+[ ] POST /money/transfers/{tid}/accept accepts {"answer": "..."}:
+      - if the transfer has a security_answer, require a matching answer
+        (case-insensitive, trimmed) → 200 credits the recipient;
+        wrong answer → 400/403 with a clear message; rate-limit attempts.
+      - if no security_answer, accept as today (no body needed).
+
+[ ] Auto-deposit setting (skips the question):
+      GET  /money/auto-deposit            → {"enabled": bool}
+      POST /money/auto-deposit  {"enabled": bool}
+    When the recipient has auto-deposit ON, a protected transfer is credited
+    immediately (no pending/accept step), exactly like Interac.
+
+[ ] (Optional) expire/auto-return a pending protected transfer after N days,
+    refunding the sender — Interac returns after 30 days.
+
+================================================================================
 PRIORITY 5 — API HYGIENE (helps every current + future SDK)
 ================================================================================
 [ ] Declare response_model on money/payout routes — many 200s have NO
