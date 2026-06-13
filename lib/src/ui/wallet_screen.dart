@@ -298,7 +298,8 @@ class _WalletScreenState extends State<WalletScreen>
         .then((w) async {
       // The summary may no longer carry transactions (they live on
       // /wallet/activity); fall back so the overview list isn't empty.
-      if (w.recent.isNotEmpty || w.sent.isNotEmpty) return w;
+      // `recent` is what the overview renders — `sent` alone isn't enough.
+      if (w.recent.isNotEmpty) return w;
       try {
         final raw = await api.wallet.activity();
         final txns = _mapList(raw, 'activity').map(WalletTxn.fromJson).toList()
