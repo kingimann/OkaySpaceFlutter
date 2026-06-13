@@ -118,6 +118,14 @@ class _CashOutScreenState extends State<CashOutScreen> {
       }
       _gotBalance = true;
     } catch (_) {/* stripe balance unavailable */}
+    try {
+      final s = await api.payments.payoutSchedule();
+      final interval = '${s['interval'] ?? ''}'.toLowerCase();
+      if (const ['manual', 'weekly', 'biweekly', 'monthly']
+          .contains(interval)) {
+        _schedule = interval;
+      }
+    } catch (_) {/* schedule endpoint optional */}
     if (mounted) setState(() => _loading = false);
   }
 
@@ -398,23 +406,96 @@ class _CashOutScreenState extends State<CashOutScreen> {
   String _schedule = 'manual';
   bool _savingSchedule = false;
 
+  static const _weekdays = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ];
+
+  /// Weekly/biweekly need a payout day; monthly needs a day-of-month.
+  Future<({String? weekly, int? monthly})?> _askAnchor(String interval) async {
+    if (interval == 'weekly' || interval == 'biweekly') {
+      final day = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                  title: Text('Pay me on',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              for (final d in _weekdays)
+                ListTile(
+                  title: Text(d[0].toUpperCase() + d.substring(1)),
+                  onTap: () => Navigator.pop(sheetContext, d),
+                ),
+            ],
+          ),
+        ),
+      );
+      return day == null ? null : (weekly: day, monthly: null);
+    }
+    if (interval == 'monthly') {
+      var day = 1;
+      final picked = await showDialog<int>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialog) => AlertDialog(
+            title: const Text('Pay me on day of month'),
+            content: DropdownButton<int>(
+              value: day,
+              isExpanded: true,
+              items: [
+                for (var i = 1; i <= 28; i++)
+                  DropdownMenuItem(value: i, child: Text('Day $i')),
+              ],
+              onChanged: (v) => setDialog(() => day = v ?? 1),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, day),
+                  child: const Text('Set')),
+            ],
+          ),
+        ),
+      );
+      return picked == null ? null : (weekly: null, monthly: picked);
+    }
+    return (weekly: null, monthly: null); // manual
+  }
+
   Future<void> _setSchedule(String interval) async {
     final previous = _schedule;
+    // Collect the payout day before committing (weekly/monthly require it).
+    final anchor = await _askAnchor(interval);
+    if (anchor == null || !mounted) return; // user backed out of the picker
     setState(() {
       _schedule = interval;
       _savingSchedule = true;
     });
     try {
-      await api.payments.setPayoutSchedule(interval);
+      await api.payments.setPayoutSchedule(
+        interval,
+        weeklyAnchor: anchor.weekly,
+        monthlyAnchor: anchor.monthly,
+      );
       if (mounted) {
         showInfo(
             context,
             interval == 'manual'
                 ? 'Automatic payouts off — cash out whenever you like.'
                 : 'You\'ll be paid ${switch (interval) {
-                    'weekly' => 'every week',
-                    'biweekly' => 'every two weeks',
-                    _ => 'every month',
+                    'weekly' => 'every ${anchor.weekly}',
+                    'biweekly' => 'every two weeks on ${anchor.weekly}',
+                    _ => 'monthly on day ${anchor.monthly}',
                   }} automatically.');
       }
     } on ApiException catch (e) {

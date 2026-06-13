@@ -156,22 +156,29 @@ class AdminService {
       _map(await _client.postJson('/admin/bot/run', body: body));
 
   // --- Roadside calls -------------------------------------------------------
+  // Dispatch/test entries (no wallet charge); live under /roadside/admin.
 
   Future<Map<String, dynamic>> createRoadsideCall(
           Map<String, dynamic> body) async =>
-      _map(await _client.postJson('/admin/roadside/calls', body: body));
+      _map(await _client.postJson('/roadside/admin/calls', body: body));
 
   Future<dynamic> roadsideCalls({String? date, String? callNumber}) =>
-      _client.getJson('/admin/roadside/calls',
+      _client.getJson('/roadside/admin/calls',
           query: {'date': date, 'call_number': callNumber});
 
   Future<void> deleteRoadsideCall(String callId) async {
-    await _client.deleteJson('/admin/roadside/calls/$callId');
+    await _client.deleteJson('/roadside/admin/calls/$callId');
   }
 
-  Future<void> eraseRoadsideCalls({bool testOnly = false}) async {
-    await _client
-        .postJson('/admin/roadside/calls/erase', body: {'test_only': testOnly});
+  /// Bulk-erase: all=true for everything, or [date] for one day;
+  /// [testOnly] limits to admin-created test calls.
+  Future<void> eraseRoadsideCalls(
+      {bool testOnly = false, bool all = true, String? date}) async {
+    await _client.deleteJson('/roadside/admin/calls', query: {
+      if (all && date == null) 'all': true,
+      if (date != null) 'date': date,
+      'test_only': testOnly,
+    });
   }
 
   // --- Render hosting -------------------------------------------------------

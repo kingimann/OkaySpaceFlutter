@@ -1,18 +1,21 @@
 ================================================================================
 OKAYSPACE BACKEND — REMAINING APIs FOR FULLY IN-APP MONEY FLOWS
 ================================================================================
-Updated: 2026-06-13 00:35 UTC (verified against the live OpenAPI spec)
+Updated: 2026-06-13 02:00 UTC (verified against the live OpenAPI spec)
 
 The Flutter app is fully wired for everything below — each item lights up
 automatically when the backend ships it. No app changes needed.
 
 SCOREBOARD (everything shipped so far — no action)
   ✔ /wallet/topup/intent → client_secret + publishable_key + intent_id
-  ✔ /payments/identity/start → client_secret (+ already_verified)  NEW ✔
+  ✔ /payments/identity/start → client_secret (+ already_verified)
   ✔ /wallet/activity items → status + kind + direction + title + subtitle
-    with a declared item schema                                     NEW ✔
+    with a declared item schema
   ✔ /payments/payouts/methods + delete + set-default
   ✔ /payments/payouts/debit-card + bank-account {token}
+  ✔ /payments/payouts/schedule GET + POST (weekly/biweekly/monthly)  NEW ✔
+  ✔ /roadside/verification GET + POST (insurance + ownership docs)   NEW ✔
+  ✔ /roadside/admin/calls (CRUD; was /admin/roadside/calls)          NEW ✔
   ✔ checkout kind enum incl. topup · /capabilities · /errors registry
   ✔ bool query params · {data,total} list envelopes · idempotency keys
 
@@ -111,39 +114,7 @@ ECONOMICS CHECK (works ✓)
   or switching the instant fee to max($2, 1.5%).
 
 --------------------------------------------------------------------------------
-5. NEW: POST /payments/payouts/schedule — automatic payout cadence     [HIGH]
---------------------------------------------------------------------------------
-WHY
-  Owner request: users choose when they get paid — weekly, bi-weekly or
-  monthly. The app already shows the chooser on the Cash out screen
-  ("Get paid automatically": Manual / Weekly / Every 2 weeks / Monthly)
-  and POSTs here; until the endpoint exists it shows "not supported by
-  the server yet".
-
-CONTRACT
-  POST /payments/payouts/schedule
-    body:     {"interval": "manual" | "weekly" | "biweekly" | "monthly"}
-    response: {"ok": true, "interval": "weekly"}
-  And include the current value on GET /payments/payouts/status:
-    "payout_schedule": "weekly"
-  (the app initializes the chooser from it).
-
-IMPLEMENTATION NOTES
-  - weekly/monthly map natively to Stripe:
-      stripe.Account.modify(acct, settings={"payouts": {"schedule":
-        {"interval": "weekly", "weekly_anchor": "friday"}}})
-      (monthly: interval=monthly, monthly_anchor=1)
-    manual: interval=manual (the in-app Cash out button keeps working).
-  - BIWEEKLY does not exist in Stripe. Emulate it: set the account to
-    interval=manual and run a platform cron every 2 weeks that calls
-    POST /stripe/payout (or Payout.create) for accounts whose schedule is
-    "biweekly" and balance >= the $20 minimum. Store the user's choice in
-    your DB either way.
-  - Scheduled payouts go to the DEFAULT external account (bank). Card
-    (instant) payouts stay user-triggered via the Cash out button.
-
---------------------------------------------------------------------------------
-6. SERVER-SIDE ANTI-CHEAT CHECKLIST                                    [HIGH]
+5. SERVER-SIDE ANTI-CHEAT CHECKLIST                                    [HIGH]
 --------------------------------------------------------------------------------
 The app now ships client-side guards (per-transaction caps, self-pay
 blocks, duplicate detection, type-to-confirm on large amounts, cents
