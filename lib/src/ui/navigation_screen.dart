@@ -21,6 +21,7 @@ class NavigationScreen extends StatefulWidget {
     required this.steps,
     required this.destination,
     this.destName,
+    this.stops = const [],
   });
 
   final List<LatLng> line;
@@ -28,19 +29,24 @@ class NavigationScreen extends StatefulWidget {
   final LatLng destination;
   final String? destName;
 
+  /// Intermediate stops (waypoints) before the destination, in order.
+  final List<LatLng> stops;
+
   static Future<void> open(
     BuildContext context, {
     required List<LatLng> line,
     required List<RouteStep> steps,
     required LatLng destination,
     String? destName,
+    List<LatLng> stops = const [],
   }) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => NavigationScreen(
             line: line,
             steps: steps,
             destination: destination,
-            destName: destName),
+            destName: destName,
+            stops: stops),
       ));
 
   @override
@@ -54,6 +60,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   late List<LatLng> _route = widget.line;
   late List<RouteStep> _steps = widget.steps;
+  // Remaining stops (waypoints) ahead; dropped as we reach each one.
+  late final List<LatLng> _stops = [...widget.stops];
   // Index of the maneuver we're heading toward (the next turn).
   late int _step = _steps.length > 1 ? 1 : 0;
 
@@ -242,6 +250,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _speedKmh = fix.speedKmh;
     if (_mapReady && _following) _controller.move(fix.point, 16.5);
 
+    // Drop a stop once we reach it (so re-routes don't send us back to it).
+    if (_stops.isNotEmpty && _distance(fix.point, _stops.first) < 40) {
+      _stops.removeAt(0);
+      _say('Stop reached');
+    }
+
     // Advance past any maneuvers we've reached.
     while (_step < _steps.length - 1) {
       final loc = _steps[_step].location;
@@ -300,7 +314,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _lastReroute = DateTime.now();
     _say('Re-routing');
     try {
-      final r = await driveRoute([from, widget.destination]);
+      final r =
+          await driveRoute([from, ..._stops, widget.destination]);
       if (mounted && r != null && r.line.length >= 2) {
         setState(() {
           _route = r.line;
@@ -392,6 +407,15 @@ class _NavigationScreenState extends State<NavigationScreen> {
                   height: 36,
                   child: const Icon(Icons.flag, color: Color(0xFFEF4444), size: 30),
                 ),
+                // Upcoming stops (waypoints).
+                for (final s in _stops)
+                  Marker(
+                    point: s,
+                    width: 28,
+                    height: 28,
+                    child: const Icon(Icons.trip_origin,
+                        color: Color(0xFF2563EB), size: 22),
+                  ),
                 // Crowd-reported incidents along the way.
                 for (final h in _hazards)
                   Marker(

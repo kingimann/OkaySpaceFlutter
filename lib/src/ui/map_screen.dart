@@ -492,7 +492,8 @@ class _MapScreenState extends State<MapScreen> {
   /// In-app directions to [to]: draws the route on our map and lists the
   /// turn-by-turn steps in a sheet — no leaving the app. Falls back to the
   /// external maps app when Mapbox isn't configured.
-  Future<void> _directionsInApp(LatLng to) async {
+  Future<void> _directionsInApp(LatLng to,
+      {List<({LatLng point, String label})> stops = const []}) async {
     if (!hasMapbox) {
       _openExternal(to);
       return;
@@ -508,7 +509,8 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
     try {
-      final r = await driveRoute([_myLocation!, to]);
+      final r = await driveRoute(
+          [_myLocation!, for (final s in stops) s.point, to]);
       if (r == null) {
         if (mounted) showInfo(context, 'No drivable route found.');
         return;
@@ -521,16 +523,99 @@ class _MapScreenState extends State<MapScreen> {
       });
       _controller.fitCamera(CameraFit.coordinates(
           coordinates: r.line, padding: const EdgeInsets.all(70)));
-      _showStepsSheet(to, r);
+      _showStepsSheet(to, r, stops);
     } catch (e) {
       if (mounted) showError(context, e);
     }
   }
 
+  /// Compact search sheet that returns a picked place (used to add a stop).
+  Future<({LatLng point, String label})?> _pickStop() async {
+    final ctrl = TextEditingController();
+    var results = const <Map<String, dynamic>>[];
+    Timer? debounce;
+    final picked = await showModalBottomSheet<({LatLng point, String label})>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetCtx) => Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+        child: StatefulBuilder(
+          builder: (c, setS) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                  child: TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Add a stop',
+                      prefixIcon: Icon(Icons.add_location_alt_outlined),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (v) {
+                      debounce?.cancel();
+                      if (v.trim().length < 3) {
+                        setS(() => results = const []);
+                        return;
+                      }
+                      debounce =
+                          Timer(const Duration(milliseconds: 350), () async {
+                        final r = await geocodePlaces(v.trim(),
+                            near: _myLocation ?? _center);
+                        if (c.mounted) {
+                          setS(() => results = r.cast<Map<String, dynamic>>());
+                        }
+                      });
+                    },
+                  ),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final r in results.take(8))
+                        ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.place_outlined),
+                          title: Text('${r['name'] ?? 'Result'}',
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          onTap: () {
+                            final lat = _num(r['lat'] ?? r['latitude']);
+                            final lng =
+                                _num(r['lng'] ?? r['lon'] ?? r['longitude']);
+                            if (lat == null || lng == null) return;
+                            Navigator.pop(c, (
+                              point: LatLng(lat, lng),
+                              label: '${r['name'] ?? 'Stop'}'
+                            ));
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).whenComplete(() {
+      debounce?.cancel();
+      ctrl.dispose();
+    });
+    return picked;
+  }
+
   /// Bottom sheet listing the route summary and turn-by-turn steps.
   void _showStepsSheet(
       LatLng dest,
-      ({List<LatLng> line, double km, int mins, List<RouteStep> steps}) r) {
+      ({List<LatLng> line, double km, int mins, List<RouteStep> steps}) r,
+      [List<({LatLng point, String label})> stops = const []]) {
     final scheme = Theme.of(context).colorScheme;
     showModalBottomSheet<void>(
       context: context,
@@ -585,9 +670,41 @@ class _MapScreenState extends State<MapScreen> {
                       steps: r.steps,
                       destination: dest,
                       destName: _searchLabel,
+                      stops: [for (final s in stops) s.point],
                     );
                   },
                 ),
+              ),
+            ),
+            // Stops (waypoints) and an Add-stop control.
+            for (var i = 0; i < stops.length; i++)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.trip_origin, color: Color(0xFF2563EB)),
+                title: Text('Stop ${i + 1}: ${stops[i].label}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Remove stop',
+                  onPressed: () {
+                    final next = [...stops]..removeAt(i);
+                    Navigator.pop(context);
+                    _directionsInApp(dest, stops: next);
+                  },
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                label: const Text('Add stop'),
+                onPressed: () async {
+                  final nav = Navigator.of(context);
+                  final s = await _pickStop();
+                  if (s == null || !mounted) return;
+                  nav.pop();
+                  _directionsInApp(dest, stops: [...stops, s]);
+                },
               ),
             ),
             const Divider(height: 1),
