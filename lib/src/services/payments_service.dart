@@ -81,10 +81,20 @@ class PaymentsService {
       _map(await _client.postJson('/payments/payouts/cashout', body: body));
 
   /// Sets how often the user gets paid automatically:
-  /// manual | weekly | biweekly | monthly.
-  Future<Map<String, dynamic>> setPayoutSchedule(String interval) async =>
-      _map(await _client.postJson('/payments/payouts/schedule',
-          body: {'interval': interval}));
+  /// manual | weekly | biweekly | monthly. Weekly/biweekly require a
+  /// [weeklyAnchor] day name (e.g. 'friday'); monthly requires a
+  /// [monthlyAnchor] day-of-month (1-31, clamped server-side).
+  Future<Map<String, dynamic>> setPayoutSchedule(
+    String interval, {
+    String? weeklyAnchor,
+    int? monthlyAnchor,
+  }) async =>
+      _map(await _client.postJson('/payments/payouts/schedule', body: {
+        'interval': interval,
+        if (interval == 'weekly' || interval == 'biweekly')
+          'weekly_anchor': weeklyAnchor ?? 'friday',
+        if (interval == 'monthly') 'monthly_anchor': monthlyAnchor ?? 1,
+      }));
 
   /// The current automatic-payout schedule ({interval: ...}).
   Future<Map<String, dynamic>> payoutSchedule() async =>
