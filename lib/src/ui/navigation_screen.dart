@@ -62,6 +62,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
   bool _arrived = false;
   bool _rerouting = false;
   bool _muted = false;
+  // Camera follows the user until they pan to look ahead (then a recenter
+  // button appears).
+  bool _following = true;
   DateTime _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
   int? _spokenStep;
 
@@ -90,7 +93,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _pos = fix.point;
     _heading = fix.heading;
     _speedKmh = fix.speedKmh;
-    if (_mapReady) _controller.move(fix.point, 16.5);
+    if (_mapReady && _following) _controller.move(fix.point, 16.5);
 
     // Advance past any maneuvers we've reached.
     while (_step < _steps.length - 1) {
@@ -203,6 +206,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
                   (widget.line.isNotEmpty ? widget.line.first : widget.destination),
               initialZoom: 16.5,
               onMapReady: () => _mapReady = true,
+              onPositionChanged: (camera, hasGesture) {
+                // A manual pan/zoom pauses auto-follow so you can look ahead.
+                if (hasGesture && _following) {
+                  setState(() => _following = false);
+                }
+              },
             ),
             children: [
               mapboxTileLayer(),
@@ -304,6 +313,21 @@ class _NavigationScreenState extends State<NavigationScreen> {
               ),
             ),
           ),
+
+          // Recenter button — only while the user has panned away.
+          if (!_following && _pos != null)
+            Positioned(
+              right: 16,
+              bottom: 96,
+              child: FloatingActionButton.small(
+                heroTag: 'nav-recenter',
+                onPressed: () {
+                  setState(() => _following = true);
+                  if (_mapReady) _controller.move(_pos!, 16.5);
+                },
+                child: const Icon(Icons.navigation),
+              ),
+            ),
 
           // Bottom bar: ETA / distance + End.
           Positioned(
