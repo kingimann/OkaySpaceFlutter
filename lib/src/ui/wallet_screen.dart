@@ -523,17 +523,24 @@ class _WalletScreenState extends State<WalletScreen>
         ),
         floatingActionButton: _pinLocked
             ? null
-            : Padding(
-          // Clear the home shell's floating nav pill when embedded.
-          padding: EdgeInsets.only(bottom: widget.embedded ? 76 : 0),
-          child: FloatingActionButton.extended(
-            backgroundColor: _venmoBlue,
-            foregroundColor: Colors.white,
-            onPressed: _payOrRequest,
-            label: const Text('Pay or Request',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ),
+            : ValueListenableBuilder<double>(
+                // Track the home shell's floating nav pill as it hides on
+                // scroll, so the button rides down with it instead of
+                // hovering mid-list.
+                valueListenable: barsT,
+                builder: (context, t, child) => Padding(
+                  padding:
+                      EdgeInsets.only(bottom: widget.embedded ? 76 * t : 0),
+                  child: child,
+                ),
+                child: FloatingActionButton.extended(
+                  backgroundColor: _venmoBlue,
+                  foregroundColor: Colors.white,
+                  onPressed: _payOrRequest,
+                  label: const Text('Pay or Request',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
       ),
     );
   }
