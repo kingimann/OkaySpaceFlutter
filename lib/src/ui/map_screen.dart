@@ -2411,6 +2411,14 @@ class _MapScreenState extends State<MapScreen> {
                 ));
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.collections_bookmark_outlined),
+              title: const Text('Add to guide'),
+              onTap: () {
+                Navigator.pop(context);
+                _addPlaceToGuide(pl);
+              },
+            ),
             if (pl.latitude != null && pl.longitude != null)
               ListTile(
                 leading: const Icon(Icons.send_outlined),
@@ -2440,6 +2448,52 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
+  }
+
+  /// Adds a saved place to one of the user's guides (picked from a sheet).
+  Future<void> _addPlaceToGuide(Place pl) async {
+    final guides =
+        await api.guides.guides().catchError((_) => <Guide>[]);
+    if (!mounted) return;
+    if (guides.isEmpty) {
+      showInfo(context, 'Create a guide first from the Guides screen');
+      return;
+    }
+    final guide = await showModalBottomSheet<Guide>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Add to guide',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final g in guides)
+                    ListTile(
+                      leading:
+                          const Icon(Icons.collections_bookmark_outlined),
+                      title: Text(g.name),
+                      onTap: () => Navigator.pop(context, g),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (guide == null || !mounted) return;
+    try {
+      await api.guides.addToGuide(guide.id, pl.id);
+      if (mounted) showInfo(context, 'Added to ${guide.name}');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Future<void> _deleteSavedPlace(Place pl) async {
