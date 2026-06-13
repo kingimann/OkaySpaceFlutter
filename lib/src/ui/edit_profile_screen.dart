@@ -86,14 +86,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  /// One sheet: a grid of generated avatars to tap, an Upload button, and a
-  /// fun-styles toggle. Identicons render locally (no network) so it always
-  /// works; "Fun styles" pulls DiceBear cartoons when online.
+  /// One sheet: a grid of generated avatars (DiceBear images served as plain
+  /// <img>, so they work on every web renderer + mobile) to tap, a style
+  /// filter, More, and Upload. Opens instantly — no on-device image encoding
+  /// (which could hang on mobile Safari and make the button "do nothing").
   Future<void> _changeAvatar() async {
-    var batch = await identiconBatch();
-    if (!mounted) return;
-    String? funStyle; // null = local identicons; set = DiceBear style
-    List<String> urls = const [];
+    String? style; // null = "Surprise me" (mixed styles)
+    var urls = avatarBatch(style: style);
 
     await showModalBottomSheet<void>(
       context: context,
@@ -103,15 +102,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         final scheme = Theme.of(sheetContext).colorScheme;
         return StatefulBuilder(
           builder: (sheetContext, setSheet) {
-            Future<void> shuffle() async {
-              if (funStyle == null) {
-                final b = await identiconBatch();
-                setSheet(() => batch = b);
-              } else {
-                setSheet(() => urls = avatarBatch(style: funStyle));
-              }
-            }
-
             return SafeArea(
               child: DraggableScrollableSheet(
                 expand: false,
@@ -125,7 +115,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           style: TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 16)),
                     ),
-                    // Style chips: Identicons (local) + DiceBear styles.
                     SizedBox(
                       height: 44,
                       child: ListView(
@@ -136,15 +125,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 4),
                             child: ChoiceChip(
-                              label: const Text('Patterns'),
-                              selected: funStyle == null,
-                              onSelected: (_) async {
-                                final b = await identiconBatch();
-                                setSheet(() {
-                                  funStyle = null;
-                                  batch = b;
-                                });
-                              },
+                              label: const Text('Surprise me'),
+                              selected: style == null,
+                              onSelected: (_) => setSheet(() {
+                                style = null;
+                                urls = avatarBatch(style: style);
+                              }),
                             ),
                           ),
                           for (final st in kAvatarStyles)
@@ -153,9 +139,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                   const EdgeInsets.symmetric(horizontal: 4),
                               child: ChoiceChip(
                                 label: Text(st.label),
-                                selected: funStyle == st.id,
+                                selected: style == st.id,
                                 onSelected: (_) => setSheet(() {
-                                  funStyle = st.id;
+                                  style = st.id;
                                   urls = avatarBatch(style: st.id);
                                 }),
                               ),
@@ -173,45 +159,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           crossAxisSpacing: 14,
                           mainAxisSpacing: 14,
                         ),
-                        itemCount: funStyle == null ? batch.length : urls.length,
+                        itemCount: urls.length,
                         itemBuilder: (context, i) => Material(
                           color: scheme.surfaceContainerHighest,
                           shape: const CircleBorder(),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
                             onTap: () {
-                              if (funStyle == null) {
-                                final bytes = batch[i];
-                                setState(() {
-                                  _newPicture = bytes;
-                                  _generatedAvatarUrl = null;
-                                });
-                              } else {
-                                setState(() {
-                                  _generatedAvatarUrl = urls[i];
-                                  _newPicture = null;
-                                });
-                              }
+                              setState(() {
+                                _generatedAvatarUrl = urls[i];
+                                _newPicture = null;
+                              });
                               Navigator.pop(sheetContext);
                             },
-                            child: funStyle == null
-                                ? Image.memory(batch[i], fit: BoxFit.cover)
-                                : Image.network(
-                                    urls[i],
-                                    fit: BoxFit.cover,
-                                    loadingBuilder: (_, child, progress) =>
-                                        progress == null
-                                            ? child
-                                            : const Center(
-                                                child: SizedBox(
-                                                    width: 20,
-                                                    height: 20,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                            strokeWidth: 2))),
-                                    errorBuilder: (_, __, ___) => Icon(
-                                        Icons.person, color: scheme.outline),
-                                  ),
+                            child: Image.network(
+                              urls[i],
+                              fit: BoxFit.cover,
+                              loadingBuilder: (_, child, progress) =>
+                                  progress == null
+                                      ? child
+                                      : const Center(
+                                          child: SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                  strokeWidth: 2))),
+                              errorBuilder: (_, __, ___) =>
+                                  Icon(Icons.person, color: scheme.outline),
+                            ),
                           ),
                         ),
                       ),
@@ -222,7 +197,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: shuffle,
+                              onPressed: () => setSheet(
+                                  () => urls = avatarBatch(style: style)),
                               icon: const Icon(Icons.refresh),
                               label: const Text('More'),
                             ),

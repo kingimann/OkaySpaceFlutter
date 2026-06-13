@@ -41,18 +41,22 @@ class AppDrawer extends StatefulWidget {
 class _AppDrawerState extends State<AppDrawer> {
   late Future<User> _me = api.auth.me();
 
-  /// Opens the signed-in user's OWN profile (the owner view). Prefers the
-  /// home Profile tab; otherwise the self-aware ProfileScreen, which shows
-  /// owner actions (Edit profile) for yourself — never the visitor view.
+  /// Opens the signed-in user's OWN profile — the full owner view
+  /// (MyProfileScreen: edit, customize, view-as-visitor), never the public
+  /// visitor view of yourself.
   void _openMyProfile() {
-    if (navController.value.contains('profile')) {
-      final nav = Navigator.of(context);
-      nav.pop();
-      nav.popUntil((r) => r.isFirst);
-      homeTabSignal.select('profile');
-    } else {
-      _pushWithUser((u) => ProfileScreen(userId: u.userId));
-    }
+    final nav = Navigator.of(context);
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    nav.pop(); // close the drawer
+    nav.push(MaterialPageRoute(
+      settings: const RouteSettings(name: kPrimaryRouteName),
+      builder: (_) => MyProfileScreen(
+        onSignedOut: () => rootNav.pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const RootGate()),
+          (route) => false,
+        ),
+      ),
+    ));
   }
 
   void _push(Widget screen) {
