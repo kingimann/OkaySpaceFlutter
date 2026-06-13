@@ -320,6 +320,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => const MyOffersScreen()));
               }
+              if (v == 'purchases') {
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const PurchasesScreen()));
+              }
               if (v == 'save_search') _saveCurrentSearch();
               if (v == 'saved_searches') _openSavedSearches();
               if (v == 'business') {
@@ -330,6 +334,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'mine', child: Text('My listings')),
               PopupMenuItem(value: 'offers', child: Text('My offers')),
+              PopupMenuItem(value: 'purchases', child: Text('Purchases')),
               PopupMenuItem(value: 'save_search', child: Text('Save current search')),
               PopupMenuItem(value: 'saved_searches', child: Text('Saved searches')),
               PopupMenuItem(value: 'business', child: Text('My storefront')),
@@ -1584,6 +1589,61 @@ class _SavedSearchesScreenState extends State<SavedSearchesScreen> {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+
+/// The current user's purchase history — listings they bought (verified sold
+/// to them). Reuses the marketplace grid card.
+class PurchasesScreen extends StatefulWidget {
+  const PurchasesScreen({super.key});
+
+  @override
+  State<PurchasesScreen> createState() => _PurchasesScreenState();
+}
+
+class _PurchasesScreenState extends State<PurchasesScreen> {
+  late Future<List<Listing>> _purchases;
+
+  @override
+  void initState() {
+    super.initState();
+    _purchases = api.marketplace.purchases();
+  }
+
+  Future<void> _reload() async {
+    setState(() => _purchases = api.marketplace.purchases());
+    await _purchases;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Purchases')),
+      body: MaxWidth(
+        maxWidth: 1000,
+        child: RefreshIndicator(
+          onRefresh: _reload,
+          child: AsyncList<Listing>(
+            future: _purchases,
+            loading: const GridSkeleton(),
+            emptyMessage: "You haven't bought anything yet.",
+            emptyIcon: Icons.shopping_bag_outlined,
+            builder: (context, items) => GridView.builder(
+              padding: const EdgeInsets.all(12),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 220,
+                childAspectRatio: 0.72,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: items.length,
+              itemBuilder: (context, i) => _ListingCard(listing: items[i]),
+            ),
+          ),
+        ),
       ),
     );
   }

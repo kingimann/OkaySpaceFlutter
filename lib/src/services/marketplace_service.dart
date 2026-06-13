@@ -48,6 +48,10 @@ class MarketplaceService {
   Future<List<Listing>> saved() async =>
       asModelList(await _client.getJson('/listings/saved'), Listing.fromJson);
 
+  /// Listings the current user bought (their purchase history), newest first.
+  Future<List<Listing>> purchases() async =>
+      asModelList(await _client.getJson('/marketplace/purchases'), Listing.fromJson);
+
   /// Listings posted by a user.
   Future<List<Listing>> userListings(String userId) async => asModelList(
       await _client.getJson('/listings/user/$userId'), Listing.fromJson);
