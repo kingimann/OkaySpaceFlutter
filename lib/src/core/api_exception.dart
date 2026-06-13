@@ -1,9 +1,12 @@
 /// A normalized error thrown by [ApiClient] for every failed request.
 ///
-/// The OkaySpace backend reports errors as
-/// `{"error": {"code": "...", "message": "..."}, "detail": {...}}` and uses
-/// FastAPI's `{"detail": [...]}` shape for `422` validation errors. This type
-/// flattens all of those into a single, predictable object.
+/// The OkaySpace backend reports errors in a few shapes: a top-level
+/// `{"error": {"code", "message"}}` envelope, a business-error
+/// `{"detail": {"code", "message"}}` (rate limits, self-transfer blocks, …),
+/// a plain `{"detail": "message"}`, and FastAPI's `{"detail": [...]}` for
+/// `422` validation. This type flattens all of those into a single,
+/// predictable object, always exposing `code` and `message` when the backend
+/// provides them.
 class ApiException implements Exception {
   ApiException({
     required this.statusCode,
@@ -47,10 +50,17 @@ class ApiException implements Exception {
         code = error['code']?.toString();
         message = error['message']?.toString();
       }
-      // FastAPI validation errors live under `detail`.
+      // Errors live under `detail`: a String (plain HTTPException), a List
+      // (FastAPI 422 validation), or a Map {"code", "message"} which the
+      // backend uses for business errors (rate limits, self-transfer blocks,
+      // wrong security answer, invite-required, …).
       final detail = data['detail'];
       if (detail != null) {
         details = detail;
+        if (detail is Map) {
+          code ??= detail['code']?.toString();
+          message ??= detail['message']?.toString();
+        }
         message ??= _messageFromDetail(detail);
       }
       message ??= data['message']?.toString();
