@@ -1524,10 +1524,67 @@ class _TxnTile extends StatelessWidget {
     );
   }
 
+  /// Finds this transaction's top-up record on /wallet/topups: the activity
+  /// feed has its own row ids, so cancel/resume must use the top-up's own
+  /// id (and its client_secret). Matches by id first, then by
+  /// pending-status + amount.
+  Future<Map<String, dynamic>?> _findTopup() async {
+    try {
+      final raw = await api.wallet.topups();
+      final list = raw is Map
+          ? (raw['data'] ?? raw['topups'] ?? raw['items'] ?? raw['activity'])
+          : raw;
+      if (list is! List) return null;
+      final maps = [
+        for (final t in list.whereType<Map>()) t.cast<String, dynamic>(),
+      ];
+      for (final t in maps) {
+        if (txn.id != null &&
+            ('${t['id'] ?? ''}' == txn.id ||
+                '${t['intent_id'] ?? ''}' == txn.id ||
+                '${t['activity_id'] ?? ''}' == txn.id)) {
+          return t;
+        }
+      }
+      for (final t in maps) {
+        final s = '${t['status'] ?? ''}'.toLowerCase();
+        final pending = s.contains('pend') ||
+            s.contains('requir') ||
+            s.contains('process') ||
+            s == 'created' ||
+            s == 'open';
+        if (!pending) continue;
+        final amt = t['amount'];
+        if (amt is num && (amt - txn.amount.abs()).abs() < 0.005) return t;
+      }
+    } catch (_) {/* fall through to the activity id */}
+    return null;
+  }
+
+  Future<void> _cancelPending(BuildContext context) async {
+    try {
+      final t = await _findTopup();
+      final tid = '${t?['id'] ?? txn.id ?? ''}';
+      if (tid.isEmpty) throw StateError('No top-up id');
+      await api.wallet.cancelTopup(tid);
+      if (context.mounted) {
+        showInfo(context, 'Transaction cancelled');
+        onChanged?.call();
+      }
+    } catch (e) {
+      if (context.mounted) showError(context, e);
+    }
+  }
+
   /// Resumes an unpaid (pending) top-up: reopen the in-app card form
   /// against the intent's existing client secret.
   Future<void> _resumePending(BuildContext context) async {
-    final secret = '${txn.raw['client_secret'] ?? txn.raw['payment_client_secret'] ?? txn.raw['stripe_client_secret'] ?? ''}';
+    var secret = '${txn.raw['client_secret'] ?? txn.raw['payment_client_secret'] ?? txn.raw['stripe_client_secret'] ?? ''}';
+    if (secret.isEmpty) {
+      // The activity row rarely carries the secret; the top-up record does.
+      final t = await _findTopup();
+      secret = '${t?['client_secret'] ?? t?['payment_client_secret'] ?? ''}';
+    }
     if (!stripeElementsSupported || secret.isEmpty) {
       if (context.mounted) {
         showInfo(context,
@@ -1683,15 +1740,7 @@ class _TxnTile extends StatelessWidget {
     );
     if (action == null || !context.mounted) return;
     if (action == 'cancel') {
-      try {
-        await api.wallet.cancelTopup(txn.id ?? '');
-        if (context.mounted) {
-          showInfo(context, 'Transaction cancelled');
-          onChanged?.call();
-        }
-      } catch (e) {
-        if (context.mounted) showError(context, e);
-      }
+      await _cancelPending(context);
     } else if (action == 'resume') {
       await _resumePending(context);
     } else if (action == 'copy' && txn.id != null) {
