@@ -272,6 +272,11 @@ class _CashOutScreenState extends State<CashOutScreen> {
     try {
       final res = await api.payments.startIdentity();
       if (!mounted) return;
+      if (res['already_verified'] == true) {
+        showInfo(context, 'Your identity is already verified ✓');
+        await _load();
+        return;
+      }
       // In-app first: Stripe Identity's in-page modal needs the
       // verification session's client secret.
       final vSecret = '${res['client_secret'] ?? res['clientSecret'] ?? ''}';
@@ -288,7 +293,35 @@ class _CashOutScreenState extends State<CashOutScreen> {
             await _load();
             return;
           }
-          showInfo(context, err);
+          // The modal couldn't run (e.g. Stripe Identity not activated on
+          // the platform account, or the session was rejected). Offer the
+          // hosted page when one exists — explicit choice, not automatic.
+          final url = '${res['url'] ?? res['verification_url'] ?? ''}';
+          if (url.startsWith('http')) {
+            final useHosted = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: const Text('In-app verification unavailable'),
+                content: Text('$err\n\n'
+                    'You can finish on Stripe\'s secure verification page '
+                    'instead.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      child: const Text('Open Stripe page')),
+                ],
+              ),
+            );
+            if (useHosted == true && mounted) {
+              await launchUrl(Uri.parse(url),
+                  mode: LaunchMode.externalApplication);
+            }
+          } else {
+            showInfo(context, err);
+          }
           return;
         }
       }
