@@ -20,6 +20,7 @@ import 'marketplace_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
+import 'videos_screen.dart';
 import 'roadside_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -106,6 +107,8 @@ class _AppDrawerState extends State<AppDrawer> {
             homeTabSignal.select('feed');
           case 'reels':
             _push(const ReelsScreen());
+          case 'videos':
+            _push(const VideosScreen());
           case 'map':
             _push(const MapScreen());
           case 'guides':

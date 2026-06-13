@@ -75,7 +75,11 @@ class _FeedScreenState extends State<FeedScreen> {
       }
     }
     // Re-filter the cached posts locally — no network, no skeleton flash,
-    // no duplicate ad impressions.
+    // no duplicate ad impressions. Guard: if the raw posts haven't loaded
+    // yet (the prefs-storage load can notify mid-fetch), don't replace the
+    // in-flight network future with an empty list — that left the feed
+    // permanently blank until a manual reload.
+    if (_rawPosts.isEmpty) return;
     setState(() => _feed = Future.value(_applyPrefs()));
   }
 

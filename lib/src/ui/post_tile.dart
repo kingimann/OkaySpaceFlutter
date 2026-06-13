@@ -87,6 +87,17 @@ Future<void> _showPostMenu(BuildContext context, Post post,
               title: const Text('Report'),
               onTap: () => Navigator.pop(context, 'report'),
             ),
+            // Moderators can remove anyone's post; the backend re-checks the
+            // role, so this only surfaces the action.
+            if (currentUserIsStaff)
+              ListTile(
+                leading: Icon(Icons.gavel_outlined,
+                    color: Theme.of(context).colorScheme.error),
+                title: Text('Delete post (admin)',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.error)),
+                onTap: () => Navigator.pop(context, 'admin_delete'),
+              ),
           ],
         ],
       ),
@@ -134,6 +145,32 @@ Future<void> _showPostMenu(BuildContext context, Post post,
         await api.feed.deletePost(post.id);
         if (context.mounted) showInfo(context, 'Deleted');
         onChanged?.call();
+      case 'admin_delete':
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Delete this post?'),
+            content: Text(
+                'Remove @${post.author.username ?? post.author.name}\'s '
+                'post as a moderator? This can\'t be undone.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  style: FilledButton.styleFrom(
+                      backgroundColor:
+                          Theme.of(dialogContext).colorScheme.error),
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Delete')),
+            ],
+          ),
+        );
+        if (ok == true) {
+          await api.feed.deletePost(post.id);
+          if (context.mounted) showInfo(context, 'Post removed');
+          onChanged?.call();
+        }
       case 'edit':
         if (!context.mounted) return;
         final text = await promptText(context,

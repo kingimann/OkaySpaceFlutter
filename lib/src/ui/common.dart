@@ -165,7 +165,8 @@ class NavDest {
 const List<NavDest> kAllNavDests = [
   NavDest('feed', 'Feed', Icons.home_outlined, Icons.home),
   NavDest('reels', 'Reels', Icons.play_circle_outline, Icons.play_circle),
-  NavDest('messages', 'Messages', Icons.chat_bubble_outline, Icons.chat_bubble),
+  NavDest('videos', 'Videos', Icons.smart_display_outlined,
+      Icons.smart_display),
   NavDest('market', 'Market', Icons.storefront_outlined, Icons.storefront),
   NavDest('profile', 'Profile', Icons.person_outline, Icons.person),
   NavDest('map', 'Map', Icons.map_outlined, Icons.map),
@@ -174,9 +175,8 @@ const List<NavDest> kAllNavDests = [
   NavDest('wallet', 'Wallet', Icons.account_balance_wallet_outlined,
       Icons.account_balance_wallet),
   NavDest('search', 'Search', Icons.search, Icons.search),
-  NavDest('notifications', 'Alerts', Icons.notifications_outlined,
-      Icons.notifications),
-  NavDest('guides', 'Places', Icons.place_outlined, Icons.place),
+  // Messages, Alerts and Places are reached from the feed header / drawer,
+  // so they're not bottom-bar options.
 ];
 
 NavDest navDestById(String id) =>
@@ -184,7 +184,7 @@ NavDest navDestById(String id) =>
 
 /// The user's chosen bottom-nav destinations (ordered ids, max 5), persisted.
 class NavController extends ValueNotifier<List<String>> {
-  NavController() : super(const ['feed', 'reels', 'messages', 'market', 'profile']) {
+  NavController() : super(const ['feed', 'reels', 'videos', 'market', 'profile']) {
     _load();
   }
 
@@ -246,6 +246,8 @@ class SidebarDest {
 const List<SidebarDest> kAllSidebarDests = [
   SidebarDest('feed', 'Feed', Icons.home_rounded, Color(0xFF3B82F6)),
   SidebarDest('reels', 'Reels', Icons.videocam_rounded, Color(0xFFEC4899)),
+  SidebarDest('videos', 'Videos', Icons.smart_display_rounded,
+      Color(0xFFEF4444)),
   SidebarDest('map', 'Map', Icons.map_rounded, Color(0xFF10B981)),
   SidebarDest('marketplace', 'Marketplace', Icons.storefront_rounded,
       Color(0xFFF97316)),
@@ -427,10 +429,22 @@ class OkayBottomNav extends StatelessWidget {
 /// content is the current user's (e.g. own-post actions). Null until loaded.
 String? currentUserId;
 
-/// Fetches and caches [currentUserId] from /auth/me (best effort).
+/// The signed-in user's role ('user' | 'mod' | 'admin'), cached alongside
+/// the id so widgets can offer moderator actions (e.g. delete any post).
+/// The backend still enforces the permission — this only gates the UI.
+String currentUserRole = 'user';
+
+/// Whether the signed-in user can moderate (admin or mod).
+bool get currentUserIsStaff =>
+    currentUserRole == 'admin' || currentUserRole == 'mod';
+
+/// Fetches and caches [currentUserId] + [currentUserRole] from /auth/me
+/// (best effort).
 Future<void> loadCurrentUserId() async {
   try {
-    currentUserId = (await api.auth.me()).userId;
+    final me = await api.auth.me();
+    currentUserId = me.userId;
+    currentUserRole = me.role;
   } catch (_) {/* ignore */}
 }
 
