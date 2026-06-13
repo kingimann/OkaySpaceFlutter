@@ -170,12 +170,16 @@ class AdminService {
     await _client.deleteJson('/roadside/admin/calls/$callId');
   }
 
-  /// Bulk-erase: all=true for everything, or [date] for one day;
-  /// [testOnly] limits to admin-created test calls.
+  /// Bulk-erase calls. Scope is explicit and never defaults to "all":
+  /// pass [date] for one day, [testOnly] for admin-created test calls, or
+  /// [all]:true to purge everything. `all` is only sent when no narrower
+  /// scope is given, so the test-only button can't carry an all=true that
+  /// the backend might honor over test_only.
   Future<void> eraseRoadsideCalls(
-      {bool testOnly = false, bool all = true, String? date}) async {
+      {bool testOnly = false, bool all = false, String? date}) async {
+    final purgeEverything = all && date == null && !testOnly;
     await _client.deleteJson('/roadside/admin/calls', query: {
-      if (all && date == null) 'all': true,
+      if (purgeEverything) 'all': true,
       if (date != null) 'date': date,
       'test_only': testOnly,
     });

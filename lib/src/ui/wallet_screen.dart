@@ -1939,18 +1939,27 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     }
   }
 
+  /// The PaymentIntent id: prefer the field the backend returns, falling
+  /// back to the secret's prefix (pi_X_secret_Y → pi_X) only when absent.
+  static String _intentId(Map<String, dynamic> intent, String secret) {
+    final id = '${intent['intent_id'] ?? intent['id'] ?? ''}';
+    return id.isNotEmpty ? id : secret.split('_secret').first;
+  }
+
   /// Runs the inline web card form (Stripe Payment Element) against a
   /// backend PaymentIntent. paid: true = paid, false = user cancelled,
   /// null = couldn't start ([failure] says why).
   Future<({bool? paid, String? failure})> _inlineWebTopUp(num amount) async {
     final String pk;
     final String secret;
+    final String intentId;
     try {
       // The intent reply carries its own publishable_key; config is only
       // the fallback for older backends.
       final intent = await api.wallet.topupIntent(amount);
       secret =
           '${intent['client_secret'] ?? intent['clientSecret'] ?? intent['payment_intent_client_secret'] ?? ''}';
+      intentId = _intentId(intent, secret);
       if (secret.isEmpty) {
         return (
           paid: null,
@@ -1983,7 +1992,6 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     ));
     if (paid == true) {
       // Credit immediately instead of waiting on the webhook.
-      final intentId = secret.split('_secret').first;
       try {
         await api.wallet.confirmTopupIntent({'intent_id': intentId});
       } catch (_) {/* topup/sync reconciles on the next wallet load */}
@@ -2005,11 +2013,11 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       final paid =
           await stripePaySheet(publishableKey: pk, clientSecret: secret);
       if (paid) {
-        // Credit immediately instead of waiting on the webhook; the id is
-        // the client secret's prefix (pi_..._secret_... → pi_...).
-        final intentId = secret.split('_secret').first;
+        // Credit immediately instead of waiting on the webhook. Prefer the
+        // intent's own id; only derive it from the secret as a fallback.
         try {
-          await api.wallet.confirmTopupIntent({'intent_id': intentId});
+          await api.wallet.confirmTopupIntent(
+              {'intent_id': _intentId(intent, secret)});
         } catch (_) {/* webhook will reconcile */}
       }
       return paid;
@@ -2227,6 +2235,15 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
     ].any((s) => s.toLowerCase().contains(q));
   }
 
+  /// One safe CSV cell: RFC-4180 quoting (double internal quotes) plus a
+  /// formula-injection guard — a leading = + - @ is prefixed with ' so a
+  /// note like "+5 for lunch" can't execute as a spreadsheet formula.
+  static String _csvCell(String value) {
+    var v = value;
+    if (v.isNotEmpty && '=+-@'.contains(v[0])) v = "'$v";
+    return '"${v.replaceAll('"', '""')}"';
+  }
+
   /// Exports the full activity as a CSV download (web) or to the clipboard.
   Future<void> _export() async {
     try {
@@ -2238,9 +2255,14 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
         text = [
           'date,title,status,amount,currency,note',
           for (final t in txns)
-            '"${t.createdAt ?? ''}","${(t.title ?? t.type ?? 'Transaction').replaceAll('"', "'")}",'
-                '${t.statusLabel},${t.amount},${t.currency},'
-                '"${(t.note ?? '').replaceAll('"', "'")}"',
+            [
+              t.createdAt?.toIso8601String() ?? '',
+              t.title ?? t.type ?? 'Transaction',
+              t.statusLabel,
+              t.amount.toString(),
+              t.currency,
+              t.note ?? '',
+            ].map(_csvCell).join(','),
         ].join('\n');
       }
       if (!mounted) return;
@@ -2748,6 +2770,9 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     final confirmed = await _confirmPayment(context,
         to: _recipient!, amount: amount, currency: _currency, note: note);
     if (!confirmed || !mounted) return;
+    // Record the action before the request (matching top-up/cash-out) so a
+    // retry during a slow network still trips the duplicate warning.
+    markMoneyAction(dupKey);
     setState(() => _busy = true);
     try {
       // Stripe rails first (/stripe/transfer); the ledger transfer remains
@@ -2770,7 +2795,6 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
           rethrow;
         }
       }
-      markMoneyAction(dupKey);
       if (mounted) {
         await Navigator.of(context).push(MaterialPageRoute(
           fullscreenDialog: true,

@@ -286,7 +286,8 @@ class _AdminRoadsideCallsScreenState extends State<AdminRoadsideCallsScreen> {
       return;
     }
     try {
-      await api.admin.eraseRoadsideCalls(testOnly: testOnly);
+      // Test button scopes to test calls; the ALL button purges everything.
+      await api.admin.eraseRoadsideCalls(testOnly: testOnly, all: !testOnly);
       if (mounted) {
         showInfo(context, 'Erased');
         _search();

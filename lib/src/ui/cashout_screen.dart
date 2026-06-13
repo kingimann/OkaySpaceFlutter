@@ -565,13 +565,20 @@ class _CashOutScreenState extends State<CashOutScreen> {
     markMoneyAction(dupKey);
     setState(() => _busy = true);
     try {
-      // Route to the pot that holds the money: the in-app ledger uses the
-      // DoorDash-style cash-out endpoint; the Stripe balance (received
-      // transfers) pays out via /stripe/payout.
+      // Route to the pot that holds the money, and track whether the path
+      // taken is actually instant so the message can't claim "minutes to
+      // your card" for a 1-2 day bank payout.
+      // - In-app wallet ledger → /payments/payouts/cashout (Stripe Instant
+      //   Payouts to the debit card — always instant by definition).
+      // - Stripe balance (received transfers) → /stripe/payout, where the
+      //   toggle chooses instant-to-card vs standard-to-bank.
+      final bool wasInstant;
       if (amount <= _ledger || _stripeAvail <= 0) {
-        await api.payments.cashout({'amount': amount});
+        await api.payments.cashout({'amount': amount, 'instant': _instant});
+        wasInstant = true;
       } else if (amount <= _stripeAvail) {
         await api.payments.stripePayout(amount: amount, instant: _instant);
+        wasInstant = _instant;
       } else {
         showInfo(
             context,
@@ -584,9 +591,9 @@ class _CashOutScreenState extends State<CashOutScreen> {
       if (mounted) {
         showInfo(
             context,
-            _instant
+            wasInstant
                 ? 'Instant payout requested — usually minutes to your card.'
-                : 'Cash-out requested');
+                : 'Cash-out requested — 1–2 business days to your bank.');
         _amount.clear();
         await _load();
       }

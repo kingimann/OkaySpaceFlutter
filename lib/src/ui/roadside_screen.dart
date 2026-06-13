@@ -1274,7 +1274,7 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
           children: [
             // Requester verification: insurance + ownership docs, reviewed
             // by an admin. Surfaced up-front so the request can't dead-end.
-            _VerificationBanner(),
+            const _VerificationBanner(),
             _sectionTitle('What do you need?'),
             // Service grid: big tappable cards instead of cramped chips.
             GridView.count(
@@ -1741,6 +1741,8 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
 /// verified, otherwise shows the current status (none/pending/rejected)
 /// with a path to submit documents.
 class _VerificationBanner extends StatefulWidget {
+  const _VerificationBanner();
+
   @override
   State<_VerificationBanner> createState() => _VerificationBannerState();
 }
