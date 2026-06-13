@@ -3,6 +3,7 @@ import '../core/points_ledger.dart';
 import '../models/json.dart';
 import '../models/post.dart';
 import '../models/post_create.dart';
+import '../models/public_user.dart';
 
 /// Endpoints powering the social feed: feeds, posts, replies, and the common
 /// engagement actions (like, repost, bookmark, vote).
@@ -182,5 +183,57 @@ class FeedService {
   /// Marks a post as "not interested" to tune recommendations.
   Future<void> notInterested(String postId) async {
     await _client.postJson('/posts/$postId/not-interested');
+  }
+
+  // --- Engagement detail --------------------------------------------------
+
+  /// Users who liked a post.
+  Future<List<PublicUser>> likers(String postId) async => asModelList(
+      await _client.getJson('/posts/$postId/likers'), PublicUser.fromJson);
+
+  /// Users who reposted a post.
+  Future<List<PublicUser>> reposters(String postId) async => asModelList(
+      await _client.getJson('/posts/$postId/reposters'), PublicUser.fromJson);
+
+  /// Viewers of a post: `{count, unique, viewers:[{user_id,name,username,
+  /// picture,verified,viewed_at}]}` (raw — counts plus a recent-viewer list).
+  Future<Map<String, dynamic>> viewers(String postId) async =>
+      asMapOrNull(await _client.getJson('/posts/$postId/viewers')) ?? const {};
+
+  /// Per-post analytics: `{impressions, unique_viewers, clicks,
+  /// reactions_total, comments, reposts, quotes, bookmarks, interactions,
+  /// engagement_rate}` (raw).
+  Future<Map<String, dynamic>> postAnalytics(String postId) async =>
+      asMapOrNull(await _client.getJson('/posts/$postId/analytics')) ?? const {};
+
+  // --- Drafts (server-side) -----------------------------------------------
+
+  /// The current user's saved post drafts, each `{id, payload, created_at,
+  /// updated_at}` where `payload` is an arbitrary composer snapshot.
+  Future<List<Map<String, dynamic>>> drafts() async {
+    final data = await _client.getJson('/drafts');
+    if (data is List) {
+      return data
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
+  /// Saves a new draft from a composer [payload]; returns the stored draft.
+  Future<Map<String, dynamic>> saveDraft(Map<String, dynamic> payload) async =>
+      asMapOrNull(await _client.postJson('/drafts', body: {'payload': payload})) ??
+      const {};
+
+  /// Updates an existing draft's [payload].
+  Future<Map<String, dynamic>> updateDraft(
+          String draftId, Map<String, dynamic> payload) async =>
+      asMapOrNull(await _client
+          .patchJson('/drafts/$draftId', body: {'payload': payload})) ??
+      const {};
+
+  Future<void> deleteDraft(String draftId) async {
+    await _client.deleteJson('/drafts/$draftId');
   }
 }

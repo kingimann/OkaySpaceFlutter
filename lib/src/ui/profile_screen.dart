@@ -328,8 +328,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             await api.users.unsubscribe(widget.userId);
             if (mounted) showInfo(context, 'Unsubscribed');
           } else {
-            await api.users.subscribe(widget.userId);
-            if (mounted) showInfo(context, 'Subscribed');
+            await _subscribeWithTier();
           }
         case 'poke':
           await api.users.poke(widget.userId);
@@ -341,6 +340,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (e) {
       if (mounted) showError(context, e);
     }
+  }
+
+  /// Subscribes to this user. If the backend offers subscription tiers, shows
+  /// a picker first and subscribes to the chosen tier; otherwise (no tiers, or
+  /// the lookup fails) subscribes with no tier. Caller handles success/errors.
+  Future<void> _subscribeWithTier() async {
+    List<Map<String, dynamic>> tiers;
+    try {
+      tiers = await api.users.subscriptionTiers();
+    } catch (_) {
+      tiers = const [];
+    }
+    if (!mounted) return;
+    if (tiers.isEmpty) {
+      await api.users.subscribe(widget.userId);
+      if (mounted) showInfo(context, 'Subscribed');
+      return;
+    }
+    final chosen = await _pickTier(tiers);
+    if (chosen == null || !mounted) return;
+    await api.users.subscribe(widget.userId, tier: chosen);
+    if (mounted) showInfo(context, 'Subscribed');
+  }
+
+  /// A user-facing perks/description string for a tier, or null if none.
+  String? _tierPerks(Map<String, dynamic> t) {
+    final raw = t['perks'] ?? t['benefits'] ?? t['description'];
+    if (raw == null) return null;
+    if (raw is List) {
+      final items = raw.map((e) => '$e').where((s) => s.isNotEmpty);
+      return items.isEmpty ? null : items.join(' · ');
+    }
+    final s = '$raw'.trim();
+    return s.isEmpty ? null : s;
+  }
+
+  /// Shows a bottom sheet listing [tiers]; returns the chosen tier's name, or
+  /// null if dismissed.
+  Future<String?> _pickTier(List<Map<String, dynamic>> tiers) {
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Choose a tier',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final t in tiers)
+                    Builder(builder: (context) {
+                      final name = '${t['name'] ?? t['title'] ?? t['label'] ?? 'Tier'}';
+                      final price = t['price'] ?? t['amount'];
+                      final perks = _tierPerks(t);
+                      return ListTile(
+                        leading: const Icon(Icons.workspace_premium_outlined),
+                        title: Text(name,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: perks == null
+                            ? null
+                            : Text(perks,
+                                maxLines: 2, overflow: TextOverflow.ellipsis),
+                        trailing: price is num
+                            ? Text(formatMoney(price, 'USD'),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600))
+                            : null,
+                        onTap: () => Navigator.pop(context, name),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _convName(ConversationView c) {

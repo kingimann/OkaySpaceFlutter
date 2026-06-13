@@ -130,9 +130,31 @@ class _ComposeScreenState extends State<ComposeScreen> {
   }
 
   // --- Saved drafts (multiple, user-managed) -------------------------------
+  // Stored on the server (api.feed.*Draft). When a server call fails
+  // (offline / unauthenticated) we transparently fall back to the local
+  // secure-storage copy below so the feature keeps working.
+
+  /// Snapshot of the composer to persist as a draft payload. Mirror any other
+  /// composer state here if drafts should remember it.
+  Map<String, dynamic> _composerSnapshot(String text) => {'text': text};
+
+  /// Normalized in-memory view of a draft, regardless of its source.
+  static _Draft _serverDraft(Map<String, dynamic> d) {
+    final payload = d['payload'];
+    final text = payload is Map ? '${payload['text'] ?? ''}' : '';
+    final stamp = '${d['updated_at'] ?? d['created_at'] ?? ''}';
+    return _Draft(
+      id: '${d['id']}',
+      text: text,
+      time: DateTime.tryParse(stamp),
+      local: false,
+    );
+  }
+
+  // -- Local fallback store (legacy `{'t': text, 'at': ms}` shape) -----------
   static const _draftsKey = 'okayspace.post_drafts';
 
-  Future<List<Map<String, dynamic>>> _readDrafts() async {
+  Future<List<Map<String, dynamic>>> _readLocalDrafts() async {
     try {
       final raw = await _storage.read(key: _draftsKey);
       final list = raw == null ? null : jsonDecode(raw);
@@ -146,19 +168,24 @@ class _ComposeScreenState extends State<ComposeScreen> {
     return [];
   }
 
-  Future<void> _writeDrafts(List<Map<String, dynamic>> drafts) async {
+  Future<void> _writeLocalDrafts(List<Map<String, dynamic>> drafts) async {
     try {
       await _storage.write(
           key: _draftsKey, value: jsonEncode(drafts.take(20).toList()));
     } catch (_) {/* best effort */}
   }
 
+  /// Saves the current composer to the server, falling back to local storage.
   Future<void> _saveAsDraft() async {
     final t = _text.text.trim();
     if (t.isEmpty) return;
-    final drafts = await _readDrafts();
-    drafts.insert(0, {'t': t, 'at': DateTime.now().millisecondsSinceEpoch});
-    await _writeDrafts(drafts);
+    try {
+      await api.feed.saveDraft(_composerSnapshot(t));
+    } catch (_) {
+      final drafts = await _readLocalDrafts();
+      drafts.insert(0, {'t': t, 'at': DateTime.now().millisecondsSinceEpoch});
+      await _writeLocalDrafts(drafts);
+    }
     if (mounted) {
       _text.clear();
       _clearDraft();
@@ -167,8 +194,58 @@ class _ComposeScreenState extends State<ComposeScreen> {
     }
   }
 
+  /// Loads drafts from the server; on failure falls back to local storage
+  /// (the returned drafts are flagged `local` so deletes route correctly).
+  Future<List<_Draft>> _loadDrafts() async {
+    try {
+      final list = await api.feed.drafts();
+      return list.map(_serverDraft).toList();
+    } catch (_) {
+      final local = await _readLocalDrafts();
+      return local
+          .map((d) => _Draft(
+                id: '${d['at']}',
+                text: '${d['t']}',
+                time: d['at'] is num
+                    ? DateTime.fromMillisecondsSinceEpoch((d['at'] as num).toInt())
+                    : null,
+                local: true,
+              ))
+          .toList();
+    }
+  }
+
+  Future<void> _deleteDraft(_Draft d) async {
+    if (d.local) {
+      final drafts = await _readLocalDrafts();
+      drafts.removeWhere((e) => '${e['at']}' == d.id);
+      await _writeLocalDrafts(drafts);
+    } else {
+      try {
+        await api.feed.deleteDraft(d.id);
+      } catch (_) {/* best effort — leave it for a later sync */}
+    }
+  }
+
+  /// Restores [d] into the composer, preserving the current text as a new
+  /// draft so the buffer isn't lost.
+  Future<void> _restoreDraft(_Draft d) async {
+    final current = _text.text.trim();
+    if (current.isNotEmpty && current != d.text) {
+      try {
+        await api.feed.saveDraft(_composerSnapshot(current));
+      } catch (_) {
+        final keep = await _readLocalDrafts();
+        keep.insert(
+            0, {'t': current, 'at': DateTime.now().millisecondsSinceEpoch});
+        await _writeLocalDrafts(keep);
+      }
+    }
+    if (mounted) setState(() => _text.text = d.text);
+  }
+
   Future<void> _openDrafts() async {
-    final drafts = await _readDrafts();
+    var drafts = await _loadDrafts();
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -205,13 +282,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     children: [
                       for (final d in drafts)
                         ListTile(
-                          title: Text('${d['t']}',
+                          title: Text(d.text,
                               maxLines: 2, overflow: TextOverflow.ellipsis),
-                          subtitle: d['at'] is num
-                              ? Text(shortAgo(
-                                  DateTime.fromMillisecondsSinceEpoch(
-                                      (d['at'] as num).toInt())))
-                              : null,
+                          subtitle:
+                              d.time != null ? Text(shortAgo(d.time!)) : null,
                           trailing: IconButton(
                             icon: Icon(Icons.delete_outline,
                                 size: 20,
@@ -219,31 +293,15 @@ class _ComposeScreenState extends State<ComposeScreen> {
                                     .colorScheme
                                     .error),
                             onPressed: () async {
-                              drafts.remove(d);
-                              await _writeDrafts(drafts);
+                              await _deleteDraft(d);
+                              drafts =
+                                  drafts.where((e) => e.id != d.id).toList();
                               if (sheetContext.mounted) setSheet(() {});
                             },
                           ),
                           onTap: () async {
-                            // Loading replaces the buffer; keep the current
-                            // text safe by saving it as a draft. One single
-                            // read-modify-write so neither write clobbers
-                            // the other.
-                            final current = _text.text.trim();
                             Navigator.pop(sheetContext);
-                            final keep = await _readDrafts();
-                            keep.removeWhere((e) =>
-                                e['t'] == d['t'] && e['at'] == d['at']);
-                            if (current.isNotEmpty && current != d['t']) {
-                              keep.insert(0, {
-                                't': current,
-                                'at': DateTime.now().millisecondsSinceEpoch
-                              });
-                            }
-                            await _writeDrafts(keep);
-                            if (mounted) {
-                              setState(() => _text.text = '${d['t']}');
-                            }
+                            await _restoreDraft(d);
                           },
                         ),
                     ],
@@ -687,4 +745,23 @@ class _ComposeScreenState extends State<ComposeScreen> {
       ),
     );
   }
+}
+
+/// A draft as shown in the Drafts sheet, normalized across its source so the
+/// UI doesn't care whether it came from the server or local fallback storage.
+class _Draft {
+  const _Draft({
+    required this.id,
+    required this.text,
+    required this.time,
+    required this.local,
+  });
+
+  /// Server draft id, or (for local fallback drafts) the legacy `at` stamp.
+  final String id;
+  final String text;
+  final DateTime? time;
+
+  /// Whether this draft lives in local secure storage (vs. on the server).
+  final bool local;
 }

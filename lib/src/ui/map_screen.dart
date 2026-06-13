@@ -15,6 +15,7 @@ import '../core/mapbox_api.dart';
 import '../../okayspace_api.dart';
 import 'common.dart';
 import 'marketplace_screen.dart';
+import 'place_reviews_screen.dart';
 
 /// Mapbox public access token, injected at build time via
 /// `--dart-define=MAPBOX_TOKEN=pk...`. Mapbox is the only map provider;
@@ -2089,42 +2090,62 @@ class _MapScreenState extends State<MapScreen> {
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => SafeArea(
-        child: ListTile(
-          leading: const CircleAvatar(
-            backgroundColor: Color(0x3310B981),
-            child: Icon(Icons.bookmark, color: Color(0xFF10B981)),
-          ),
-          title: Text(pl.title),
-          subtitle: Text([
-            if (pl.address != null) pl.address!,
-            if (pl.category != null) pl.category!,
-            if (pl.latitude != null && pl.longitude != null)
-              '${_fmtDistance(_distance(_center, LatLng(pl.latitude!, pl.longitude!)))} from centre',
-          ].join(' · ')),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (pl.latitude != null && pl.longitude != null)
-                IconButton(
-                  icon: const Icon(Icons.near_me_outlined),
-                  tooltip: 'Directions from my pin',
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _directionsToPoint(LatLng(pl.latitude!, pl.longitude!));
-                  },
-                ),
-              IconButton(
-                icon: const Icon(Icons.directions_outlined),
-                tooltip: 'Open in Maps',
-                onPressed: pl.latitude != null && pl.longitude != null
-                    ? () {
-                        Navigator.pop(context);
-                        _openExternal(LatLng(pl.latitude!, pl.longitude!));
-                      }
-                    : null,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Color(0x3310B981),
+                child: Icon(Icons.bookmark, color: Color(0xFF10B981)),
               ),
-            ],
-          ),
+              title: Text(pl.title),
+              subtitle: Text([
+                if (pl.address != null) pl.address!,
+                if (pl.category != null) pl.category!,
+                if (pl.latitude != null && pl.longitude != null)
+                  '${_fmtDistance(_distance(_center, LatLng(pl.latitude!, pl.longitude!)))} from centre',
+              ].join(' · ')),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (pl.latitude != null && pl.longitude != null)
+                    IconButton(
+                      icon: const Icon(Icons.near_me_outlined),
+                      tooltip: 'Directions from my pin',
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _directionsToPoint(LatLng(pl.latitude!, pl.longitude!));
+                      },
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.directions_outlined),
+                    tooltip: 'Open in Maps',
+                    onPressed: pl.latitude != null && pl.longitude != null
+                        ? () {
+                            Navigator.pop(context);
+                            _openExternal(LatLng(pl.latitude!, pl.longitude!));
+                          }
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.star_outline),
+              title: const Text('Reviews'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => PlaceReviewsScreen(
+                    placeKey: pl.id,
+                    placeName: pl.title,
+                    latitude: pl.latitude,
+                    longitude: pl.longitude,
+                  ),
+                ));
+              },
+            ),
+          ],
         ),
       ),
     );

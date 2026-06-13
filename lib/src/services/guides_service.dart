@@ -88,4 +88,35 @@ class GuidesService {
   Future<void> cloneGuide(String slug) async {
     await _client.postJson('/public/guides/$slug/clone');
   }
+
+  // --- Place reviews --------------------------------------------------------
+
+  /// Reviews left for a real-world place, keyed by [placeKey] (a stable
+  /// identifier shared across users — e.g. the place id or a geo key).
+  Future<List<PlaceReview>> placeReviews(String placeKey) async => asModelList(
+      await _client.getJson('/reviews', query: {'place_key': placeKey}),
+      PlaceReview.fromJson);
+
+  /// Posts (or replaces) the current user's review of a place.
+  Future<PlaceReview> addReview({
+    required String placeKey,
+    required String placeName,
+    required int rating,
+    double? longitude,
+    double? latitude,
+    String? text,
+  }) async =>
+      PlaceReview.fromJson(asMapOrNull(await _client.postJson('/reviews', body: {
+            'place_key': placeKey,
+            'place_name': placeName,
+            'rating': rating,
+            if (longitude != null) 'longitude': longitude,
+            if (latitude != null) 'latitude': latitude,
+            if (text != null && text.isNotEmpty) 'text': text,
+          })) ??
+          const {});
+
+  Future<void> deleteReview(String reviewId) async {
+    await _client.deleteJson('/reviews/$reviewId');
+  }
 }

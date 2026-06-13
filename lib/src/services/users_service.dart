@@ -76,6 +76,21 @@ class UsersService {
     await _client.deleteJson('/users/$userId/subscribe');
   }
 
+  /// The available subscription tiers a fan can pick when subscribing
+  /// (raw maps — typically `{id, name, price, perks/benefits, …}`). Pass the
+  /// chosen tier's name to [subscribe].
+  Future<List<Map<String, dynamic>>> subscriptionTiers() async {
+    final data = await _client.getJson('/subscription-tiers');
+    final list = data is Map ? (data['tiers'] ?? data['data']) : data;
+    if (list is List) {
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+    return const [];
+  }
+
   /// Tips a user. Returns the raw tip record.
   Future<Map<String, dynamic>> tip(String userId, num amount,
       {String? message}) async {
