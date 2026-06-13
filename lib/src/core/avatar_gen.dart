@@ -59,8 +59,12 @@ Future<Uint8List> renderIdenticon(int seed, {int size = 256}) async {
     }
   }
 
-  final img = await recorder.endRecording().toImage(size, size);
+  final picture = recorder.endRecording();
+  final img = await picture.toImage(size, size);
   final data = await img.toByteData(format: ui.ImageByteFormat.png);
+  // Release the native image/picture — every identicon would otherwise leak.
+  img.dispose();
+  picture.dispose();
   return data!.buffer.asUint8List();
 }
 

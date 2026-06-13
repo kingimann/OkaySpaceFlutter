@@ -34,6 +34,25 @@ class FeedService {
       await _client.getJson('/reels/popular',
           query: {'limit': limit.clamp(1, 20)}));
 
+  // --- Playlists ----------------------------------------------------------
+
+  /// The current user's video playlists ({data:[{id,name,count}]}).
+  Future<dynamic> playlists() => _client.getJson('/playlists');
+
+  /// A playlist with its videos.
+  Future<dynamic> playlist(String id) => _client.getJson('/playlists/$id');
+
+  /// Creates a playlist, returning {id, name}.
+  Future<Map<String, dynamic>> createPlaylist(String name) async =>
+      asMapOrNull(await _client.postJson('/playlists', body: {'name': name})) ??
+      const {};
+
+  /// Adds a post (video) to a playlist.
+  Future<void> addToPlaylist(String playlistId, String postId) async {
+    await _client.postJson('/playlists/$playlistId/videos',
+        body: {'post_id': postId});
+  }
+
   /// Resolves a stored/opaque video [url] into a directly-playable URL.
   /// Returns the original url if the backend gives nothing usable.
   Future<String> resolveVideoUrl(String url) async {

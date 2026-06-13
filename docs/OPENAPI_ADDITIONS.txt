@@ -19,6 +19,14 @@ ALREADY DONE (no action — for context):
   ✔ /payments/payouts/schedule (GET/POST), /payments/payouts/methods,
     debit-card/bank-account, /capabilities, /errors, /public/app-config
     (web_build, mobile_web_gate), /admin/mobile-web-gate
+  ✔ NEW: /admin/registration, /admin/invites(+/{code}), invite_code on
+    /auth/register, registration_mode on /public/app-config  (§2 DONE)
+  ✔ NEW: /money/auto-deposit, security_question/security_answer on
+    /money/send  (§1 — auto-deposit + protected transfers DONE; accept
+    answer still TBD, see 1c)
+  ✔ NEW: /playlists (+/{id}, /{id}/videos)  (§3d DONE — app now creates/
+    reuses a playlist on upload and adds the video)
+  ✔ NEW: /admin/money-alerts (anti-cheat alerting)
 
 --------------------------------------------------------------------------------
 1. INTERAC-STYLE PROTECTED TRANSFERS + AUTO-DEPOSIT
