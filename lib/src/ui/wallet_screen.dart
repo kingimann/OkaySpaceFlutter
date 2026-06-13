@@ -1776,14 +1776,8 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     final String pk;
     final String secret;
     try {
-      final cfg = await api.payments.config();
-      pk = '${cfg['publishable_key'] ?? ''}';
-      if (pk.isEmpty) {
-        return (
-          paid: null,
-          failure: 'The server has no Stripe publishable key configured.'
-        );
-      }
+      // The intent reply carries its own publishable_key; config is only
+      // the fallback for older backends.
       final intent = await api.wallet.topupIntent(amount);
       secret =
           '${intent['client_secret'] ?? intent['clientSecret'] ?? intent['payment_intent_client_secret'] ?? ''}';
@@ -1794,6 +1788,18 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
               '(keys in the reply: ${intent.keys.join(', ')}).'
         );
       }
+      var key = '${intent['publishable_key'] ?? ''}';
+      if (key.isEmpty) {
+        final cfg = await api.payments.config();
+        key = '${cfg['publishable_key'] ?? ''}';
+      }
+      if (key.isEmpty) {
+        return (
+          paid: null,
+          failure: 'The server has no Stripe publishable key configured.'
+        );
+      }
+      pk = key;
     } on ApiException catch (e) {
       return (paid: null, failure: 'Starting the top-up failed: ${e.message}');
     } catch (e) {

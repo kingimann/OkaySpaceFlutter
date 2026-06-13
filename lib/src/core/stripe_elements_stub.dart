@@ -40,3 +40,14 @@ Future<String?> stripeVerifyIdentityModal({
   required String clientSecret,
 }) async =>
     'Identity modal is web-only';
+
+Future<({String? token, String? error})> createBankToken({
+  required String publishableKey,
+  required String country,
+  required String currency,
+  required String routingNumber,
+  required String accountNumber,
+  required String holderName,
+  String holderType = 'individual',
+}) async =>
+    (token: null, error: 'Bank tokenization is web-only for now');
