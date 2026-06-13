@@ -443,6 +443,36 @@ class _MetaChip extends StatelessWidget {
   }
 }
 
+/// A colored pill for an offer's status (pending/countered/accepted/…).
+class _OfferStatusPill extends StatelessWidget {
+  const _OfferStatusPill(this.status);
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (Color color, String label) = switch (status) {
+      'accepted' => (const Color(0xFF22C55E), 'Accepted'),
+      'pending' => (const Color(0xFFF59E0B), 'Pending'),
+      'countered' => (const Color(0xFF3B82F6), 'Countered'),
+      'declined' => (scheme.outline, 'Declined'),
+      'withdrawn' => (scheme.outline, 'Withdrawn'),
+      _ => (scheme.outline, status),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
 class _ListingCard extends StatelessWidget {
   const _ListingCard({required this.listing});
 
@@ -1370,9 +1400,17 @@ class _ListingOffersSheetState extends State<_ListingOffersSheet> {
             }
             final offers = snap.data ?? const [];
             if (offers.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.all(32),
-                child: Text('No offers yet.', textAlign: TextAlign.center),
+              return Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.local_offer_outlined,
+                        size: 40, color: Theme.of(context).colorScheme.outline),
+                    const SizedBox(height: 10),
+                    const Text('No offers yet.', textAlign: TextAlign.center),
+                  ],
+                ),
               );
             }
             return Column(
@@ -1398,12 +1436,19 @@ class _ListingOffersSheetState extends State<_ListingOffersSheet> {
                         contentPadding: EdgeInsets.zero,
                         title: Text(
                             '${o['buyer_name'] ?? 'A buyer'} · ${_money(o['amount'])}'),
-                        subtitle: Text([
-                          status,
-                          if (o['counter_amount'] != null)
-                            'countered ${_money(o['counter_amount'])}',
-                          if ((o['message'] ?? '').toString().isNotEmpty) '“${o['message']}”',
-                        ].join(' · ')),
+                        subtitle: Row(children: [
+                          _OfferStatusPill(status),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text([
+                              if (o['counter_amount'] != null)
+                                'countered ${_money(o['counter_amount'])}',
+                              if ((o['message'] ?? '').toString().isNotEmpty)
+                                '“${o['message']}”',
+                            ].join(' · '),
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ),
+                        ]),
                         trailing: open
                             ? Wrap(
                                 spacing: 4,
@@ -1519,11 +1564,19 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
     final id = '${o['id']}';
     return ListTile(
       title: Text('${o['buyer_name'] ?? 'A buyer'} · ${_money(o['amount'])}'),
-      subtitle: Text([
-        '${o['listing_title'] ?? 'Listing'}',
-        status,
-        if (o['counter_amount'] != null) 'you countered ${_money(o['counter_amount'])}',
-      ].join(' · ')),
+      subtitle: Row(children: [
+        _OfferStatusPill(status),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            o['counter_amount'] != null
+                ? 'you countered ${_money(o['counter_amount'])}'
+                : '${o['listing_title'] ?? 'Listing'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ]),
       trailing: open
           ? Wrap(spacing: 4, children: [
               IconButton(
@@ -1550,9 +1603,16 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
     final open = status == 'pending' || status == 'countered';
     return ListTile(
       title: Text('${o['listing_title'] ?? 'Listing'} · ${_money(o['amount'])}'),
-      subtitle: Text(countered
-          ? 'Seller countered ${_money(o['counter_amount'])}'
-          : status),
+      subtitle: Row(children: [
+        _OfferStatusPill(status),
+        if (countered) ...[
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text('Seller countered ${_money(o['counter_amount'])}',
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ]),
       trailing: Wrap(spacing: 4, children: [
         if (countered)
           IconButton(
@@ -1609,7 +1669,20 @@ class _OfferList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
-      return Center(child: Text(empty));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.local_offer_outlined,
+                size: 48, color: Theme.of(context).colorScheme.outline),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(empty, textAlign: TextAlign.center),
+            ),
+          ],
+        ),
+      );
     }
     return ListView.separated(
       itemCount: items.length,
