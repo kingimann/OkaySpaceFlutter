@@ -175,10 +175,12 @@ class MessagingService {
     await _client.postJson('/presence/ping');
   }
 
-  /// Updates typing/recording presence within a conversation.
+  /// Updates typing/recording presence within a conversation. [state] is
+  /// 'typing' or 'idle'. The backend drives its "writing…" indicator off a
+  /// `typing` bool, so send that (with `state` kept for forward-compat).
   Future<void> setPresence(String convId, String state) async {
     await _client.postJson('/conversations/$convId/presence',
-        body: {'state': state});
+        body: {'typing': state == 'typing', 'state': state});
   }
 
   /// Rings the other participant(s) to start a call.

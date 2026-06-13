@@ -63,6 +63,18 @@ void main() {
           {'type': 'text', 'text': 'hello'});
     });
 
+    test('setPresence() sends the typing bool the backend reads', () async {
+      final api = FakeApi()
+        ..on('POST', '/conversations/c1/presence', json: {'ok': true});
+      final svc = MessagingService(api.client());
+      await svc.setPresence('c1', 'typing');
+      expect(api.body('/conversations/c1/presence', method: 'POST'),
+          {'typing': true, 'state': 'typing'});
+      await svc.setPresence('c1', 'idle');
+      expect(api.body('/conversations/c1/presence', method: 'POST'),
+          {'typing': false, 'state': 'idle'});
+    });
+
     test('reactToMessage() posts {emoji}; editMessage() patches {text}', () async {
       final api = FakeApi()
         ..on('POST', '/conversations/c1/messages/m1/react', json: {'id': 'm1', 'type': 'text'})
