@@ -129,6 +129,20 @@ NICE-TO-HAVES (app already renders these if present)
     stripe_available, stripe_pending) so the Cash out screen skips two
     extra calls. Works today via /wallet/balance + /stripe/balance.
 
+VIDEOS (new YouTube-style section — works today on posts, would be cleaner with):
+[ ] A post `kind` field ("video" | "reel" | "post"). The app currently
+    treats a titled video post as a YouTube-style "video" and an untitled
+    one as a Reel; an explicit kind removes the heuristic. The video
+    composer sends PostCreate{title, media:[{type:"video", url, thumbnail,
+    width, height}]}.
+[ ] `duration` (seconds) on video PostMedia → the app can show a duration
+    badge on video cards (it has width/height/thumbnail already).
+[ ] Optional GET /feed/videos (landscape/titled videos only) so the app
+    doesn't filter the reels feed client-side. Today it reads /feed/reels +
+    /reels/popular and keeps the titled ones.
+    NOTE: video hosting uses Cloudinary (CLOUDINARY_* — already set for
+    images); the app uploads the file directly and posts the hosted URL.
+
 ================================================================================
 ALREADY SHIPPED — for context, no action
 ================================================================================

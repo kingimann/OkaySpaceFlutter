@@ -15,6 +15,7 @@ import 'messages_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
+import 'videos_screen.dart';
 import 'search_screen.dart';
 import 'wallet_screen.dart';
 
@@ -100,6 +101,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         return _currentId == 'reels'
             ? const ReelsScreen(embedded: true)
             : const SizedBox.shrink();
+      case 'videos':
+        return const VideosScreen(embedded: true);
       case 'messages':
         return const MessagesScreen();
       case 'market':

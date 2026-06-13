@@ -165,6 +165,8 @@ class NavDest {
 const List<NavDest> kAllNavDests = [
   NavDest('feed', 'Feed', Icons.home_outlined, Icons.home),
   NavDest('reels', 'Reels', Icons.play_circle_outline, Icons.play_circle),
+  NavDest('videos', 'Videos', Icons.smart_display_outlined,
+      Icons.smart_display),
   NavDest('messages', 'Messages', Icons.chat_bubble_outline, Icons.chat_bubble),
   NavDest('market', 'Market', Icons.storefront_outlined, Icons.storefront),
   NavDest('profile', 'Profile', Icons.person_outline, Icons.person),
@@ -246,6 +248,8 @@ class SidebarDest {
 const List<SidebarDest> kAllSidebarDests = [
   SidebarDest('feed', 'Feed', Icons.home_rounded, Color(0xFF3B82F6)),
   SidebarDest('reels', 'Reels', Icons.videocam_rounded, Color(0xFFEC4899)),
+  SidebarDest('videos', 'Videos', Icons.smart_display_rounded,
+      Color(0xFFEF4444)),
   SidebarDest('map', 'Map', Icons.map_rounded, Color(0xFF10B981)),
   SidebarDest('marketplace', 'Marketplace', Icons.storefront_rounded,
       Color(0xFFF97316)),
