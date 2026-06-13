@@ -27,18 +27,34 @@ class _PlaceReviewsScreenState extends State<PlaceReviewsScreen> {
   late Future<List<PlaceReview>> _reviews;
   late Future<ReviewSummary> _summary;
 
+  /// The current user's existing review of this place, if any (reviews
+  /// upsert one-per-user, so this drives "Edit your review" + prefill).
+  PlaceReview? _myReview;
+
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  void _load() {
     _reviews = api.guides.placeReviews(widget.placeKey);
     _summary = api.guides.placeReviewSummary(widget.placeKey);
+    _reviews.then((list) {
+      if (!mounted) return;
+      PlaceReview? mine;
+      for (final r in list) {
+        if (r.userId == currentUserId) {
+          mine = r;
+          break;
+        }
+      }
+      setState(() => _myReview = mine);
+    }).catchError((_) {});
   }
 
   Future<void> _reload() async {
-    setState(() {
-      _reviews = api.guides.placeReviews(widget.placeKey);
-      _summary = api.guides.placeReviewSummary(widget.placeKey);
-    });
+    setState(_load);
     await _reviews;
   }
 
@@ -63,6 +79,7 @@ class _PlaceReviewsScreenState extends State<PlaceReviewsScreen> {
         placeName: widget.placeName,
         latitude: widget.latitude,
         longitude: widget.longitude,
+        existing: _myReview,
       ),
     );
     if (added == true) await _reload();
@@ -74,8 +91,10 @@ class _PlaceReviewsScreenState extends State<PlaceReviewsScreen> {
       appBar: const OkayAppBar(title: Text('Reviews')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _writeReview,
-        icon: const Icon(Icons.rate_review_outlined),
-        label: const Text('Write a review'),
+        icon: Icon(_myReview == null
+            ? Icons.rate_review_outlined
+            : Icons.edit_outlined),
+        label: Text(_myReview == null ? 'Write a review' : 'Edit your review'),
       ),
       body: MaxWidth(
         child: RefreshIndicator(
@@ -341,6 +360,7 @@ class _ReviewComposer extends StatefulWidget {
     required this.placeName,
     this.latitude,
     this.longitude,
+    this.existing,
   });
 
   final String placeKey;
@@ -348,13 +368,16 @@ class _ReviewComposer extends StatefulWidget {
   final double? latitude;
   final double? longitude;
 
+  /// The user's current review, when editing (prefills rating + text).
+  final PlaceReview? existing;
+
   @override
   State<_ReviewComposer> createState() => _ReviewComposerState();
 }
 
 class _ReviewComposerState extends State<_ReviewComposer> {
-  final _text = TextEditingController();
-  int _rating = 0;
+  late final _text = TextEditingController(text: widget.existing?.text ?? '');
+  late int _rating = widget.existing?.rating ?? 0;
   bool _busy = false;
 
   @override
@@ -440,7 +463,9 @@ class _ReviewComposerState extends State<_ReviewComposer> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Post review'),
+                  : Text(widget.existing == null
+                      ? 'Post review'
+                      : 'Update review'),
             ),
           ),
         ],
