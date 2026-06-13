@@ -1116,10 +1116,19 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const AppDrawer(),
-      floatingActionButton: FloatingActionButton(
-        tooltip: 'New post',
-        onPressed: _compose,
-        child: const Icon(Icons.edit_outlined),
+      // Lift the compose button above the floating nav pill, and let it ride
+      // the nav-bar hide-on-scroll animation instead of sitting behind it.
+      floatingActionButton: ValueListenableBuilder<double>(
+        valueListenable: barsT,
+        builder: (context, t, child) => Padding(
+          padding: EdgeInsets.only(bottom: 72 * t),
+          child: child,
+        ),
+        child: FloatingActionButton(
+          tooltip: 'New post',
+          onPressed: _compose,
+          child: const Icon(Icons.edit_outlined),
+        ),
       ),
       body: SafeArea(
         bottom: false,
@@ -1643,24 +1652,44 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             clipBehavior: Clip.none,
             alignment: Alignment.topCenter,
             children: [
-              Container(
+              SizedBox(
                 height: 100,
-                decoration: BoxDecoration(
-                  image: (!profileDecor.useBackground &&
-                          u.coverPhoto != null &&
-                          u.coverPhoto!.isNotEmpty)
-                      ? DecorationImage(
-                          image: NetworkImage(u.coverPhoto!), fit: BoxFit.cover)
-                      : null,
-                  gradient: profileDecor.useBackground
-                      ? profileDecor.background.gradient
-                      : (u.coverPhoto != null && u.coverPhoto!.isNotEmpty)
-                          ? null
-                          : LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [_accent(u), darken(_accent(u), 0.25)],
-                            ),
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        image: (!profileDecor.useBackground &&
+                                u.coverPhoto != null &&
+                                u.coverPhoto!.isNotEmpty)
+                            ? DecorationImage(
+                                image: NetworkImage(u.coverPhoto!),
+                                fit: BoxFit.cover)
+                            : null,
+                        gradient: profileDecor.useBackground
+                            ? profileDecor.background.gradient
+                            : (u.coverPhoto != null &&
+                                    u.coverPhoto!.isNotEmpty)
+                                ? null
+                                : LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      _accent(u),
+                                      darken(_accent(u), 0.25)
+                                    ],
+                                  ),
+                      ),
+                    ),
+                    // Decorative pattern overlay (only on a gradient bg).
+                    if (profileDecor.useBackground &&
+                        profileDecor.patternId != 'none')
+                      CustomPaint(
+                        painter:
+                            ProfilePatternPainter(profileDecor.patternId),
+                      ),
+                  ],
                 ),
               ),
               Positioned(
@@ -1670,6 +1699,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   child: framedAvatar(
                     frame: profileDecor.frame,
                     surface: scheme.surfaceContainerLow,
+                    shape: profileDecor.avatarShapeId,
                     child: Avatar(url: u.picture, name: u.name, radius: 42),
                   ),
                 ),
@@ -1693,12 +1723,14 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Flexible(
-                child: Text(u.name,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context)
+                child: profileNameText(
+                    u.name,
+                    Theme.of(context)
                         .textTheme
                         .headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                    accent: _accent(u),
+                    align: TextAlign.center),
               ),
               if (u.verified) ...[
                 const SizedBox(width: 6),

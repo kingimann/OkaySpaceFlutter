@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../okayspace_api.dart';
+import '../core/avatar_gen.dart';
 import '../core/cloudinary_api.dart';
 import 'common.dart';
 import 'profile_decor.dart';
@@ -65,6 +66,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   /// Locally-picked avatar / cover bytes, shown as previews until saved.
   Uint8List? _newPicture;
   Uint8List? _newCover;
+  /// A generated (DiceBear) avatar URL chosen instead of an uploaded photo.
+  String? _generatedAvatarUrl;
   bool _busy = false;
 
   Future<void> _pickPicture() async {
@@ -75,7 +78,94 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
     if (file == null) return;
     final bytes = await file.readAsBytes();
-    if (mounted) setState(() => _newPicture = bytes);
+    if (mounted) {
+      setState(() {
+        _newPicture = bytes;
+        _generatedAvatarUrl = null; // a real photo overrides a generated one
+      });
+    }
+  }
+
+  /// Generates a random profile picture (DiceBear): pick a style, shuffle
+  /// until you like it. The chosen URL is saved as the avatar.
+  Future<void> _generateAvatar() async {
+    var style = kAvatarStyles.first.id;
+    var url = avatarUrl(style: style);
+    final chosen = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Generate a profile picture',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 12),
+                Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: Theme.of(sheetContext)
+                        .colorScheme
+                        .surfaceContainerHighest,
+                    shape: BoxShape.circle,
+                    image: DecorationImage(image: NetworkImage(url)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final s in kAvatarStyles)
+                      ChoiceChip(
+                        label: Text(s.label),
+                        selected: style == s.id,
+                        onSelected: (_) => setSheet(() {
+                          style = s.id;
+                          url = avatarUrl(style: style);
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            setSheet(() => url = avatarUrl(style: style)),
+                        icon: const Icon(Icons.shuffle),
+                        label: const Text('Shuffle'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.pop(sheetContext, url),
+                        icon: const Icon(Icons.check),
+                        label: const Text('Use this'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (chosen != null && mounted) {
+      setState(() {
+        _generatedAvatarUrl = chosen;
+        _newPicture = null;
+      });
+    }
   }
 
   Future<void> _pickCover() async {
@@ -149,6 +239,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         patch['picture'] =
             await cloudinaryUploadImage(_newPicture!, folder: 'avatars') ??
                 'data:image/jpeg;base64,${base64Encode(_newPicture!)}';
+      } else if (_generatedAvatarUrl != null) {
+        // A generated avatar is already a hosted URL — store it directly.
+        patch['picture'] = _generatedAvatarUrl;
       }
       if (_newCover != null) {
         patch['cover_photo'] =
@@ -221,26 +314,50 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ? CircleAvatar(
                                 radius: 38,
                                 backgroundImage: MemoryImage(_newPicture!))
-                            : Avatar(
-                                url: widget.user.picture,
-                                name: widget.user.name,
-                                radius: 38),
+                            : _generatedAvatarUrl != null
+                                ? CircleAvatar(
+                                    radius: 38,
+                                    backgroundImage:
+                                        NetworkImage(_generatedAvatarUrl!))
+                                : Avatar(
+                                    url: widget.user.picture,
+                                    name: widget.user.name,
+                                    radius: 38),
                       ),
                       Positioned(
                         right: 0,
                         bottom: 0,
-                        child: Material(
-                          color: Theme.of(context).colorScheme.primary,
-                          shape: const CircleBorder(),
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            onTap: _pickPicture,
-                            child: const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: Icon(Icons.camera_alt,
-                                  size: 16, color: Colors.white),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Material(
+                              color: Theme.of(context).colorScheme.secondary,
+                              shape: const CircleBorder(),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                onTap: _generateAvatar,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Icon(Icons.auto_awesome,
+                                      size: 16, color: Colors.white),
+                                ),
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: 4),
+                            Material(
+                              color: Theme.of(context).colorScheme.primary,
+                              shape: const CircleBorder(),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                onTap: _pickPicture,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Icon(Icons.camera_alt,
+                                      size: 16, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
