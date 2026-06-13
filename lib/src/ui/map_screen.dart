@@ -2124,17 +2124,35 @@ class _MapScreenState extends State<MapScreen> {
                         tooltip: 'Menu',
                         onPressed: () => openSidebar(context),
                       ),
-                      Text('Map',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold, fontSize: 22)),
-                      const Spacer(),
-                      GestureDetector(
-                        onLongPress: _mapOptionsMenu,
-                        child: IconButton(
-                          icon: const Icon(Icons.search),
-                          tooltip: 'Search (long-press for map options)',
-                          onPressed: _openSearch,
+                      // Apple-Maps-style always-visible search field: tap to
+                      // open the search sheet (no hunting for an icon).
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _openSearch,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.search,
+                                    size: 20, color: scheme.outline),
+                                const SizedBox(width: 8),
+                                Text('Search Maps',
+                                    style: TextStyle(
+                                        color: scheme.outline, fontSize: 15)),
+                              ],
+                            ),
+                          ),
                         ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.tune),
+                        tooltip: 'Map options & layers',
+                        onPressed: _mapOptionsMenu,
                       ),
                     ],
                   ),
@@ -2382,33 +2400,35 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 12),
+                      // Primary call-to-action: big blue Directions button.
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12)),
+                          icon: const Icon(Icons.directions),
+                          label: const Text('Directions'),
+                          onPressed: () => _openExternal(_searchPin!),
+                        ),
+                      ),
                       const SizedBox(height: 8),
+                      // Secondary actions.
                       Row(
                         children: [
-                          FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF2563EB),
-                                foregroundColor: Colors.white,
-                                visualDensity: VisualDensity.compact),
-                            icon: const Icon(Icons.directions, size: 18),
-                            label: const Text('Directions'),
-                            onPressed: () => launchUrl(
-                              Uri.parse(
-                                  'https://www.google.com/maps/dir/?api=1'
-                                  '${_myLocation != null ? '&origin=${_myLocation!.latitude},${_myLocation!.longitude}' : ''}'
-                                  '&destination=${_searchPin!.latitude},${_searchPin!.longitude}'),
-                              mode: LaunchMode.externalApplication,
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                  visualDensity: VisualDensity.compact),
+                              icon:
+                                  const Icon(Icons.route_outlined, size: 18),
+                              label: const Text('Route'),
+                              onPressed: _routeToPin,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          FilledButton.tonalIcon(
-                            style: FilledButton.styleFrom(
-                                visualDensity: VisualDensity.compact),
-                            icon: const Icon(Icons.route_outlined, size: 18),
-                            label: const Text('Route'),
-                            onPressed: _routeToPin,
-                          ),
-                          const Spacer(),
                           IconButton(
                             icon: const Icon(Icons.send_outlined, size: 20),
                             tooltip: 'Send to chat',
