@@ -54,13 +54,11 @@ type-to-confirm). A modified client bypasses ALL of them. Enforce server-side:
       Stripe event, velocity spikes.
 
 ================================================================================
-PRIORITY 2 — CASH-OUT FEE POLICY
+PRIORITY 2 — CASH-OUT FEE POLICY  ✔ DONE (config now serves 20.0 / 2.00)
 ================================================================================
-[ ] /payments/config currently returns cashout_min: 5.0, cashout_fee: 1.99.
-    Owner wants: cashout_min = 20.0, cashout_fee = 2.00.
-    The app displays and enforces whatever config returns — just change the
-    served values.
-[ ] Make them admin-settable so future changes don't need a deploy:
+[x] /payments/config now returns cashout_min: 20.0, cashout_fee: 2.00. ✔
+    The app already displays/enforces whatever config returns — done.
+[ ] (Optional) make them admin-settable so future changes don't need a deploy:
     extend POST /admin/fees to accept cashout_fee_cents and
     cashout_min_cents, and have /payments/config read the stored settings.
 
@@ -71,14 +69,11 @@ extra. If big instant cash-outs become common, price instant as
 max($2, 1.5%) or cap the instant amount.
 
 ================================================================================
-PRIORITY 3 — RESUME PENDING TOP-UPS
+PRIORITY 3 — RESUME PENDING TOP-UPS  ✔ DONE
 ================================================================================
-[ ] On GET /wallet/activity items where kind == "topup" and status ==
-    "pending", include the PaymentIntent's client_secret:
-        "client_secret": "pi_…_secret_…"
-    The app's "Resume payment" button reopens the in-app card form against
-    it (then /wallet/topup/confirm-intent credits). Without it, Resume can
-    only tell the user to start a new top-up. Cancel already works.
+[x] GET /wallet/activity items now include client_secret (and
+    counterparty_name). The app's "Resume payment" reads it directly and
+    reopens the in-app card form — working now. ✔
 
 ================================================================================
 PRIORITY 4 — FULLY-INLINE PAYOUT ONBOARDING (optional, nice)
