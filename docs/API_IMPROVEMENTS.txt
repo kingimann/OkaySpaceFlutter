@@ -12,6 +12,14 @@ Developer API keys) dramatically easier to build and harder to misuse.
 --------------------------------------------------------------------------------
 1. DOCUMENT RESPONSE SHAPES (the single highest-impact fix)
 --------------------------------------------------------------------------------
+STATUS 2026-06-13: largely DONE. Every operation the app calls now declares a
+response_model in the generated spec (0 untyped app-called operations remain).
+The money/payout routes named below are typed, and the latest pass added models
+to the last holdouts (circles, games, forms, promoted/*, media/resolve-video,
+pub/sites, admin/ad-revenue, admin/bot/run, roadside active/helping/
+verifications). Remaining work is §2 below — converge on ONE error envelope.
+Original problem write-up kept for context.
+
 PROBLEM
   Nearly every endpoint in the OpenAPI spec declares NO response schema —
   the 200 response is empty. Example: POST /stripe/transfer, GET /stripe/
