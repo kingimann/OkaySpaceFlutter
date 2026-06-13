@@ -122,6 +122,7 @@ class RouteStep {
     required this.meters,
     required this.type,
     required this.modifier,
+    required this.location,
   });
 
   /// Human-readable instruction, e.g. "Turn left onto Main St".
@@ -135,6 +136,9 @@ class RouteStep {
 
   /// Direction modifier ('left', 'right', 'slight left', 'uturn', …).
   final String modifier;
+
+  /// Where this maneuver happens (used to advance steps during navigation).
+  final LatLng? location;
 }
 
 /// A driving route through [points] from the Mapbox Directions API
@@ -177,12 +181,18 @@ Future<({List<LatLng> line, double km, int mins, List<RouteStep> steps})?>
       if (ls is! List) continue;
       for (final s in ls.whereType<Map>()) {
         final man = s['maneuver'];
+        LatLng? loc;
+        final mloc = man is Map ? man['location'] : null;
+        if (mloc is List && mloc.length >= 2 && mloc[0] is num && mloc[1] is num) {
+          loc = LatLng((mloc[1] as num).toDouble(), (mloc[0] as num).toDouble());
+        }
         steps.add(RouteStep(
           instruction:
               (man is Map ? man['instruction']?.toString() : null) ?? '',
           meters: (s['distance'] is num) ? (s['distance'] as num).toDouble() : 0,
           type: (man is Map ? man['type']?.toString() : null) ?? '',
           modifier: (man is Map ? man['modifier']?.toString() : null) ?? '',
+          location: loc,
         ));
       }
     }

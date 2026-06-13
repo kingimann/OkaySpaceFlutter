@@ -16,6 +16,7 @@ import '../../okayspace_api.dart';
 import 'common.dart';
 import 'eta_view_screen.dart';
 import 'marketplace_screen.dart';
+import 'navigation_screen.dart';
 import 'place_reviews_screen.dart';
 
 /// Mapbox public access token, injected at build time via
@@ -562,6 +563,30 @@ class _MapScreenState extends State<MapScreen> {
                     onPressed: () => _openExternal(dest),
                   ),
                 ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF22C55E),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12)),
+                  icon: const Icon(Icons.navigation),
+                  label: const Text('Go — live navigation'),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    NavigationScreen.open(
+                      context,
+                      line: r.line,
+                      steps: r.steps,
+                      destination: dest,
+                      destName: _searchLabel,
+                    );
+                  },
+                ),
               ),
             ),
             const Divider(height: 1),
