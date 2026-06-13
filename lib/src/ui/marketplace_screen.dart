@@ -9,6 +9,24 @@ import 'profile_screen.dart';
 
 String _price(Listing l) => '${l.currency} ${l.price.toStringAsFixed(2)}';
 
+/// Human label for a stored condition value (e.g. 'like_new' → 'Like new').
+String _conditionLabel(String? c) {
+  switch (c) {
+    case 'new':
+      return 'New';
+    case 'like_new':
+      return 'Like new';
+    case 'good':
+      return 'Good';
+    case 'fair':
+      return 'Fair';
+    case 'used':
+      return 'Used';
+    default:
+      return c ?? '';
+  }
+}
+
 /// Marketplace browse grid with a search field.
 class MarketplaceScreen extends StatefulWidget {
   const MarketplaceScreen({super.key, this.embedded = false});
@@ -393,6 +411,38 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   }
 }
 
+/// A small rounded meta chip (condition / negotiable / sold) on the detail.
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.label, this.icon, this.highlight = false});
+
+  final String label;
+  final IconData? icon;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fg = highlight ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: highlight ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: fg),
+            const SizedBox(width: 4),
+          ],
+          Text(label, style: TextStyle(fontSize: 12, color: fg)),
+        ],
+      ),
+    );
+  }
+}
+
 class _ListingCard extends StatelessWidget {
   const _ListingCard({required this.listing});
 
@@ -419,6 +469,9 @@ class _ListingCard extends StatelessWidget {
                   if (photo != null)
                     Image.network(photo,
                         fit: BoxFit.cover,
+                        loadingBuilder: (_, child, progress) => progress == null
+                            ? child
+                            : ColoredBox(color: scheme.surfaceContainerHighest),
                         errorBuilder: (_, __, ___) => ColoredBox(
                             color: scheme.surfaceContainerHighest,
                             child: const Icon(Icons.image_not_supported)))
@@ -427,6 +480,25 @@ class _ListingCard extends StatelessWidget {
                         color: scheme.surfaceContainerHighest,
                         child: const Center(
                             child: Icon(Icons.shopping_bag_outlined))),
+                  // Sold listings get a dimming overlay + ribbon.
+                  if (listing.status == 'sold')
+                    Container(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      alignment: Alignment.center,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('SOLD',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.5)),
+                      ),
+                    ),
                   // Price chip.
                   Positioned(
                     left: 8,
@@ -445,6 +517,22 @@ class _ListingCard extends StatelessWidget {
                               fontSize: 13)),
                     ),
                   ),
+                  // "Negotiable" hint so buyers know offers are welcome.
+                  if (listing.negotiable && listing.status != 'sold')
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text('Negotiable',
+                            style: TextStyle(color: Colors.white, fontSize: 11)),
+                      ),
+                    ),
                   // Saved heart.
                   if (listing.savedByMe || listing.likedByMe)
                     const Positioned(
@@ -464,7 +552,7 @@ class _ListingCard extends StatelessWidget {
           Row(
             children: [
               if (listing.condition != null) ...[
-                Text(listing.condition!,
+                Text(_conditionLabel(listing.condition),
                     style: TextStyle(color: scheme.outline, fontSize: 12)),
                 if (listing.locality != null)
                   Text(' · ',
@@ -781,6 +869,22 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     Text(_price(l),
                         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             color: Theme.of(context).colorScheme.primary)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        if (l.status == 'sold')
+                          const _MetaChip(label: 'Sold', icon: Icons.sell),
+                        if (l.condition != null)
+                          _MetaChip(label: _conditionLabel(l.condition)),
+                        if (l.negotiable && l.status != 'sold')
+                          const _MetaChip(
+                              label: 'Negotiable',
+                              icon: Icons.local_offer_outlined,
+                              highlight: true),
+                      ],
+                    ),
                     if (l.locality != null) ...[
                       const SizedBox(height: 4),
                       Row(children: [
