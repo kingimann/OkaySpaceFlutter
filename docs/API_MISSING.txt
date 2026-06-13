@@ -83,27 +83,32 @@ CHANGE (new accounts only — existing Express accounts can't be converted)
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
-4. Cash-out fee: change $1.99 → $0.10, and make it admin-settable      [HIGH]
+4. Cash-out policy: $20 minimum, $2 flat fee — and make it
+   admin-settable                                                      [HIGH]
 --------------------------------------------------------------------------------
 WHY
-  Owner decision: the platform should take 10 cents per cash-out, not
-  $1.99. The fee lives in backend code (config returns cashout_fee: 1.99);
-  POST /admin/fees only accepts platform_fee_percent and
-  transaction_fee_cents, so it can't be changed from the admin panel.
+  Owner decision (final): cash-outs require a $20 minimum and take a $2
+  flat fee. Backend currently serves cashout_min: 5.0 / cashout_fee: 1.99
+  hardcoded; POST /admin/fees only accepts platform_fee_percent and
+  transaction_fee_cents, so neither value is tunable from the admin panel.
 
 CHANGE
-  a) Set the served value: /payments/config → "cashout_fee": 0.10
-     (the app displays and enforces whatever this says — no app change)
-  b) Better: add it to the admin fees endpoint so it's tunable later:
-     POST /admin/fees body += {"cashout_fee_cents": 10, "cashout_min": 5.0}
-     and have /payments/config read from the stored settings.
+  a) Serve the policy: /payments/config →
+       "cashout_min": 20.0, "cashout_fee": 2.00
+     (the app displays and enforces whatever config says — no app change;
+     app pre-load defaults already match $20/$2)
+  b) Better: make both admin-settable:
+     POST /admin/fees body += {"cashout_fee_cents": 200,
+                               "cashout_min_cents": 2000}
+     and have /payments/config read the stored settings.
 
-ECONOMICS WARNING (owner should know before shipping)
-  Stripe charges the PLATFORM for Instant Payouts (~1–1.5%, minimum
-  ~$0.50 per payout depending on country). With a 10¢ fee, every instant
-  cash-out loses you ~40¢+ out of pocket. Standard bank payouts cost
-  $0 extra, so 10¢ is fine there. Consider: 10¢ for standard, and either
-  pass-through (e.g. 1.5%, min 50¢) or a flat $0.50+ for Instant.
+ECONOMICS CHECK (works ✓)
+  Stripe charges the platform ~1–1.5% (min ~$0.50) per Instant Payout.
+  At a $20 minimum: instant cost ≈ $0.50; at $200: ≈ $2–3. The $2 fee
+  covers instant payouts comfortably up to roughly $130–200 per cash-out
+  and is pure margin on standard bank payouts. If users start cashing out
+  very large amounts via Instant, consider capping Instant per-transaction
+  or switching the instant fee to max($2, 1.5%).
 
 --------------------------------------------------------------------------------
 NICE-TO-HAVES (app renders these the moment they appear)

@@ -320,9 +320,9 @@ class _CashOutScreenState extends State<CashOutScreen> {
   }
 
   // Cash-out limits from /payments/config; defaults match the platform's
-  // published values (10¢ flat) until the config loads.
-  num _fee = 0.10;
-  num _min = 5.0;
+  // published policy ($20 minimum, $2 flat fee) until the config loads.
+  num _fee = 2.00;
+  num _min = 20.0;
 
   Future<void> _loadConfig() async {
     try {
