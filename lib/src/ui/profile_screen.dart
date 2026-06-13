@@ -319,7 +319,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         case 'copy':
           await Clipboard.setData(ClipboardData(
               text:
-                  'https://okayspace.ca/u/${u.username ?? widget.userId}'));
+                  'https://okayspace.ca/${u.username ?? widget.userId}'));
           if (mounted) showInfo(context, 'Link copied');
         case 'share':
           await _shareProfileToChat(u);
