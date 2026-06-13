@@ -56,4 +56,55 @@ void main() {
       expect(api.body('/marketplace/business', method: 'PUT'), {'name': 'Shop'});
     });
   });
+
+  group('MarketplaceService — offers', () {
+    test('makeOffer() posts amount (+ optional message)', () async {
+      final api = FakeApi()
+        ..on('POST', '/listings/l1/offers', json: {'id': 'o1', 'status': 'pending', 'amount': 40});
+      await MarketplaceService(api.client()).makeOffer('l1', 40, message: 'cash today');
+      expect(api.body('/listings/l1/offers', method: 'POST'),
+          {'amount': 40, 'message': 'cash today'});
+    });
+
+    test('listingOffers() reads the offers key', () async {
+      final api = FakeApi()
+        ..on('GET', '/listings/l1/offers', json: {
+          'offers': [
+            {'id': 'o1', 'amount': 40, 'status': 'pending'},
+          ]
+        });
+      final out = await MarketplaceService(api.client()).listingOffers('l1');
+      expect(out.single['id'], 'o1');
+    });
+
+    test('myOffers() returns made/received', () async {
+      final api = FakeApi()
+        ..on('GET', '/offers', json: {'made': [{'id': 'o1'}], 'received': []});
+      final out = await MarketplaceService(api.client()).myOffers();
+      expect((out['made'] as List).length, 1);
+    });
+
+    test('counterOffer() posts {amount}', () async {
+      final api = FakeApi()..on('POST', '/offers/o1/counter', json: {'id': 'o1', 'status': 'countered'});
+      await MarketplaceService(api.client()).counterOffer('o1', 48);
+      expect(api.body('/offers/o1/counter', method: 'POST'), {'amount': 48});
+    });
+
+    test('accept/decline/accept-counter/withdraw hit the right paths', () async {
+      final api = FakeApi()
+        ..on('POST', '/offers/o1/accept', json: {'status': 'accepted'})
+        ..on('POST', '/offers/o1/decline', json: {'status': 'declined'})
+        ..on('POST', '/offers/o1/accept-counter', json: {'status': 'accepted'})
+        ..on('POST', '/offers/o1/withdraw', json: {'status': 'withdrawn'});
+      final svc = MarketplaceService(api.client());
+      await svc.acceptOffer('o1');
+      await svc.declineOffer('o1');
+      await svc.acceptCounter('o1');
+      await svc.withdrawOffer('o1');
+      expect(api.request('/offers/o1/accept', method: 'POST').method, 'POST');
+      expect(api.request('/offers/o1/decline', method: 'POST').method, 'POST');
+      expect(api.request('/offers/o1/accept-counter', method: 'POST').method, 'POST');
+      expect(api.request('/offers/o1/withdraw', method: 'POST').method, 'POST');
+    });
+  });
 }
