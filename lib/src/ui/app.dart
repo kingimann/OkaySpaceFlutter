@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/update_checker.dart';
 import 'app_drawer.dart';
@@ -39,6 +41,7 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
     homeTabSignal.addListener(showBars);
     // Show a banner when a newer build is deployed while the app is open.
     updateAvailable.addListener(_onUpdateAvailable);
+    mobileWebGate.addListener(_onMobileGate);
     startUpdateChecks();
     // When the server rejects our credential, drop back to the gate (login).
     api.client.onUnauthorized = () {
@@ -78,11 +81,48 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
       ));
   }
 
+  // Store links for the mobile-web gate, set at build time once the native
+  // apps are published. With neither configured the gate is inert, so
+  // phone-browser testing keeps working.
+  static const _appStoreUrl = String.fromEnvironment('APP_STORE_URL');
+  static const _playStoreUrl = String.fromEnvironment('PLAY_STORE_URL');
+  bool _gateShown = false;
+
+  void _onMobileGate() {
+    if (!mobileWebGate.value || _gateShown || !kIsWeb) return;
+    if (_appStoreUrl.isEmpty && _playStoreUrl.isEmpty) return;
+    final view = WidgetsBinding.instance.platformDispatcher.views.firstOrNull;
+    if (view == null) return;
+    final shortest = view.physicalSize.shortestSide / view.devicePixelRatio;
+    if (shortest >= 600) return; // tablets/desktops aren't gated
+    _gateShown = true; // once per session — dismissible, never a wall
+    _messengerKey.currentState?.showMaterialBanner(MaterialBanner(
+      content: const Text('OkaySpace is better in the app.'),
+      leading: const Icon(Icons.smartphone),
+      actions: [
+        TextButton(
+          onPressed: () =>
+              _messengerKey.currentState?.hideCurrentMaterialBanner(),
+          child: const Text('Continue in browser'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
+          onPressed: () => launchUrl(
+            Uri.parse(_appStoreUrl.isNotEmpty ? _appStoreUrl : _playStoreUrl),
+            mode: LaunchMode.externalApplication,
+          ),
+          child: const Text('Get the app'),
+        ),
+      ],
+    ));
+  }
+
   @override
   void dispose() {
     barsVisible.removeListener(_animateBars);
     homeTabSignal.removeListener(showBars);
     updateAvailable.removeListener(_onUpdateAvailable);
+    mobileWebGate.removeListener(_onMobileGate);
     _bars.dispose();
     super.dispose();
   }

@@ -33,6 +33,7 @@ class AdminPaymentsScreen extends StatefulWidget {
 class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   bool? _testPayments;
   bool? _mobileOnly;
+  bool? _mobileWebGate;
   String _stripeStatus = '';
   String _webBuild = '';
   Map<String, dynamic> _revenue = const {};
@@ -61,6 +62,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         api.admin.webBuild().catchError((_) => null),
         api.admin.revenue().catchError((_) => null),
         api.admin.fees().catchError((_) => null),
+        api.admin.mobileWebGate().catchError((_) => null),
       ]);
       if (!mounted) return;
       setState(() {
@@ -71,6 +73,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         }
         final mo = results[1];
         if (mo is Map) _mobileOnly = mo['enabled'] == true;
+        final mwg = results[5];
+        if (mwg is Map) _mobileWebGate = mwg['enabled'] == true;
         final wb = results[2];
         if (wb is Map) _webBuild = '${wb['build'] ?? wb['token'] ?? ''}';
         final rev = results[3];
@@ -130,6 +134,16 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       value: _mobileOnly ?? false,
                       onChanged: (v) => _run(() => api.admin.setMobileOnly(v),
                           v ? 'PC gate on' : 'PC gate off'),
+                    ),
+                    SwitchListTile(
+                      title: const Text('Mobile web gate'),
+                      subtitle: const Text(
+                          'Phone browsers see a "Get the app" banner '
+                          '(needs store links configured in the build)'),
+                      value: _mobileWebGate ?? false,
+                      onChanged: (v) => _run(
+                          () => api.admin.setMobileWebGate(v),
+                          v ? 'Mobile web gate on' : 'Mobile web gate off'),
                     ),
                     ListTile(
                       leading: Icon(Icons.refresh, color: scheme.primary),
