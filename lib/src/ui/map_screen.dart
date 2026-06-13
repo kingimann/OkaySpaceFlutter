@@ -71,6 +71,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _showRoadside = false;
   bool _showTransit = false;
   bool _showSaved = false;
+  bool _showRated = false; // top-rated places (from /reviews/nearby)
   bool _loading = false;
 
   // Display options (persisted).
@@ -177,6 +178,7 @@ class _MapScreenState extends State<MapScreen> {
   List<RoadsideRequest> _roadside = const [];
   List<Map<String, dynamic>> _transit = const [];
   List<Place> _saved = const [];
+  List<NearbyRatedPlace> _rated = const [];
 
   /// Active live-ETA share id, when sharing.
   String? _etaShareId;
@@ -240,6 +242,7 @@ class _MapScreenState extends State<MapScreen> {
           _showRoadside = d['roadside'] as bool? ?? false;
           _showTransit = d['transit'] as bool? ?? false;
           _showSaved = d['saved'] as bool? ?? false;
+          _showRated = d['rated'] as bool? ?? false;
           _showRadiusCircle = d['radiusCircle'] as bool? ?? true;
           _showCrosshair = d['crosshair'] as bool? ?? false;
           _cluster = d['cluster'] as bool? ?? false;
@@ -288,6 +291,7 @@ class _MapScreenState extends State<MapScreen> {
               'roadside': _showRoadside,
               'transit': _showTransit,
               'saved': _showSaved,
+              'rated': _showRated,
               'radiusCircle': _showRadiusCircle,
               'crosshair': _showCrosshair,
               'cluster': _cluster,
@@ -384,12 +388,18 @@ class _MapScreenState extends State<MapScreen> {
                   radius: (_radiusKm * 1000).clamp(100, 2000).toDouble())
               .catchError((_) => <Map<String, dynamic>>[])
           : Future.value(const <Map<String, dynamic>>[]),
+      _showRated
+          ? api.guides
+              .nearbyRatedPlaces(lat: lat, lng: lng, radiusKm: _radiusKm)
+              .catchError((_) => <NearbyRatedPlace>[])
+          : Future.value(const <NearbyRatedPlace>[]),
     ]);
     if (!mounted) return;
     setState(() {
       _listings = results[0] as List<Listing>;
       _roadside = results[1] as List<RoadsideRequest>;
       _transit = results[2] as List<Map<String, dynamic>>;
+      _rated = results[3] as List<NearbyRatedPlace>;
       _loading = false;
     });
   }
@@ -685,6 +695,9 @@ class _MapScreenState extends State<MapScreen> {
                         const SizedBox(width: 8),
                         chip('Saved', Icons.bookmark, _showSaved,
                             () => _toggle(() => _showSaved = !_showSaved)),
+                        const SizedBox(width: 8),
+                        chip('Rated', Icons.star, _showRated,
+                            () => _toggle(() => _showRated = !_showRated)),
                       ],
                     ),
                   ),
@@ -1047,6 +1060,7 @@ class _MapScreenState extends State<MapScreen> {
       _showRoadside = false;
       _showTransit = false;
       _showSaved = false;
+      _showRated = false;
       _maxPrice = 0;
       _minPrice = 0;
       _withPhotosOnly = false;
@@ -1466,6 +1480,7 @@ class _MapScreenState extends State<MapScreen> {
             row(const Color(0xFF6366F1), Icons.directions_transit,
                 'Transit stop'),
             row(const Color(0xFF10B981), Icons.bookmark, 'Saved place'),
+            row(const Color(0xFFF6C455), Icons.star, 'Top-rated place'),
             row(const Color(0xFF2563EB), Icons.my_location, 'Your location pin'),
           ],
         ),
@@ -1803,6 +1818,11 @@ class _MapScreenState extends State<MapScreen> {
             _marker(LatLng(pl.latitude!, pl.longitude!), Icons.bookmark,
                 const Color(0xFF10B981), () => _showSavedPlace(pl),
                 label: pl.title),
+      if (_showRated)
+        for (final p in _rated)
+          _marker(LatLng(p.latitude, p.longitude), Icons.star,
+              const Color(0xFFF6C455), () => _showRatedPlace(p),
+              label: '${p.placeName} ★${p.average.toStringAsFixed(1)}'),
     ];
 
     if (_searchPin != null) {
@@ -2494,6 +2514,36 @@ class _MapScreenState extends State<MapScreen> {
     } catch (e) {
       if (mounted) showError(context, e);
     }
+  }
+
+  void _showRatedPlace(NearbyRatedPlace p) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: ListTile(
+          leading: const CircleAvatar(
+            backgroundColor: Color(0x33F6C455),
+            child: Icon(Icons.star, color: Color(0xFFF6C455)),
+          ),
+          title: Text(p.placeName),
+          subtitle: Text('★ ${p.average.toStringAsFixed(1)} · '
+              '${p.count == 1 ? '1 review' : '${p.count} reviews'} · '
+              '${_fmtDistance(p.distanceKm * 1000)} away'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => PlaceReviewsScreen(
+                placeKey: p.placeKey,
+                placeName: p.placeName,
+                latitude: p.latitude,
+                longitude: p.longitude,
+              ),
+            ));
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _deleteSavedPlace(Place pl) async {
