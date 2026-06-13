@@ -1,93 +1,86 @@
 ================================================================================
 OKAYSPACE BACKEND — REMAINING APIs FOR FULLY IN-APP MONEY FLOWS
 ================================================================================
-Updated: 2026-06-13 (verified against the live OpenAPI spec)
+Updated: 2026-06-13 00:35 UTC (verified against the live OpenAPI spec)
 
 The Flutter app is fully wired for everything below — each item lights up
-automatically the moment the backend ships it. No app changes needed.
+automatically when the backend ships it. No app changes needed.
 
-SCOREBOARD
-  ✔ DONE  /wallet/topup/intent returns client_secret + publishable_key
-          + intent_id  (inline Add money card form)
-  ✔ DONE  /payments/payouts/methods + DELETE /{id} + POST /{id}/default
-          (saved destinations list, "VISA •• 4242 · Default")
-  ✔ DONE  /payments/payouts/debit-card + bank-account {token}
-          (in-app card + direct-deposit forms use these)
-  ✔ DONE  /payments/checkout kind enum incl. topup; /capabilities;
-          /errors registry; bool query params; {data,total} envelopes
-  ✱ TODO  items 1–3 below
+SCOREBOARD (everything shipped so far — no action)
+  ✔ /wallet/topup/intent → client_secret + publishable_key + intent_id
+  ✔ /payments/identity/start → client_secret (+ already_verified)  NEW ✔
+  ✔ /wallet/activity items → status + kind + direction + title + subtitle
+    with a declared item schema                                     NEW ✔
+  ✔ /payments/payouts/methods + delete + set-default
+  ✔ /payments/payouts/debit-card + bank-account {token}
+  ✔ checkout kind enum incl. topup · /capabilities · /errors registry
+  ✔ bool query params · {data,total} list envelopes · idempotency keys
 
---------------------------------------------------------------------------------
-1. POST /payments/identity/start — add the VerificationSession
-   client_secret to the response                                      [HIGH]
---------------------------------------------------------------------------------
-WHY
-  Stripe Identity has an in-page modal (camera + ID + selfie, fully
-  in-app). The app already calls it — it just needs the session's client
-  secret. Today the endpoint only returns the hosted `url`, which forces a
-  browser hop for verification.
-
-CHANGE (one line)
-  You already create the VerificationSession; include its client_secret:
-  Response:  {"url": "https://verify.stripe.com/...",       (keep)
-              "client_secret": "vs_..._secret_..."}         (ADD)
-
-APP BEHAVIOR ONCE SHIPPED
-  "Verify identity" opens Stripe's modal inside the page. The hosted url
-  stays as the fallback for older app builds — keep returning both.
+REMAINING — in priority order:
 
 --------------------------------------------------------------------------------
-2. GET /wallet/activity — `status` field on EVERY item                [HIGH]
+1. /wallet/activity — include `client_secret` on PENDING top-up items [HIGH]
 --------------------------------------------------------------------------------
 WHY
-  The app renders status labels on every transaction (Approved green,
-  Pending amber + hourglass, Canceled gray struck-through, Failed/Reversed
-  red) and excludes canceled/failed money from the user's spending-limit
-  math. Items without a status display as "Approved".
-  The response now has the {data, total} envelope (nice) but the item
-  schema is undeclared, so it's unclear whether status is included — if it
-  already is, just declare it in the response model and this item is done.
+  The app now offers "Resume payment" on pending transactions: it reopens
+  the in-app card form against the intent's EXISTING client secret and the
+  user finishes paying (then confirm-intent credits). Without the secret on
+  the item, Resume can only point the user at starting a new top-up.
 
 CHANGE
-  Each activity item includes:
-    "status": "pending" | "completed" | "canceled" | "failed" | "reversed"
-  (App matching is tolerant: processing / on_hold / requires_action read
-  as pending; declined/rejected as failed; refunded as reversed.)
-  Please also declare the item model in OpenAPI (response_model) so SDKs
-  can see the fields.
+  On activity items where kind == "topup" and status == "pending", add:
+    "client_secret": "pi_..._secret_..."
+  (You already store the PaymentIntent — it's intent.client_secret.)
+  Cancel already works via POST /wallet/topup/{id}/cancel.
 
 --------------------------------------------------------------------------------
-3. POST /payments/payouts/account-session — confirm components        [LOW]
+2. Balance fields on GET /payments/payouts/status — OR keep two calls  [MED]
 --------------------------------------------------------------------------------
 CONTEXT
-  The app no longer depends on this for payout methods (debit card and
-  direct deposit are native in-app forms now). The embedded Stripe form
-  remains only as the "Manage on the Stripe form" advanced option for
-  identity/address edits — and for Express accounts Stripe shows a
-  "Sign in to see your account details" wall in account-management
-  regardless (Stripe limitation, not a bug).
+  payouts/status carries account state but no balance. The app now makes
+  two extra calls on the Cash out screen (/wallet/balance and
+  /stripe/balance) and sums them. That works — this item is purely a
+  round-trip saver.
 
-CHANGE (only if you want the advanced option to work for new accounts)
-  Create connected accounts with controller "platform-controlled"
-  (not legacy Express) and enable on the AccountSession:
+CHANGE (optional)
+  Add to the payouts/status response:
+    "wallet_balance": 9.90,          // in-app ledger
+    "stripe_available": 0.0,         // connected-account balance
+    "stripe_pending": 0.0
+  The app will use them when present and skip the extra calls.
+
+--------------------------------------------------------------------------------
+3. POST /payments/payouts/account-session — components               [LOW]
+--------------------------------------------------------------------------------
+CONTEXT
+  Only affects the "Manage on the Stripe form" advanced option (identity/
+  address edits). Card + direct deposit are native in-app forms now and
+  don't use this. The app requests the onboarding component (renders
+  inline for Express accounts); account-management/payouts components
+  require platform-controlled accounts.
+
+CHANGE (only if you migrate accounts to platform-controlled)
+  Enable on the AccountSession:
     components={"account_onboarding": {"enabled": True},
                 "account_management": {"enabled": True},
                 "payouts":            {"enabled": True}}
-  Return the enabled list in `components` (already documented).
 
 --------------------------------------------------------------------------------
-NICE-TO-HAVES (no app changes wired yet — say the word and I'll wire them)
+NICE-TO-HAVES (app renders these the moment they appear)
 --------------------------------------------------------------------------------
-  - instant_eligible flag per payout method in GET /payments/payouts/
-    methods (the app already renders it when present)
-  - Estimated arrival time on POST /stripe/payout response
-    ("arrival_date": unix) → app can show "Arrives by Tue"
-  - Webhook → push notification when a payout lands / a topup credits
+  - "instant_eligible": true per method in GET /payments/payouts/methods
+    (already rendered as a chip when present)
+  - "arrival_date": <unix> on POST /stripe/payout and payouts/cashout
+    responses → app can show "Arrives by Tuesday"
+  - "counterparty_name" (+ avatar) on activity transfer items → tiles say
+    "Sam paid you" with an avatar instead of the generic icon (the feed's
+    title field covers most of this already)
+  - Push/webhook → notification when a payout lands or a top-up credits
 
 HOW TO VERIFY AFTER SHIPPING
-  1. Cash out → Verify identity → Stripe modal opens IN PAGE (no browser)
-  2. All activity → a pending top-up shows an amber "Pending" label;
-     a canceled one shows gray struck-through
-  3. (item 3) Payout method → "Manage on the Stripe form" renders the
-     embedded form instead of the sign-in wall
+  1. (item 1) All activity → tap a Pending top-up → Resume payment →
+     the card form opens pre-tied to that payment
+  2. (item 2) Cash out screen loads the balance ~1s faster
+  3. Identity: Cash out → Verify identity → Stripe modal opens IN PAGE —
+     this should already work as of your latest deploy; please test it
 ================================================================================

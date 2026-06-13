@@ -1455,12 +1455,17 @@ class _TxnTile extends StatelessWidget {
             ? const Color(0xFF22C55E)
             : Theme.of(context).colorScheme.error;
     // Venmo-style: person-first title, note + relative time underneath.
+    // The backend's activity feed sends ready-made title/subtitle; fall
+    // back to building one (older payloads said just "Transaction").
     final who = txn.counterpartyName;
-    final title = who != null
-        ? (incoming ? '$who paid you' : 'You paid $who')
-        : (txn.type ?? 'Transaction');
+    final title = txn.title ??
+        (who != null
+            ? (incoming ? '$who paid you' : 'You paid $who')
+            : (txn.type ?? 'Transaction'));
     final sub = [
-      if (txn.note != null && txn.note!.isNotEmpty)
+      if (txn.subtitle != null && txn.subtitle!.isNotEmpty)
+        txn.subtitle!
+      else if (txn.note != null && txn.note!.isNotEmpty)
         txn.note!
       else if (who != null && txn.type != null)
         txn.type!,
@@ -1607,7 +1612,7 @@ class _TxnTile extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(txn.type ?? 'Transaction',
+                    child: Text(txn.title ?? txn.type ?? 'Transaction',
                         style: const TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
