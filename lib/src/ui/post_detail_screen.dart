@@ -26,6 +26,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   late Post _post;
   late Future<List<Post>> _replies;
   final _input = TextEditingController();
+  final _inputFocus = FocusNode();
   bool _sending = false;
 
   @override
@@ -42,6 +43,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   void dispose() {
     _input.dispose();
+    _inputFocus.dispose();
     super.dispose();
   }
 
@@ -53,15 +55,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _toggleLike() async {
     try {
       final updated = await api.feed.toggleLike(_post.id);
-      if (mounted) setState(() => _post = updated);
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
-  }
-
-  Future<void> _toggleDislike() async {
-    try {
-      final updated = await api.feed.toggleDislike(_post.id);
       if (mounted) setState(() => _post = updated);
     } catch (e) {
       if (mounted) showError(context, e);
@@ -194,7 +187,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   _PostHeader(
                     post: _post,
                     onLike: _toggleLike,
-                    onDislike: _toggleDislike,
+                    onReply: () => _inputFocus.requestFocus(),
                     onRepost: _repostMenu,
                     onBookmark: _toggleBookmark,
                   ),
@@ -246,6 +239,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   Expanded(
                     child: TextField(
                       controller: _input,
+                      focusNode: _inputFocus,
                       minLines: 1,
                       maxLines: 4,
                       textInputAction: TextInputAction.send,
@@ -277,14 +271,14 @@ class _PostHeader extends StatelessWidget {
   const _PostHeader({
     required this.post,
     required this.onLike,
-    required this.onDislike,
+    required this.onReply,
     required this.onRepost,
     required this.onBookmark,
   });
 
   final Post post;
   final VoidCallback onLike;
-  final VoidCallback onDislike;
+  final VoidCallback onReply;
   final VoidCallback onRepost;
   final VoidCallback onBookmark;
 
@@ -392,48 +386,36 @@ class _PostHeader extends StatelessWidget {
               onTap: () => showPostInsightsSheet(context, post.id),
             ),
           const Divider(height: 24),
-          // Match the newsfeed: a single like (tap to like, hold to dislike),
-          // then comment / repost / views grouped on the left; bookmark right.
+          // Match the newsfeed action row: like / comment / repost / views as
+          // icon + count grouped on the left (like is a single control — tap to
+          // like, long-press for any reaction incl. 👎); bookmark sits right.
           Row(
             children: [
-              GestureDetector(
-                onLongPress: onDislike,
-                child: IconButton(
-                  tooltip: 'Like (hold to dislike)',
-                  onPressed: onLike,
-                  icon: Icon(
-                    post.likedByMe
-                        ? Icons.favorite
-                        : (post.dislikedByMe
-                            ? Icons.thumb_down
-                            : Icons.favorite_border),
-                    color: post.likedByMe
-                        ? Colors.red
-                        : (post.dislikedByMe
-                            ? Theme.of(context).colorScheme.primary
-                            : muted),
-                  ),
-                ),
+              PostAction(
+                icon: post.likedByMe ? Icons.favorite : Icons.favorite_border,
+                count: post.likesCount,
+                color: post.likedByMe ? OkayColors.danger : null,
+                onTap: onLike,
+                onLongPress: () => reactToPost(context, post),
               ),
-              IconButton(
-                tooltip: 'Reply',
-                onPressed: null,
-                icon: Icon(Icons.mode_comment_outlined, color: muted),
+              const SizedBox(width: 8),
+              PostAction(
+                icon: Icons.mode_comment_outlined,
+                count: post.repliesCount,
+                onTap: onReply,
               ),
-              IconButton(
-                tooltip: 'Repost',
-                onPressed: onRepost,
-                icon: Icon(Icons.repeat,
-                    color: post.repostedByMe
-                        ? Theme.of(context).colorScheme.primary
-                        : muted),
+              const SizedBox(width: 8),
+              PostAction(
+                icon: Icons.repeat,
+                count: post.repostsCount,
+                color: post.repostedByMe ? const Color(0xFF22C55E) : null,
+                onTap: onRepost,
               ),
-              if (post.viewsCount > 0)
-                IconButton(
-                  tooltip: '${formatCount(post.viewsCount)} views',
-                  onPressed: null,
-                  icon: Icon(Icons.visibility_outlined, color: muted),
-                ),
+              if (post.viewsCount > 0) ...[
+                const SizedBox(width: 8),
+                PostAction(
+                    icon: Icons.visibility_outlined, count: post.viewsCount),
+              ],
               const Spacer(),
               IconButton(
                 tooltip: 'Bookmark',
