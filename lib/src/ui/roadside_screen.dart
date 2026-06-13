@@ -833,45 +833,9 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                 if (r.distanceKm != null)
                   _row(Icons.straighten,
                       '${r.distanceKm!.toStringAsFixed(1)} km away'),
-                if (r.photos.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 84,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: r.photos.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, i) => InkWell(
-                        onTap: () => showDialog<void>(
-                          context: context,
-                          builder: (_) => Dialog.fullscreen(
-                            backgroundColor: Colors.black,
-                            child: Stack(children: [
-                              Center(
-                                  child: InteractiveViewer(
-                                      child: Image.network(r.photos[i]))),
-                              Positioned(
-                                top: 8,
-                                right: 8,
-                                child: IconButton(
-                                  icon: const Icon(Icons.close,
-                                      color: Colors.white),
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(),
-                                ),
-                              ),
-                            ]),
-                          ),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.network(r.photos[i],
-                              width: 110, height: 84, fit: BoxFit.cover),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                _photoStrip(r.photos),
+                _photoStrip(r.beforePhotos, label: 'Before'),
+                _photoStrip(r.afterPhotos, label: 'After'),
                 const SizedBox(height: 24),
                 ..._actions(r),
               ],
@@ -879,6 +843,61 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
           },
         ),
       ),
+    );
+  }
+
+  /// A horizontal, tappable photo strip (full-screen on tap). Optionally
+  /// labelled — used for the request photos plus helper before/after sets.
+  Widget _photoStrip(List<String> urls, {String? label}) {
+    if (urls.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        if (label != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(label,
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13)),
+          ),
+        SizedBox(
+          height: 84,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: urls.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) => InkWell(
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (_) => Dialog.fullscreen(
+                  backgroundColor: Colors.black,
+                  child: Stack(children: [
+                    Center(
+                        child: InteractiveViewer(
+                            child: Image.network(urls[i]))),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(urls[i],
+                    width: 110, height: 84, fit: BoxFit.cover),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

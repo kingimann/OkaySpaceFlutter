@@ -90,6 +90,65 @@ class PlaceReview {
       );
 }
 
+/// Aggregate rating for a place: total count, mean and a 1..5 histogram.
+class ReviewSummary {
+  const ReviewSummary({
+    required this.placeKey,
+    required this.count,
+    required this.average,
+    required this.distribution,
+  });
+
+  final String placeKey;
+  final int count;
+  final double average;
+
+  /// rating (1..5) → number of reviews at that rating.
+  final Map<int, int> distribution;
+
+  factory ReviewSummary.fromJson(Map<String, dynamic> json) {
+    final raw = asMapOrNull(json['distribution']) ?? const {};
+    return ReviewSummary(
+      placeKey: asString(json['place_key']),
+      count: asInt(json['count']),
+      average: asDoubleOrNull(json['average']) ?? 0.0,
+      distribution: {for (var i = 1; i <= 5; i++) i: asInt(raw['$i'])},
+    );
+  }
+}
+
+/// A highly-rated nearby place from `/reviews/nearby` (aggregated by place key).
+class NearbyRatedPlace {
+  const NearbyRatedPlace({
+    required this.placeKey,
+    required this.placeName,
+    required this.longitude,
+    required this.latitude,
+    required this.count,
+    required this.average,
+    required this.distanceKm,
+  });
+
+  final String placeKey;
+  final String placeName;
+  final double longitude;
+  final double latitude;
+  final int count;
+  final double average;
+  final double distanceKm;
+
+  factory NearbyRatedPlace.fromJson(Map<String, dynamic> json) =>
+      NearbyRatedPlace(
+        placeKey: asString(json['place_key']),
+        placeName: asString(json['place_name'], 'Place'),
+        longitude: asDoubleOrNull(json['longitude']) ?? 0,
+        latitude: asDoubleOrNull(json['latitude']) ?? 0,
+        count: asInt(json['count']),
+        average: asDoubleOrNull(json['average']) ?? 0,
+        distanceKm: asDoubleOrNull(json['distance_km']) ?? 0,
+      );
+}
+
 /// A curated collection of saved places, optionally public via a slug.
 class Guide {
   const Guide({

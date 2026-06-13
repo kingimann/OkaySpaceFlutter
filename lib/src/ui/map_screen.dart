@@ -182,6 +182,12 @@ class _MapScreenState extends State<MapScreen> {
   String? _etaShareId;
   String? _etaDestination;
 
+  /// Destination coords for the active share (for recomputing the live ETA),
+  /// the GPS subscription pushing position, and a throttle on those pushes.
+  LatLng? _etaDest;
+  StreamSubscription<GeoFix>? _etaSub;
+  DateTime _lastEtaPush = DateTime.fromMillisecondsSinceEpoch(0);
+
   static const _prefsKey = 'okayspace.map.prefs';
   static const _recentKey = 'okayspace.map.recent';
   static const _bookmarksKey = 'okayspace.map.bookmarks';
@@ -200,6 +206,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _followSub?.cancel();
+    _etaSub?.cancel();
     _chromeTimer?.cancel();
     // Don't leave the bars hidden if we leave mid-pan.
     showBars();
@@ -491,6 +498,89 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  String _conversationName(ConversationView c) {
+    if (c.name != null && c.name!.isNotEmpty) return c.name!;
+    if (c.otherUser != null) return c.otherUser!.name;
+    if (c.members.isNotEmpty) return c.members.map((m) => m.name).join(', ');
+    return 'Conversation';
+  }
+
+  /// Sends a place card ("meet me here") into a conversation the user picks.
+  Future<void> _sendPlaceToChat({
+    required String name,
+    String? address,
+    required double lat,
+    required double lng,
+  }) async {
+    final convs = await api.messaging
+        .conversations()
+        .catchError((_) => <ConversationView>[]);
+    if (!mounted) return;
+    final target = await showModalBottomSheet<ConversationView>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Send place to',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final c in convs)
+                    ListTile(
+                      leading: Avatar(
+                          url: c.avatar ?? c.otherUser?.picture,
+                          name: _conversationName(c)),
+                      title: Text(_conversationName(c),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onTap: () => Navigator.pop(context, c),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (target == null || !mounted) return;
+    try {
+      await api.messaging.send(
+          target.id,
+          MessageCreate(
+            type: 'place',
+            placeName: name,
+            placeAddress: address,
+            placeLatitude: lat,
+            placeLongitude: lng,
+          ));
+      if (mounted) showInfo(context, 'Sent to chat');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Opens shared reviews for the searched spot. Reviews of unsaved places are
+  /// keyed by a coarse geo key (~11 m grid) so everyone who searches the same
+  /// spot lands on the same review thread.
+  void _reviewSearchPin() {
+    final pin = _searchPin;
+    if (pin == null) return;
+    final key = 'geo:${pin.latitude.toStringAsFixed(4)},'
+        '${pin.longitude.toStringAsFixed(4)}';
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => PlaceReviewsScreen(
+        placeKey: key,
+        placeName: _searchLabel ?? 'Dropped pin',
+        latitude: pin.latitude,
+        longitude: pin.longitude,
+      ),
+    ));
+  }
+
   /// Search panel (opened from the app-bar icon): search field, recents,
   /// geocode results and the layer toggles — replaces the on-map search bar.
   void _openSearch() {
@@ -699,6 +789,7 @@ class _MapScreenState extends State<MapScreen> {
             item(Icons.tune, 'Search radius', _radiusSheet),
             item(Icons.filter_alt_outlined, 'Filters', _filtersSheet),
             item(Icons.near_me_outlined, 'Nearest to centre', _nearestSheet),
+            item(Icons.star_outline, 'Top-rated nearby', _topRatedSheet),
             item(Icons.fit_screen, 'Fit all markers', _fitAll),
             item(Icons.bookmark_outline, 'Saved views', _bookmarksSheet),
             item(Icons.add_location_alt_outlined, 'Save centre as place',
@@ -709,6 +800,86 @@ class _MapScreenState extends State<MapScreen> {
             item(Icons.ios_share, 'Share this location', _shareThisLocation),
             item(Icons.restart_alt, 'Reset all', _resetAll),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Lists the highest-rated places within the search radius of the current
+  /// centre; tapping one recentres the map and opens its reviews.
+  Future<void> _topRatedSheet() async {
+    final center = _controller.camera.center;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        builder: (context, scroll) => FutureBuilder<List<NearbyRatedPlace>>(
+          future: api.guides.nearbyRatedPlaces(
+              lat: center.latitude,
+              lng: center.longitude,
+              radiusKm: _radiusKm),
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(
+                  child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator()));
+            }
+            final places = snap.data ?? const <NearbyRatedPlace>[];
+            if (places.isEmpty) {
+              return const Center(
+                  child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Text(
+                          'No rated places within your search radius.')));
+            }
+            return ListView.builder(
+              controller: scroll,
+              itemCount: places.length + 1,
+              itemBuilder: (context, i) {
+                if (i == 0) {
+                  return const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: Text('Top-rated nearby',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 18)),
+                  );
+                }
+                final p = places[i - 1];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0x33F6C455),
+                    child: Text(p.average.toStringAsFixed(1),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Color(0xFF9A7A12))),
+                  ),
+                  title: Text(p.placeName,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text('★ ${p.average.toStringAsFixed(1)} · '
+                      '${p.count == 1 ? '1 review' : '${p.count} reviews'} · '
+                      '${_fmtDistance(p.distanceKm * 1000)} away'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _controller.move(LatLng(p.latitude, p.longitude), 16);
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => PlaceReviewsScreen(
+                        placeKey: p.placeKey,
+                        placeName: p.placeName,
+                        latitude: p.latitude,
+                        longitude: p.longitude,
+                      ),
+                    ));
+                  },
+                );
+              },
+            );
+          },
         ),
       ),
     );
@@ -753,7 +924,11 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _etaShareId = shareId;
         _etaDestination = destName;
+        _etaDest = (dLat != null && dLng != null) ? LatLng(dLat, dLng) : null;
       });
+      // Keep the share live: push the device position as it moves so the
+      // recipient sees us actually travelling, not a frozen pin.
+      _startEtaUpdates(shareId);
       final url = 'https://okayspace.ca/eta/$shareId';
       Clipboard.setData(ClipboardData(text: url));
       showInfo(context, 'ETA link copied: $url');
@@ -762,9 +937,52 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Streams GPS fixes to the server for an active ETA share (throttled to one
+  /// push per 10s), recomputing the ETA from remaining distance and speed.
+  void _startEtaUpdates(String shareId) {
+    _etaSub?.cancel();
+    _etaSub = fixStream().listen((fix) async {
+      if (!mounted || _etaShareId != shareId) return;
+      final now = DateTime.now();
+      if (now.difference(_lastEtaPush).inSeconds < 10) return;
+      _lastEtaPush = now;
+      int? mins;
+      final dest = _etaDest;
+      if (dest != null) {
+        final metres = _distance(fix.point, dest);
+        // Use live speed when actually moving, else a sane road default.
+        final kmh = fix.speedKmh > 5 ? fix.speedKmh : 40.0;
+        mins = (metres / 1000 / kmh * 60).round();
+      }
+      try {
+        await api.roadside.updateEta(shareId,
+            latitude: fix.point.latitude,
+            longitude: fix.point.longitude,
+            etaMinutes: mins);
+      } on ApiException catch (e) {
+        // 410/404 → the share ended or expired server-side; stop locally.
+        if (mounted &&
+            _etaShareId == shareId &&
+            (e.statusCode == 410 || e.statusCode == 404)) {
+          await _etaSub?.cancel();
+          _etaSub = null;
+          if (!mounted) return;
+          setState(() {
+            _etaShareId = null;
+            _etaDestination = null;
+            _etaDest = null;
+          });
+          showInfo(context, 'ETA sharing ended');
+        }
+      } catch (_) {/* transient — retry on the next fix */}
+    });
+  }
+
   Future<void> _stopEta() async {
     final id = _etaShareId;
     if (id == null) return;
+    await _etaSub?.cancel();
+    _etaSub = null;
     try {
       await api.roadside.stopEta(id);
     } catch (_) {/* already expired is fine */}
@@ -772,6 +990,7 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _etaShareId = null;
         _etaDestination = null;
+        _etaDest = null;
       });
       showInfo(context, 'ETA sharing stopped');
     }
@@ -1051,11 +1270,18 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _savePlaceAt(LatLng p) async {
-    final title = await promptText(context, title: 'Place name', action: 'Save');
-    if (title == null || title.trim().isEmpty) return;
+    final result = await showDialog<(String, String)>(
+      context: context,
+      builder: (_) => const _SavePlaceDialog(),
+    );
+    if (result == null) return;
+    final (title, category) = result;
     try {
       await api.guides.addPlace(
-          title: title.trim(), latitude: p.latitude, longitude: p.longitude);
+          title: title,
+          category: category,
+          latitude: p.latitude,
+          longitude: p.longitude);
       if (!mounted) return;
       showInfo(context, 'Place saved');
       if (_showSaved) _loadSaved();
@@ -1545,9 +1771,19 @@ class _MapScreenState extends State<MapScreen> {
         for (final r in _roadside)
           if (_roadsideStatus == 'all' ||
               r.status.toLowerCase() == _roadsideStatus)
-            _marker(LatLng(r.latitude, r.longitude), Icons.car_repair,
-                const Color(0xFFF59E0B), () => _showRoadsideReq(r),
-                label: r.service),
+            ...[
+              _marker(LatLng(r.latitude, r.longitude), Icons.car_repair,
+                  const Color(0xFFF59E0B), () => _showRoadsideReq(r),
+                  label: r.service),
+              // Tow drop-off, flagged and linked to the pickup (line below).
+              if (r.destLatitude != null && r.destLongitude != null)
+                _marker(
+                    LatLng(r.destLatitude!, r.destLongitude!),
+                    Icons.flag,
+                    const Color(0xFFF59E0B),
+                    () => _showRoadsideReq(r),
+                    label: r.destName ?? 'Drop-off'),
+            ],
       if (_showTransit)
         for (final t in _transit)
           if (_num(t['lat'] ?? t['latitude']) != null &&
@@ -1678,6 +1914,23 @@ class _MapScreenState extends State<MapScreen> {
                     strokeWidth: 5,
                     color: const Color(0xFF2563EB),
                   ),
+                ]),
+              // Tow pickup → drop-off connectors.
+              if (_showRoadside)
+                PolylineLayer(polylines: [
+                  for (final r in _roadside)
+                    if (r.destLatitude != null &&
+                        r.destLongitude != null &&
+                        (_roadsideStatus == 'all' ||
+                            r.status.toLowerCase() == _roadsideStatus))
+                      Polyline(
+                        points: [
+                          LatLng(r.latitude, r.longitude),
+                          LatLng(r.destLatitude!, r.destLongitude!),
+                        ],
+                        strokeWidth: 2,
+                        color: const Color(0xFFF59E0B),
+                      ),
                 ]),
               // GPS accuracy ring under the location dot (Apple Maps style).
               if (_myLocation != null && _gpsAccuracyM > 10)
@@ -2044,6 +2297,20 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                           const Spacer(),
                           IconButton(
+                            icon: const Icon(Icons.send_outlined, size: 20),
+                            tooltip: 'Send to chat',
+                            onPressed: () => _sendPlaceToChat(
+                              name: _searchLabel ?? 'Dropped pin',
+                              lat: _searchPin!.latitude,
+                              lng: _searchPin!.longitude,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.star_outline, size: 22),
+                            tooltip: 'Reviews',
+                            onPressed: _reviewSearchPin,
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.bookmark_add_outlined,
                                 size: 22),
                             tooltip: 'Save this spot',
@@ -2130,9 +2397,8 @@ class _MapScreenState extends State<MapScreen> {
                 ],
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.star_outline),
-              title: const Text('Reviews'),
+            _PlaceReviewsTile(
+              placeKey: pl.id,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(MaterialPageRoute<void>(
@@ -2145,10 +2411,118 @@ class _MapScreenState extends State<MapScreen> {
                 ));
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.collections_bookmark_outlined),
+              title: const Text('Add to guide'),
+              onTap: () {
+                Navigator.pop(context);
+                _addPlaceToGuide(pl);
+              },
+            ),
+            if (pl.latitude != null && pl.longitude != null)
+              ListTile(
+                leading: const Icon(Icons.send_outlined),
+                title: const Text('Send to chat'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _sendPlaceToChat(
+                    name: pl.title,
+                    address: pl.address,
+                    lat: pl.latitude!,
+                    lng: pl.longitude!,
+                  );
+                },
+              ),
+            ListTile(
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error),
+              title: Text('Remove place',
+                  style:
+                      TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteSavedPlace(pl);
+              },
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// Adds a saved place to one of the user's guides (picked from a sheet).
+  Future<void> _addPlaceToGuide(Place pl) async {
+    final guides =
+        await api.guides.guides().catchError((_) => <Guide>[]);
+    if (!mounted) return;
+    if (guides.isEmpty) {
+      showInfo(context, 'Create a guide first from the Guides screen');
+      return;
+    }
+    final guide = await showModalBottomSheet<Guide>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Add to guide',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final g in guides)
+                    ListTile(
+                      leading:
+                          const Icon(Icons.collections_bookmark_outlined),
+                      title: Text(g.name),
+                      onTap: () => Navigator.pop(context, g),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (guide == null || !mounted) return;
+    try {
+      await api.guides.addToGuide(guide.id, pl.id);
+      if (mounted) showInfo(context, 'Added to ${guide.name}');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _deleteSavedPlace(Place pl) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Remove place?'),
+        content: Text('Remove "${pl.title}" from your saved places?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await api.guides.deletePlace(pl.id);
+      if (!mounted) return;
+      setState(() => _saved = _saved.where((p) => p.id != pl.id).toList());
+      showInfo(context, 'Place removed');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Marker _dot(LatLng p, Color color) => Marker(
@@ -2360,13 +2734,26 @@ class _MapScreenState extends State<MapScreen> {
           subtitle: Text([
             if (r.placeName != null) r.placeName!,
             'Status: ${r.status}',
+            if (r.destName != null && r.destName!.isNotEmpty)
+              'Drop-off: ${r.destName}',
             if (r.distanceKm != null) '${r.distanceKm!.toStringAsFixed(1)} km away',
           ].join(' · ')),
-          trailing: IconButton(
-            icon: const Icon(Icons.directions_outlined),
-            tooltip: 'Open in Maps',
-            onPressed: () =>
-                _openExternal(LatLng(r.latitude, r.longitude)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (r.destLatitude != null && r.destLongitude != null)
+                IconButton(
+                  icon: const Icon(Icons.flag_outlined),
+                  tooltip: 'Drop-off in Maps',
+                  onPressed: () => _openExternal(
+                      LatLng(r.destLatitude!, r.destLongitude!)),
+                ),
+              IconButton(
+                icon: const Icon(Icons.directions_outlined),
+                tooltip: 'Open in Maps',
+                onPressed: () => _openExternal(LatLng(r.latitude, r.longitude)),
+              ),
+            ],
           ),
         ),
       ),
@@ -2462,5 +2849,124 @@ class _ShareEtaDialogState extends State<_ShareEtaDialog> {
         ),
       ],
     );
+  }
+}
+
+/// "Reviews" row for the saved-place sheet that loads the place's rating
+/// summary (★ 4.3 · 27 reviews) and links to the full reviews screen.
+class _PlaceReviewsTile extends StatefulWidget {
+  const _PlaceReviewsTile({required this.placeKey, required this.onTap});
+
+  final String placeKey;
+  final VoidCallback onTap;
+
+  @override
+  State<_PlaceReviewsTile> createState() => _PlaceReviewsTileState();
+}
+
+class _PlaceReviewsTileState extends State<_PlaceReviewsTile> {
+  ReviewSummary? _summary;
+
+  @override
+  void initState() {
+    super.initState();
+    api.guides.placeReviewSummary(widget.placeKey).then((s) {
+      if (mounted) setState(() => _summary = s);
+    }).catchError((_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _summary;
+    final Widget? subtitle = s == null
+        ? null
+        : (s.count > 0
+            ? Text('★ ${s.average.toStringAsFixed(1)} · '
+                '${s.count == 1 ? '1 review' : '${s.count} reviews'}')
+            : const Text('No reviews yet'));
+    return ListTile(
+      leading: const Icon(Icons.star_outline),
+      title: const Text('Reviews'),
+      subtitle: subtitle,
+      trailing: const Icon(Icons.chevron_right),
+      onTap: widget.onTap,
+    );
+  }
+}
+
+/// Name + category picker for saving a place dropped on the map. Returns
+/// (title, category); the category drives the saved-places map filter.
+class _SavePlaceDialog extends StatefulWidget {
+  const _SavePlaceDialog();
+
+  @override
+  State<_SavePlaceDialog> createState() => _SavePlaceDialogState();
+}
+
+class _SavePlaceDialogState extends State<_SavePlaceDialog> {
+  static const _categories = <(String, IconData)>[
+    ('Favorite', Icons.star),
+    ('Home', Icons.home_outlined),
+    ('Work', Icons.work_outline),
+    ('Food', Icons.restaurant),
+    ('Shop', Icons.shopping_bag_outlined),
+    ('Park', Icons.park_outlined),
+    ('Other', Icons.place_outlined),
+  ];
+
+  final _name = TextEditingController();
+  String _category = 'Favorite';
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Save place'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _name,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+                labelText: 'Place name', border: OutlineInputBorder()),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final (label, icon) in _categories)
+                ChoiceChip(
+                  avatar: Icon(icon, size: 16),
+                  label: Text(label),
+                  selected: _category == label,
+                  onSelected: (_) => setState(() => _category = label),
+                ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Save')),
+      ],
+    );
+  }
+
+  void _submit() {
+    final title = _name.text.trim();
+    if (title.isEmpty) return;
+    Navigator.pop(context, (title, _category));
   }
 }

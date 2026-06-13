@@ -20,6 +20,8 @@ class RoadsideRequest {
     required this.latitude,
     this.placeName,
     this.destName,
+    this.destLongitude,
+    this.destLatitude,
     this.vehicleMake,
     this.vehicleModel,
     this.vehicleColor,
@@ -27,6 +29,8 @@ class RoadsideRequest {
     this.fuelType,
     this.note,
     this.photos = const [],
+    this.beforePhotos = const [],
+    this.afterPhotos = const [],
     this.paymentMethod = 'wallet',
     this.price = 0,
     this.tax = 0,
@@ -56,6 +60,11 @@ class RoadsideRequest {
   final double latitude;
   final String? placeName;
   final String? destName;
+
+  /// Tow destination coordinates (when [service] is a tow), for routing the
+  /// drop-off on the map.
+  final double? destLongitude;
+  final double? destLatitude;
   final String? vehicleMake;
   final String? vehicleModel;
   final String? vehicleColor;
@@ -63,6 +72,10 @@ class RoadsideRequest {
   final String? fuelType;
   final String? note;
   final List<String> photos;
+
+  /// Before/after job documentation photos uploaded by the helper.
+  final List<String> beforePhotos;
+  final List<String> afterPhotos;
   final String paymentMethod;
   final num price;
   final num tax;
@@ -94,6 +107,8 @@ class RoadsideRequest {
         latitude: asDoubleOrNull(json['latitude']) ?? 0,
         placeName: asStringOrNull(json['place_name']),
         destName: asStringOrNull(json['dest_name']),
+        destLongitude: asDoubleOrNull(json['dest_longitude']),
+        destLatitude: asDoubleOrNull(json['dest_latitude']),
         vehicleMake: asStringOrNull(json['vehicle_make']),
         vehicleModel: asStringOrNull(json['vehicle_model']),
         vehicleColor: asStringOrNull(json['vehicle_color']),
@@ -101,6 +116,8 @@ class RoadsideRequest {
         fuelType: asStringOrNull(json['fuel_type']),
         note: asStringOrNull(json['note']),
         photos: asStringList(json['photos']),
+        beforePhotos: asStringList(json['before_photos']),
+        afterPhotos: asStringList(json['after_photos']),
         paymentMethod: asString(json['payment_method'], 'wallet'),
         price: asDoubleOrNull(json['price']) ?? 0,
         tax: asDoubleOrNull(json['tax']) ?? 0,

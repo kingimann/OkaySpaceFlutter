@@ -64,5 +64,43 @@ void main() {
       expect(api.body('/reviews', method: 'POST'),
           {'place_key': 'pk1', 'place_name': 'Cafe', 'rating': 5, 'text': 'great'});
     });
+
+    test('placeReviewSummary() parses count/average/histogram', () async {
+      final api = FakeApi()
+        ..on('GET', '/reviews/summary', json: {
+          'place_key': 'pk1',
+          'count': 2,
+          'average': 4.5,
+          'distribution': {'1': 0, '2': 0, '3': 0, '4': 1, '5': 1},
+        });
+      final s = await GuidesService(api.client()).placeReviewSummary('pk1');
+      expect(api.request('/reviews/summary').url.queryParameters['place_key'], 'pk1');
+      expect(s.count, 2);
+      expect(s.average, 4.5);
+      expect(s.distribution[5], 1);
+    });
+
+    test('nearbyRatedPlaces() sends geo query and parses the list', () async {
+      final api = FakeApi()
+        ..on('GET', '/reviews/nearby', json: [
+          {
+            'place_key': 'pk1',
+            'place_name': 'Cafe',
+            'longitude': -79.4,
+            'latitude': 43.7,
+            'count': 3,
+            'average': 4.7,
+            'distance_km': 0.8,
+          },
+        ]);
+      final out = await GuidesService(api.client())
+          .nearbyRatedPlaces(lat: 43.7, lng: -79.4, radiusKm: 5);
+      final q = api.request('/reviews/nearby').url.queryParameters;
+      expect(q['lat'], '43.7');
+      expect(q['lng'], '-79.4');
+      expect(q['radius_km'], '5.0');
+      expect(out.single.placeName, 'Cafe');
+      expect(out.single.average, 4.7);
+    });
   });
 }
