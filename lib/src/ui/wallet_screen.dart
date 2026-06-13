@@ -294,7 +294,34 @@ class _WalletScreenState extends State<WalletScreen>
     _summary = api.wallet
         .topupSync()
         .catchError((_) {})
-        .then((_) => api.wallet.summary());
+        .then((_) => api.wallet.summary())
+        .then((w) async {
+      // The summary may no longer carry transactions (they live on
+      // /wallet/activity); fall back so the overview list isn't empty.
+      if (w.recent.isNotEmpty || w.sent.isNotEmpty) return w;
+      try {
+        final raw = await api.wallet.activity();
+        final txns = _mapList(raw, 'activity').map(WalletTxn.fromJson).toList()
+          ..sort(_byNewest);
+        if (txns.isEmpty) return w;
+        return WalletSummary(
+          currency: w.currency,
+          balance: w.balance,
+          totalEarned: w.totalEarned,
+          totalSpent: w.totalSpent,
+          tipsTotal: w.tipsTotal,
+          subsTotal: w.subsTotal,
+          adsTotal: w.adsTotal,
+          activeSubscribers: w.activeSubscribers,
+          subPrice: w.subPrice,
+          recent: txns,
+          sent: w.sent,
+          raw: w.raw,
+        );
+      } catch (_) {
+        return w;
+      }
+    });
     _requests = api.wallet.moneyRequests().then(_moneyList);
     _transfers = api.wallet.transfers().then(_moneyList);
     () async {
@@ -1428,12 +1455,17 @@ class _TxnTile extends StatelessWidget {
             ? const Color(0xFF22C55E)
             : Theme.of(context).colorScheme.error;
     // Venmo-style: person-first title, note + relative time underneath.
+    // The backend's activity feed sends ready-made title/subtitle; fall
+    // back to building one (older payloads said just "Transaction").
     final who = txn.counterpartyName;
-    final title = who != null
-        ? (incoming ? '$who paid you' : 'You paid $who')
-        : (txn.type ?? 'Transaction');
+    final title = txn.title ??
+        (who != null
+            ? (incoming ? '$who paid you' : 'You paid $who')
+            : (txn.type ?? 'Transaction'));
     final sub = [
-      if (txn.note != null && txn.note!.isNotEmpty)
+      if (txn.subtitle != null && txn.subtitle!.isNotEmpty)
+        txn.subtitle!
+      else if (txn.note != null && txn.note!.isNotEmpty)
         txn.note!
       else if (who != null && txn.type != null)
         txn.type!,
@@ -1491,6 +1523,44 @@ class _TxnTile extends StatelessWidget {
     );
   }
 
+  /// Resumes an unpaid (pending) top-up: reopen the in-app card form
+  /// against the intent's existing client secret.
+  Future<void> _resumePending(BuildContext context) async {
+    final secret = '${txn.raw['client_secret'] ?? txn.raw['payment_client_secret'] ?? txn.raw['stripe_client_secret'] ?? ''}';
+    if (!stripeElementsSupported || secret.isEmpty) {
+      if (context.mounted) {
+        showInfo(context,
+            'This top-up can\'t be resumed here — start a new one from '
+            'Add money (the pending one can be cancelled).');
+      }
+      return;
+    }
+    try {
+      final cfg = await api.payments.config();
+      final pk = '${cfg['publishable_key'] ?? ''}';
+      if (pk.isEmpty || !context.mounted) return;
+      final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _InlineCardPayScreen(
+            publishableKey: pk,
+            clientSecret: secret,
+            amount: txn.amount.abs()),
+      ));
+      if (paid == true) {
+        try {
+          await api.wallet.confirmTopupIntent(
+              {'intent_id': secret.split('_secret').first});
+        } catch (_) {/* topup/sync reconciles */}
+        if (context.mounted) {
+          showInfo(context, 'Payment complete');
+          onChanged?.call();
+        }
+      }
+    } catch (e) {
+      if (context.mounted) showError(context, e);
+    }
+  }
+
   Future<void> _showDetails(BuildContext context) async {
     final incoming = txn.amount >= 0;
     final color = incoming
@@ -1542,7 +1612,7 @@ class _TxnTile extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(txn.type ?? 'Transaction',
+                    child: Text(txn.title ?? txn.type ?? 'Transaction',
                         style: const TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
@@ -1570,6 +1640,22 @@ class _TxnTile extends StatelessWidget {
                 spacing: 10,
                 runSpacing: 8,
                 children: [
+                  // Pending top-ups can be finished (resume the card
+                  // payment) or cancelled outright.
+                  if (txn.statusLabel == 'Pending' && incoming) ...[
+                    FilledButton.icon(
+                      icon: const Icon(Icons.play_arrow, size: 16),
+                      label: const Text('Resume payment'),
+                      onPressed: () => Navigator.pop(sheetContext, 'resume'),
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: scheme.error),
+                      icon: const Icon(Icons.close, size: 16),
+                      label: const Text('Cancel transaction'),
+                      onPressed: () => Navigator.pop(sheetContext, 'cancel'),
+                    ),
+                  ],
                   if (txn.id != null)
                     OutlinedButton.icon(
                       icon: const Icon(Icons.copy, size: 16),
@@ -1595,7 +1681,19 @@ class _TxnTile extends StatelessWidget {
       ),
     );
     if (action == null || !context.mounted) return;
-    if (action == 'copy' && txn.id != null) {
+    if (action == 'cancel') {
+      try {
+        await api.wallet.cancelTopup(txn.id ?? '');
+        if (context.mounted) {
+          showInfo(context, 'Transaction cancelled');
+          onChanged?.call();
+        }
+      } catch (e) {
+        if (context.mounted) showError(context, e);
+      }
+    } else if (action == 'resume') {
+      await _resumePending(context);
+    } else if (action == 'copy' && txn.id != null) {
       await Clipboard.setData(ClipboardData(text: txn.id!));
       if (context.mounted) showInfo(context, 'Reference copied');
     } else if (action == 'receipt') {

@@ -25,7 +25,16 @@ class WalletTxn {
   final Map<String, dynamic> raw;
 
   factory WalletTxn.fromJson(Map<String, dynamic> json) {
-    final amount = asDoubleOrNull(json['amount']) ?? 0;
+    var amount = asDoubleOrNull(json['amount']) ?? 0;
+    // Newer activity items carry an explicit direction with a positive
+    // amount; fold it into the sign convention the UI uses everywhere.
+    final direction = '${json['direction'] ?? ''}'.toLowerCase();
+    if (amount > 0 &&
+        (direction == 'out' ||
+            direction == 'sent' ||
+            direction == 'debit')) {
+      amount = -amount;
+    }
     // The counterparty is the *other* user: for outgoing money that's the
     // recipient (to_user_id), for incoming it's the sender (from_user_id).
     final other = amount < 0
@@ -33,16 +42,22 @@ class WalletTxn {
         : json['from_user_id'] ?? json['to_user_id'];
     return WalletTxn(
       id: asStringOrNull(json['id']),
-      type: asStringOrNull(json['type']),
+      type: asStringOrNull(json['type'] ?? json['kind']),
       amount: amount,
       currency: asString(json['currency'], 'USD'),
-      note: asStringOrNull(json['note']),
+      note: asStringOrNull(json['note'] ?? json['message']),
       counterpartyId: asStringOrNull(json['counterparty_id'] ?? other),
       counterpartyName: asStringOrNull(json['counterparty_name']),
       createdAt: asDateOrNull(json['created_at']),
       raw: json,
     );
   }
+
+  /// Human title from the activity feed ("Top-up", "You paid Sam…"), when
+  /// the backend provides one.
+  String? get title => asStringOrNull(raw['title']);
+
+  String? get subtitle => asStringOrNull(raw['subtitle']);
 
   /// Normalized display status. Backends report many raw states; the UI
   /// shows exactly: Pending, Canceled, Failed, Reversed or Approved
