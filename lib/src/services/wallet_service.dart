@@ -102,9 +102,13 @@ class WalletService {
 
   Future<dynamic> moneyRequests() => _client.getJson('/money/requests');
 
+  /// Pays a money request. Paying always requires the payer's transfer
+  /// security answer (the backend's `PayRequest.answer` is required and
+  /// `security_not_set`/wrong-answer is reported as a 400), so always send the
+  /// field — an empty string surfaces the actionable error instead of a 422.
   Future<void> payRequest(String requestId, {String? answer}) async {
     await _client.postJson('/money/requests/$requestId/pay',
-        body: {if (answer != null) 'answer': answer});
+        body: {'answer': answer ?? ''});
   }
 
   Future<void> declineRequest(String requestId) async {

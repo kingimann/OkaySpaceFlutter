@@ -90,10 +90,24 @@ class MessagingService {
   }
 
   /// Schedules a text message to send at [sendAt] (must be in the future).
+  ///
+  /// The backend's `ScheduledCreate.body` is a full `MessageCreate`, so the
+  /// plain [text] is wrapped accordingly (sending a bare string 422s).
   Future<void> scheduleMessage(
-      String convId, String body, DateTime sendAt) async {
-    await _client.postJson('/conversations/$convId/scheduled',
-        body: {'body': body, 'send_at': sendAt.toUtc().toIso8601String()});
+      String convId, String text, DateTime sendAt) async {
+    await _client.postJson('/conversations/$convId/scheduled', body: {
+      'body': MessageCreate.text(text).toJson(),
+      'send_at': sendAt.toUtc().toIso8601String(),
+    });
+  }
+
+  /// Schedules an arbitrary [message] (media, poll, …) to send at [sendAt].
+  Future<void> scheduleMessageCreate(
+      String convId, MessageCreate message, DateTime sendAt) async {
+    await _client.postJson('/conversations/$convId/scheduled', body: {
+      'body': message.toJson(),
+      'send_at': sendAt.toUtc().toIso8601String(),
+    });
   }
 
   /// Cancels a pending scheduled message.
@@ -161,10 +175,12 @@ class MessagingService {
     await _client.postJson('/presence/ping');
   }
 
-  /// Updates typing/recording presence within a conversation.
+  /// Updates typing/recording presence within a conversation. [state] is
+  /// 'typing' or 'idle'. The backend drives its "writing…" indicator off a
+  /// `typing` bool, so send that (with `state` kept for forward-compat).
   Future<void> setPresence(String convId, String state) async {
     await _client.postJson('/conversations/$convId/presence',
-        body: {'state': state});
+        body: {'typing': state == 'typing', 'state': state});
   }
 
   /// Rings the other participant(s) to start a call.
