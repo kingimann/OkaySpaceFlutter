@@ -156,7 +156,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                 labelText: 'Category', border: OutlineInputBorder()),
             items: [
               for (final c in _categories)
-                DropdownMenuItem(value: c, child: Text(c)),
+                DropdownMenuItem(
+                    value: c,
+                    child: Text('${c[0].toUpperCase()}${c.substring(1)}')),
             ],
             onChanged: (v) => setState(() => _category = v ?? _category),
           ),
@@ -167,7 +169,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                 labelText: 'Condition', border: OutlineInputBorder()),
             items: [
               for (final c in _conditions)
-                DropdownMenuItem(value: c, child: Text(c.replaceAll('_', ' '))),
+                DropdownMenuItem(value: c, child: Text(conditionLabel(c))),
             ],
             onChanged: (v) => setState(() => _condition = v),
           ),
@@ -190,6 +192,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
             value: _negotiable,
             onChanged: (v) => setState(() => _negotiable = v),
             title: const Text('Price negotiable'),
+            subtitle: const Text('Buyers can send you offers'),
             contentPadding: EdgeInsets.zero,
           ),
         ],
