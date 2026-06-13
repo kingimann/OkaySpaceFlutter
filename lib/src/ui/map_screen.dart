@@ -498,6 +498,71 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  String _conversationName(ConversationView c) {
+    if (c.name != null && c.name!.isNotEmpty) return c.name!;
+    if (c.otherUser != null) return c.otherUser!.name;
+    if (c.members.isNotEmpty) return c.members.map((m) => m.name).join(', ');
+    return 'Conversation';
+  }
+
+  /// Sends a place card ("meet me here") into a conversation the user picks.
+  Future<void> _sendPlaceToChat({
+    required String name,
+    String? address,
+    required double lat,
+    required double lng,
+  }) async {
+    final convs = await api.messaging
+        .conversations()
+        .catchError((_) => <ConversationView>[]);
+    if (!mounted) return;
+    final target = await showModalBottomSheet<ConversationView>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Send place to',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final c in convs)
+                    ListTile(
+                      leading: Avatar(
+                          url: c.avatar ?? c.otherUser?.picture,
+                          name: _conversationName(c)),
+                      title: Text(_conversationName(c),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onTap: () => Navigator.pop(context, c),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (target == null || !mounted) return;
+    try {
+      await api.messaging.send(
+          target.id,
+          MessageCreate(
+            type: 'place',
+            placeName: name,
+            placeAddress: address,
+            placeLatitude: lat,
+            placeLongitude: lng,
+          ));
+      if (mounted) showInfo(context, 'Sent to chat');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   /// Opens shared reviews for the searched spot. Reviews of unsaved places are
   /// keyed by a coarse geo key (~11 m grid) so everyone who searches the same
   /// spot lands on the same review thread.
@@ -2232,6 +2297,15 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                           const Spacer(),
                           IconButton(
+                            icon: const Icon(Icons.send_outlined, size: 20),
+                            tooltip: 'Send to chat',
+                            onPressed: () => _sendPlaceToChat(
+                              name: _searchLabel ?? 'Dropped pin',
+                              lat: _searchPin!.latitude,
+                              lng: _searchPin!.longitude,
+                            ),
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.star_outline, size: 22),
                             tooltip: 'Reviews',
                             onPressed: _reviewSearchPin,
@@ -2337,6 +2411,20 @@ class _MapScreenState extends State<MapScreen> {
                 ));
               },
             ),
+            if (pl.latitude != null && pl.longitude != null)
+              ListTile(
+                leading: const Icon(Icons.send_outlined),
+                title: const Text('Send to chat'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _sendPlaceToChat(
+                    name: pl.title,
+                    address: pl.address,
+                    lat: pl.latitude!,
+                    lng: pl.longitude!,
+                  );
+                },
+              ),
             ListTile(
               leading: Icon(Icons.delete_outline,
                   color: Theme.of(context).colorScheme.error),
