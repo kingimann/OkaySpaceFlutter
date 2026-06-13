@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../okayspace_api.dart';
 import '../core/stripe_connect_embed.dart';
 import '../core/stripe_elements.dart';
 import 'common.dart';
+import 'money_guards.dart';
 
 /// Stripe-backed payouts: onboarding status, identity verification, and
 /// cashing out the available balance.
@@ -90,6 +92,12 @@ class _CashOutScreenState extends State<CashOutScreen> {
     try {
       _status = await api.payments.payoutStatus();
       _error = false;
+      final sched = '${_status['payout_schedule'] ?? _status['schedule'] ?? _status['payout_interval'] ?? ''}'
+          .toLowerCase();
+      if (const ['manual', 'weekly', 'biweekly', 'monthly']
+          .contains(sched)) {
+        _schedule = sched;
+      }
     } catch (_) {
       // A failed load must read as an error, not as a $0 balance.
       if (_status.isEmpty) _error = true;
@@ -381,6 +389,53 @@ class _CashOutScreenState extends State<CashOutScreen> {
 
   bool _instantAllowed = true;
 
+  /// Instant payouts require a debit card on file (Stripe rule).
+  bool get _hasDebitCard =>
+      _status['has_debit_card'] == true ||
+      _methods.any((m) => '${m['type']}' == 'card');
+
+  // Automatic payout schedule (manual = only when the user cashes out).
+  String _schedule = 'manual';
+  bool _savingSchedule = false;
+
+  Future<void> _setSchedule(String interval) async {
+    final previous = _schedule;
+    setState(() {
+      _schedule = interval;
+      _savingSchedule = true;
+    });
+    try {
+      await api.payments.setPayoutSchedule(interval);
+      if (mounted) {
+        showInfo(
+            context,
+            interval == 'manual'
+                ? 'Automatic payouts off — cash out whenever you like.'
+                : 'You\'ll be paid ${switch (interval) {
+                    'weekly' => 'every week',
+                    'biweekly' => 'every two weeks',
+                    _ => 'every month',
+                  }} automatically.');
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _schedule = previous);
+        showInfo(
+            context,
+            e.isNotFound
+                ? 'Payout schedules aren\'t supported by the server yet.'
+                : e.message);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _schedule = previous);
+        showError(context, e);
+      }
+    } finally {
+      if (mounted) setState(() => _savingSchedule = false);
+    }
+  }
+
   num? get _entered => num.tryParse(_amount.text.trim());
 
   /// Whether any balance source actually answered (0 may mean "unknown").
@@ -411,6 +466,22 @@ class _CashOutScreenState extends State<CashOutScreen> {
           'Amount must be more than the $_symbol${_fee.toStringAsFixed(2)} fee.');
       return;
     }
+    // Instant payouts can only land on a debit card.
+    if (_instant && !_hasDebitCard) {
+      showInfo(context,
+          'Add a debit card first — instant payouts can\'t go to a bank '
+          'account.');
+      return;
+    }
+    // Guards: fat-finger confirm on big amounts, repeat detection.
+    if (!await confirmLargeAmount(context, amount) || !mounted) return;
+    final dupKey = 'cashout:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(context,
+          'requested a $_symbol${amount.toStringAsFixed(2)} cash-out');
+      if (!repeat || !mounted) return;
+    }
+    markMoneyAction(dupKey);
     setState(() => _busy = true);
     try {
       // Route to the pot that holds the money: the in-app ledger uses the
@@ -684,13 +755,21 @@ class _CashOutScreenState extends State<CashOutScreen> {
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Instant to debit card'),
-                          subtitle: const Text(
-                              'Minutes instead of 1–2 business days '
-                              '(Stripe instant fee applies)'),
-                          value: _instant,
+                          subtitle: Text(_hasDebitCard
+                              ? 'Minutes instead of 1–2 business days '
+                                  '(Stripe instant fee applies)'
+                              : 'Add a debit card first — instant payouts '
+                                  'can\'t go to a bank account'),
+                          value: _instant && _hasDebitCard,
                           onChanged: _busy
                               ? null
-                              : (v) => setState(() => _instant = v),
+                              : (v) {
+                                  if (v && !_hasDebitCard) {
+                                    _addDebitCard();
+                                    return;
+                                  }
+                                  setState(() => _instant = v);
+                                },
                         ),
                       const SizedBox(height: 8),
                       FilledButton.icon(
@@ -703,6 +782,50 @@ class _CashOutScreenState extends State<CashOutScreen> {
                                     strokeWidth: 2))
                             : const Icon(Icons.payments_outlined),
                         label: const Text('Cash out'),
+                      ),
+                      const SizedBox(height: 20),
+                      // Automatic payout schedule.
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Get paid automatically',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 4),
+                              Text(
+                                  'Your balance pays out to your bank on a '
+                                  'schedule — or keep it manual and cash '
+                                  'out whenever you like.',
+                                  style: TextStyle(
+                                      color: scheme.outline,
+                                      fontSize: 12.5)),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final (id, label) in const [
+                                    ('manual', 'Manual'),
+                                    ('weekly', 'Weekly'),
+                                    ('biweekly', 'Every 2 weeks'),
+                                    ('monthly', 'Monthly'),
+                                  ])
+                                    ChoiceChip(
+                                      label: Text(label),
+                                      selected: _schedule == id,
+                                      onSelected: _savingSchedule ||
+                                              _schedule == id
+                                          ? null
+                                          : (_) => _setSchedule(id),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
                   ],

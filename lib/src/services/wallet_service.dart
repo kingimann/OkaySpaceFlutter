@@ -19,6 +19,9 @@ class WalletService {
   /// Lightweight balance check.
   Future<dynamic> balance() => _client.getJson('/wallet/balance');
 
+  /// Full activity export (CSV/text payload, returned raw).
+  Future<dynamic> export() => _client.getJson('/wallet/export');
+
   /// Wallet activity feed (raw payload).
   Future<dynamic> activity() => _client.getJson('/wallet/activity');
 

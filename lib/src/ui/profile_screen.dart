@@ -18,6 +18,7 @@ import 'friends_screen.dart';
 import 'hashtag_screen.dart';
 import 'level_up.dart';
 import 'linked_text.dart';
+import 'money_guards.dart';
 import 'wallet_screen.dart';
 import 'leaderboard_screen.dart';
 import 'levels_screen.dart';
@@ -396,10 +397,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _tip() async {
     final amountText = await promptText(context,
         title: 'Send a tip', hint: 'Amount', action: 'Send');
-    final amount = num.tryParse(amountText ?? '');
-    if (amount == null || amount <= 0) return;
-    await api.users.tip(widget.userId, amount);
-    if (mounted) showInfo(context, 'Tipped $amount 🎉');
+    if (amountText == null || !mounted) return;
+    final amount = parseMoney(amountText);
+    if (amount == null) {
+      showInfo(context, 'Enter a valid amount.');
+      return;
+    }
+    if (isSelf(widget.userId)) {
+      showInfo(context, 'You can\'t tip yourself.');
+      return;
+    }
+    final issue = amountIssue(amount, max: 500, what: 'tip');
+    if (issue != null) {
+      showInfo(context, issue);
+      return;
+    }
+    if (!await confirmLargeAmount(context, amount, threshold: 100) ||
+        !mounted) {
+      return;
+    }
+    final dupKey = 'tip:${widget.userId}:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(
+          context, 'tipped \$${amount.toStringAsFixed(2)}');
+      if (!repeat || !mounted) return;
+    }
+    try {
+      await api.users.tip(widget.userId, amount);
+      markMoneyAction(dupKey);
+      if (mounted) showInfo(context, 'Tipped \$${amount.toStringAsFixed(2)} 🎉');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   @override

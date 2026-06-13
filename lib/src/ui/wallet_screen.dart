@@ -9,8 +9,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../okayspace_api.dart';
 import '../core/stripe_elements.dart';
 import '../core/stripe_pay.dart';
+import '../core/file_save.dart';
 import 'cashout_screen.dart';
 import 'common.dart';
+import 'money_guards.dart';
 import 'pay_qr_screen.dart';
 import 'spending_limits.dart';
 import 'split_bill_screen.dart';
@@ -1802,11 +1804,24 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   }
 
   Future<void> _topUp() async {
-    final amount = num.tryParse(_amount.text.trim());
-    if (amount == null || !amount.isFinite || amount <= 0) {
+    final amount = parseMoney(_amount.text);
+    if (amount == null) {
       showInfo(context, 'Enter a valid amount.');
       return;
     }
+    final issue = amountIssue(amount, max: kMaxTopUp, what: 'top-up');
+    if (issue != null) {
+      showInfo(context, issue);
+      return;
+    }
+    if (!await confirmLargeAmount(context, amount) || !mounted) return;
+    final dupKey = 'topup:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(
+          context, 'started a \$${amount.toStringAsFixed(2)} top-up');
+      if (!repeat || !mounted) return;
+    }
+    markMoneyAction(dupKey);
     setState(() => _busy = true);
     try {
       // Native apps: the full Stripe PaymentSheet — card entry inside the
@@ -2157,6 +2172,10 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
   /// overview reloads when this screen pops.
   bool _changed = false;
 
+  final _search = TextEditingController();
+  String _direction = 'all'; // all | in | out
+  String _status = 'all'; // all | Approved | Pending | issues
+
   Future<List<WalletTxn>> _fetch() async {
     final raw = await api.wallet.activity();
     final maps = _mapList(raw, 'activity');
@@ -2177,6 +2196,68 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
   }
 
   @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  bool _matches(WalletTxn t) {
+    if (_direction == 'in' && t.amount < 0) return false;
+    if (_direction == 'out' && t.amount >= 0) return false;
+    switch (_status) {
+      case 'Approved':
+      case 'Pending':
+        if (t.statusLabel != _status) return false;
+      case 'issues':
+        if (t.statusLabel != 'Canceled' &&
+            t.statusLabel != 'Failed' &&
+            t.statusLabel != 'Reversed') {
+          return false;
+        }
+    }
+    final q = _search.text.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return [
+      t.title ?? '',
+      t.subtitle ?? '',
+      t.type ?? '',
+      t.note ?? '',
+      t.counterpartyName ?? '',
+      t.amount.abs().toStringAsFixed(2),
+    ].any((s) => s.toLowerCase().contains(q));
+  }
+
+  /// Exports the full activity as a CSV download (web) or to the clipboard.
+  Future<void> _export() async {
+    try {
+      final raw = await api.wallet.export();
+      var text = raw is String ? raw : null;
+      if (text == null || text.trim().isEmpty) {
+        // No export payload — build a CSV from what's loaded.
+        final txns = await _activity;
+        text = [
+          'date,title,status,amount,currency,note',
+          for (final t in txns)
+            '"${t.createdAt ?? ''}","${(t.title ?? t.type ?? 'Transaction').replaceAll('"', "'")}",'
+                '${t.statusLabel},${t.amount},${t.currency},'
+                '"${(t.note ?? '').replaceAll('"', "'")}"',
+        ].join('\n');
+      }
+      if (!mounted) return;
+      final saved = await saveTextFile('okayspace-activity.csv', text);
+      if (!mounted) return;
+      if (saved) {
+        showInfo(context, 'Activity exported — check your downloads.');
+      } else {
+        await Clipboard.setData(ClipboardData(text: text));
+        if (mounted) showInfo(context, 'Activity CSV copied to clipboard.');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return PopScope(
@@ -2185,7 +2266,16 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
         if (!didPop) Navigator.of(context).pop(_changed);
       },
       child: Scaffold(
-      appBar: const OkayAppBar(title: Text('All activity')),
+      appBar: OkayAppBar(
+        title: const Text('All activity'),
+        actions: [
+          IconButton(
+            tooltip: 'Export CSV',
+            icon: const Icon(Icons.download_outlined),
+            onPressed: _export,
+          ),
+        ],
+      ),
       body: MaxWidth(
         child: RefreshIndicator(
           onRefresh: _reload,
@@ -2202,14 +2292,85 @@ class _WalletActivityScreenState extends State<WalletActivityScreen> {
                     icon: Icons.error_outline,
                     onRetry: _reload);
               }
-              final txns = snapshot.data ?? const <WalletTxn>[];
-              if (txns.isEmpty) {
+              final all = snapshot.data ?? const <WalletTxn>[];
+              if (all.isEmpty) {
                 return const CenteredMessage(
                     message: 'No activity yet.',
                     icon: Icons.receipt_long_outlined);
               }
+              final txns = all.where(_matches).toList();
+              final filters = Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _search,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Search by name, note, or amount',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (final (id, label) in const [
+                            ('all', 'All'),
+                            ('in', 'In'),
+                            ('out', 'Out'),
+                          ])
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: ChoiceChip(
+                                label: Text(label),
+                                visualDensity: VisualDensity.compact,
+                                selected: _direction == id,
+                                onSelected: (_) =>
+                                    setState(() => _direction = id),
+                              ),
+                            ),
+                          const SizedBox(width: 8),
+                          for (final (id, label) in const [
+                            ('Approved', 'Approved'),
+                            ('Pending', 'Pending'),
+                            ('issues', 'Canceled/Failed'),
+                          ])
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: FilterChip(
+                                label: Text(label),
+                                visualDensity: VisualDensity.compact,
+                                selected: _status == id,
+                                onSelected: (v) => setState(
+                                    () => _status = v ? id : 'all'),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              if (txns.isEmpty) {
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    filters,
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(child: Text('No matching activity.')),
+                    ),
+                  ],
+                );
+              }
               final now = DateTime.now();
-              final children = <Widget>[];
+              final children = <Widget>[filters];
               String? lastKey;
               for (final t in txns) {
                 final d = t.createdAt;
@@ -2533,17 +2694,31 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   }
 
   Future<void> _send() async {
-    final amount = num.tryParse(_amount.text.trim());
-    if (_recipient == null ||
-        amount == null ||
-        !amount.isFinite ||
-        amount <= 0) {
+    final amount = parseMoney(_amount.text);
+    if (_recipient == null || amount == null) {
       showInfo(context, 'Pick a recipient and a valid amount.');
+      return;
+    }
+    // Guards: self-pay, per-transaction cap, fat-finger confirm, repeats.
+    if (isSelf(_recipient!.userId)) {
+      showInfo(context, 'You can\'t send money to yourself.');
+      return;
+    }
+    final issue = amountIssue(amount, max: kMaxSend, what: 'send');
+    if (issue != null) {
+      showInfo(context, issue);
       return;
     }
     if (_overBalance) {
       showInfo(context, 'That\'s more than your available balance.');
       return;
+    }
+    if (!await confirmLargeAmount(context, amount) || !mounted) return;
+    final dupKey = 'send:${_recipient!.userId}:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(context,
+          'sent ${_money(amount, _currency)} to ${_recipient!.name}');
+      if (!repeat || !mounted) return;
     }
     // Self-imposed spending limits: warn before crossing one, but let the
     // user override — it's their own cap.
@@ -2595,6 +2770,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
           rethrow;
         }
       }
+      markMoneyAction(dupKey);
       if (mounted) {
         await Navigator.of(context).push(MaterialPageRoute(
           fullscreenDialog: true,
@@ -2851,11 +3027,27 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
   }
 
   Future<void> _request() async {
-    final amount = num.tryParse(_amount.text.trim());
-    if (_from == null || amount == null || !amount.isFinite || amount <= 0) {
+    final amount = parseMoney(_amount.text);
+    if (_from == null || amount == null) {
       showInfo(context, 'Pick someone and a valid amount.');
       return;
     }
+    if (isSelf(_from!.userId)) {
+      showInfo(context, 'You can\'t request money from yourself.');
+      return;
+    }
+    final issue = amountIssue(amount, max: kMaxRequest, what: 'request');
+    if (issue != null) {
+      showInfo(context, issue);
+      return;
+    }
+    final dupKey = 'request:${_from!.userId}:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(context,
+          'requested \$${amount.toStringAsFixed(2)} from ${_from!.name}');
+      if (!repeat || !mounted) return;
+    }
+    markMoneyAction(dupKey);
     final note = _note.text.trim().isEmpty ? null : _note.text.trim();
     final confirmed = await _confirmPayment(context,
         to: _from!, amount: amount, currency: '', note: note, request: true);
