@@ -319,9 +319,9 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
   }
 
-  // Cash-out limits from /payments/config (Stripe-governed); defaults match
-  // the platform's published values until the config loads.
-  num _fee = 1.99;
+  // Cash-out limits from /payments/config; defaults match the platform's
+  // published values (10¢ flat) until the config loads.
+  num _fee = 0.10;
   num _min = 5.0;
 
   Future<void> _loadConfig() async {
