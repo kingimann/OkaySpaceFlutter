@@ -134,9 +134,14 @@ PRIORITY ORDER  (updated 2026-06-13)
 4. §2b single documented error envelope ................. ◻ OPEN (only remaining)
 5. §3 optional kind / /feed/videos ...................... ✔ DONE
 
-§2b is intentionally left open: the app already tolerates both {"error":{…}}
-and {"detail":{…}} shapes, so converging on one envelope is a non-breaking
-cleanup, not a blocker. Doing it well means picking one shape, declaring it as
-the 4xx/5xx response_model app-wide, and publishing the "code" values — a
-coordinated backend pass best done on its own.
+§2b is intentionally left open as backend hygiene. The app now robustly parses
+ALL the shapes the backend emits — top-level {"error":{code,message}}, a
+business-error {"detail":{code,message}}, a plain {"detail":"msg"}, and the
+FastAPI 422 {"detail":[…]} list — so the dual shape is no longer breaking
+(fixed app-side 2026-06-13: ApiException previously dropped the code/message of
+the {"detail":{code,message}} business errors — rate limits, self-transfer,
+wrong security answer, invite-required — and showed a generic status message).
+Converging on one envelope is now purely an SDK-friendliness cleanup: pick one
+shape, declare it as the 4xx/5xx response_model app-wide, and publish the
+"code" values. Best done as its own coordinated backend pass.
 ================================================================================
