@@ -431,10 +431,22 @@ class OkayBottomNav extends StatelessWidget {
 /// content is the current user's (e.g. own-post actions). Null until loaded.
 String? currentUserId;
 
-/// Fetches and caches [currentUserId] from /auth/me (best effort).
+/// The signed-in user's role ('user' | 'mod' | 'admin'), cached alongside
+/// the id so widgets can offer moderator actions (e.g. delete any post).
+/// The backend still enforces the permission — this only gates the UI.
+String currentUserRole = 'user';
+
+/// Whether the signed-in user can moderate (admin or mod).
+bool get currentUserIsStaff =>
+    currentUserRole == 'admin' || currentUserRole == 'mod';
+
+/// Fetches and caches [currentUserId] + [currentUserRole] from /auth/me
+/// (best effort).
 Future<void> loadCurrentUserId() async {
   try {
-    currentUserId = (await api.auth.me()).userId;
+    final me = await api.auth.me();
+    currentUserId = me.userId;
+    currentUserRole = me.role;
   } catch (_) {/* ignore */}
 }
 
