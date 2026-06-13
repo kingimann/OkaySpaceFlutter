@@ -500,6 +500,18 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   late Future<List<ListingComment>> _comments;
   Future<List<Listing>>? _moreFromSeller;
   bool? _saved; // local override once toggled
+  Future<int>? _openOfferCount; // memoized open-offer count for the owner
+
+  /// Count of still-open offers on this listing (owner only). Memoized so it
+  /// isn't re-fetched on every rebuild; reset after the offers sheet closes.
+  Future<int> _openOffersFuture() {
+    return _openOfferCount ??= api.marketplace
+        .listingOffers(widget.listingId)
+        .then((offers) => offers
+            .where((o) => o['status'] == 'pending' || o['status'] == 'countered')
+            .length)
+        .catchError((_) => 0);
+  }
 
   @override
   void initState() {
@@ -621,6 +633,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       isScrollControlled: true,
       builder: (_) => _ListingOffersSheet(listingId: l.id, currency: l.currency),
     );
+    // Acting on offers in the sheet may change the open count — re-fetch it.
+    if (mounted) setState(() => _openOfferCount = null);
+    refreshMarketplaceOffersBadge();
   }
 
   Future<void> _markSold(Listing l) async {
@@ -845,7 +860,14 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                             child: OutlinedButton.icon(
                               onPressed: () => _viewOffers(l),
                               icon: const Icon(Icons.local_offer_outlined),
-                              label: const Text('View offers'),
+                              label: FutureBuilder<int>(
+                                future: _openOffersFuture(),
+                                builder: (_, s) {
+                                  final n = s.data ?? 0;
+                                  return Text(
+                                      n > 0 ? 'View offers ($n)' : 'View offers');
+                                },
+                              ),
                             ),
                           ),
                           if (l.status != 'sold') ...[
