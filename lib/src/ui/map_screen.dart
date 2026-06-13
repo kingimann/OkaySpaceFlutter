@@ -724,6 +724,7 @@ class _MapScreenState extends State<MapScreen> {
             item(Icons.tune, 'Search radius', _radiusSheet),
             item(Icons.filter_alt_outlined, 'Filters', _filtersSheet),
             item(Icons.near_me_outlined, 'Nearest to centre', _nearestSheet),
+            item(Icons.star_outline, 'Top-rated nearby', _topRatedSheet),
             item(Icons.fit_screen, 'Fit all markers', _fitAll),
             item(Icons.bookmark_outline, 'Saved views', _bookmarksSheet),
             item(Icons.add_location_alt_outlined, 'Save centre as place',
@@ -734,6 +735,86 @@ class _MapScreenState extends State<MapScreen> {
             item(Icons.ios_share, 'Share this location', _shareThisLocation),
             item(Icons.restart_alt, 'Reset all', _resetAll),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Lists the highest-rated places within the search radius of the current
+  /// centre; tapping one recentres the map and opens its reviews.
+  Future<void> _topRatedSheet() async {
+    final center = _controller.camera.center;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        builder: (context, scroll) => FutureBuilder<List<NearbyRatedPlace>>(
+          future: api.guides.nearbyRatedPlaces(
+              lat: center.latitude,
+              lng: center.longitude,
+              radiusKm: _radiusKm),
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(
+                  child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator()));
+            }
+            final places = snap.data ?? const <NearbyRatedPlace>[];
+            if (places.isEmpty) {
+              return const Center(
+                  child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Text(
+                          'No rated places within your search radius.')));
+            }
+            return ListView.builder(
+              controller: scroll,
+              itemCount: places.length + 1,
+              itemBuilder: (context, i) {
+                if (i == 0) {
+                  return const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: Text('Top-rated nearby',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 18)),
+                  );
+                }
+                final p = places[i - 1];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0x33F6C455),
+                    child: Text(p.average.toStringAsFixed(1),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Color(0xFF9A7A12))),
+                  ),
+                  title: Text(p.placeName,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text('★ ${p.average.toStringAsFixed(1)} · '
+                      '${p.count == 1 ? '1 review' : '${p.count} reviews'} · '
+                      '${_fmtDistance(p.distanceKm * 1000)} away'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _controller.move(LatLng(p.latitude, p.longitude), 16);
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => PlaceReviewsScreen(
+                        placeKey: p.placeKey,
+                        placeName: p.placeName,
+                        latitude: p.latitude,
+                        longitude: p.longitude,
+                      ),
+                    ));
+                  },
+                );
+              },
+            );
+          },
         ),
       ),
     );

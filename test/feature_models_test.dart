@@ -124,6 +124,22 @@ void main() {
     expect(summary.distribution[1], 0);
   });
 
+  test('NearbyRatedPlace.fromJson parses rating, count and distance', () {
+    final p = NearbyRatedPlace.fromJson({
+      'place_key': 'geo:43.65,-79.38',
+      'place_name': 'Cafe',
+      'longitude': -79.38,
+      'latitude': 43.65,
+      'count': 12,
+      'average': 4.6,
+      'distance_km': 1.2,
+    });
+    expect(p.placeName, 'Cafe');
+    expect(p.count, 12);
+    expect(p.average, 4.6);
+    expect(p.distanceKm, 1.2);
+  });
+
   test('WalletSummary parses balance and recent transactions', () {
     final wallet = WalletSummary.fromJson({
       'currency': 'USD',

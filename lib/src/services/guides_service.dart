@@ -104,6 +104,18 @@ class GuidesService {
               .getJson('/reviews/summary', query: {'place_key': placeKey})) ??
           const {});
 
+  /// Top-rated places within [radiusKm] of (lat, lng), aggregated by place key
+  /// and sorted by rating then review count.
+  Future<List<NearbyRatedPlace>> nearbyRatedPlaces({
+    required double lat,
+    required double lng,
+    double radiusKm = 5,
+  }) async =>
+      asModelList(
+          await _client.getJson('/reviews/nearby',
+              query: {'lat': lat, 'lng': lng, 'radius_km': radiusKm}),
+          NearbyRatedPlace.fromJson);
+
   /// Posts (or replaces) the current user's review of a place.
   Future<PlaceReview> addReview({
     required String placeKey,
