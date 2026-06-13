@@ -211,4 +211,44 @@ class MarketplaceService {
 
   Future<Map<String, dynamic>> withdrawOffer(String offerId) async =>
       _map(await _client.postJson('/offers/$offerId/withdraw'));
+
+  // --- Saved searches -----------------------------------------------------
+
+  /// Saves a search (query + filters) for the current user.
+  Future<Map<String, dynamic>> saveSearch({
+    String? name,
+    String? query,
+    String? category,
+    String? condition,
+    num? minPrice,
+    num? maxPrice,
+    String? sort,
+  }) async =>
+      _map(await _client.postJson('/marketplace/saved-searches', body: {
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (query != null && query.isNotEmpty) 'query': query,
+        if (category != null) 'category': category,
+        if (condition != null) 'condition': condition,
+        if (minPrice != null) 'min_price': minPrice,
+        if (maxPrice != null) 'max_price': maxPrice,
+        if (sort != null) 'sort': sort,
+      }));
+
+  /// The current user's saved searches, each with a `new_count` badge.
+  Future<List<Map<String, dynamic>>> savedSearches() async {
+    final data = await _client.getJson('/marketplace/saved-searches');
+    final list = data is Map ? data['searches'] : data;
+    return list is List
+        ? list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : const [];
+  }
+
+  /// Clears a saved search's "new" badge (call when the user opens it).
+  Future<void> markSearchSeen(String searchId) async {
+    await _client.postJson('/marketplace/saved-searches/$searchId/seen');
+  }
+
+  Future<void> deleteSavedSearch(String searchId) async {
+    await _client.deleteJson('/marketplace/saved-searches/$searchId');
+  }
 }

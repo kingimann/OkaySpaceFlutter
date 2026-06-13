@@ -232,6 +232,39 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         builder: (_) => _MyListingsScreen(userId: currentUserId!)));
   }
 
+  Future<void> _saveCurrentSearch() async {
+    final q = _search.text.trim();
+    try {
+      await api.marketplace.saveSearch(
+        query: q.isEmpty ? null : q,
+        category: _category,
+        condition: _condition,
+        minPrice: _minPrice,
+        maxPrice: _maxPrice,
+        sort: _sort,
+      );
+      if (mounted) showInfo(context, 'Search saved');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _openSavedSearches() async {
+    final chosen = await Navigator.of(context).push<Map<String, dynamic>>(
+        MaterialPageRoute(builder: (_) => const SavedSearchesScreen()));
+    if (chosen == null || !mounted) return;
+    // Apply the chosen saved search's criteria to the current view.
+    setState(() {
+      _search.text = '${chosen['query'] ?? ''}';
+      _category = chosen['category'] as String?;
+      _condition = chosen['condition'] as String?;
+      _minPrice = chosen['min_price'] as num?;
+      _maxPrice = chosen['max_price'] as num?;
+      _sort = chosen['sort'] as String?;
+      _query();
+    });
+  }
+
   Future<void> _reload() async {
     setState(_query);
     await _listings;
@@ -287,6 +320,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => const MyOffersScreen()));
               }
+              if (v == 'save_search') _saveCurrentSearch();
+              if (v == 'saved_searches') _openSavedSearches();
               if (v == 'business') {
                 Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => const BusinessScreen()));
@@ -295,6 +330,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'mine', child: Text('My listings')),
               PopupMenuItem(value: 'offers', child: Text('My offers')),
+              PopupMenuItem(value: 'save_search', child: Text('Save current search')),
+              PopupMenuItem(value: 'saved_searches', child: Text('Saved searches')),
               PopupMenuItem(value: 'business', child: Text('My storefront')),
             ],
           ),
@@ -1444,6 +1481,110 @@ class _OfferList extends StatelessWidget {
       itemCount: items.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (_, i) => tile(items[i]),
+    );
+  }
+}
+
+
+/// The current user's saved searches, each showing how many new listings match
+/// since they last looked. Tapping one applies it (and clears the badge);
+/// the trailing button deletes it.
+class SavedSearchesScreen extends StatefulWidget {
+  const SavedSearchesScreen({super.key});
+
+  @override
+  State<SavedSearchesScreen> createState() => _SavedSearchesScreenState();
+}
+
+class _SavedSearchesScreenState extends State<SavedSearchesScreen> {
+  late Future<List<Map<String, dynamic>>> _searches;
+
+  @override
+  void initState() {
+    super.initState();
+    _searches = api.marketplace.savedSearches();
+  }
+
+  void _reload() => setState(() => _searches = api.marketplace.savedSearches());
+
+  Future<void> _open(Map<String, dynamic> s) async {
+    try {
+      await api.marketplace.markSearchSeen('${s['id']}');
+    } catch (_) {}
+    if (mounted) Navigator.pop(context, s);
+  }
+
+  Future<void> _delete(Map<String, dynamic> s) async {
+    try {
+      await api.marketplace.deleteSavedSearch('${s['id']}');
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Saved searches')),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _searches,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final searches = snap.data ?? const [];
+          if (searches.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                    'No saved searches yet. Set filters or a query, then '
+                    '"Save current search".',
+                    textAlign: TextAlign.center),
+              ),
+            );
+          }
+          return ListView.separated(
+            itemCount: searches.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, i) {
+              final s = searches[i];
+              final newCount =
+                  num.tryParse('${s['new_count'] ?? 0}')?.toInt() ?? 0;
+              return ListTile(
+                title: Text('${s['name'] ?? 'Search'}'),
+                subtitle: newCount > 0
+                    ? Text('$newCount new since you last looked')
+                    : null,
+                leading: const Icon(Icons.search),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (newCount > 0)
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text('$newCount',
+                            style: const TextStyle(color: Colors.white, fontSize: 12)),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: 'Delete',
+                      onPressed: () => _delete(s),
+                    ),
+                  ],
+                ),
+                onTap: () => _open(s),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

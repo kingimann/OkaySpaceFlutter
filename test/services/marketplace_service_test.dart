@@ -107,4 +107,37 @@ void main() {
       expect(api.request('/offers/o1/withdraw', method: 'POST').method, 'POST');
     });
   });
+
+  group('MarketplaceService — saved searches', () {
+    test('saveSearch() posts only the set fields', () async {
+      final api = FakeApi()
+        ..on('POST', '/marketplace/saved-searches', json: {'id': 's1', 'new_count': 0});
+      await MarketplaceService(api.client())
+          .saveSearch(query: 'bike', category: 'vehicles', maxPrice: 200);
+      expect(api.body('/marketplace/saved-searches', method: 'POST'),
+          {'query': 'bike', 'category': 'vehicles', 'max_price': 200});
+    });
+
+    test('savedSearches() reads the searches key', () async {
+      final api = FakeApi()
+        ..on('GET', '/marketplace/saved-searches', json: {
+          'searches': [
+            {'id': 's1', 'name': 'Bikes', 'new_count': 3},
+          ]
+        });
+      final out = await MarketplaceService(api.client()).savedSearches();
+      expect(out.single['new_count'], 3);
+    });
+
+    test('markSearchSeen() and delete hit the right paths', () async {
+      final api = FakeApi()
+        ..on('POST', '/marketplace/saved-searches/s1/seen', json: {'ok': true})
+        ..on('DELETE', '/marketplace/saved-searches/s1', json: {'ok': true});
+      final svc = MarketplaceService(api.client());
+      await svc.markSearchSeen('s1');
+      await svc.deleteSavedSearch('s1');
+      expect(api.request('/marketplace/saved-searches/s1/seen', method: 'POST').method, 'POST');
+      expect(api.request('/marketplace/saved-searches/s1', method: 'DELETE').method, 'DELETE');
+    });
+  });
 }
