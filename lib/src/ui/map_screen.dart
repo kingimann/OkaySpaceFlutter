@@ -602,6 +602,7 @@ class _MapScreenState extends State<MapScreen> {
     var results = const <Map<String, dynamic>>[];
     var busy = false;
     var searchSeq = 0;
+    Timer? debounce;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -611,11 +612,16 @@ class _MapScreenState extends State<MapScreen> {
             EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
         child: StatefulBuilder(
           builder: (c, setSheet) {
-            Future<void> run() async {
+            // [fromTyping] = a debounced type-ahead pass: it only populates the
+            // results list (never auto-navigates or pops error toasts).
+            Future<void> run({bool fromTyping = false}) async {
               final q = ctrl.text.trim();
-              if (q.isEmpty) return;
+              if (q.isEmpty) {
+                setSheet(() => results = const []);
+                return;
+              }
               final coords = _parseCoords(q);
-              if (coords != null) {
+              if (coords != null && !fromTyping) {
                 _addRecent(q);
                 Navigator.pop(c);
                 setState(() => _center = coords);
@@ -625,23 +631,26 @@ class _MapScreenState extends State<MapScreen> {
               }
               // A slower older search must not overwrite a newer one.
               final seq = ++searchSeq;
-              setSheet(() => busy = true);
+              if (!fromTyping) setSheet(() => busy = true);
               try {
-                final r = await geocodePlaces(q, near: _center);
+                // Bias to the user's real position when we have it, else centre.
+                final r = await geocodePlaces(q, near: _myLocation ?? _center);
                 if (!c.mounted || seq != searchSeq) return;
-                _addRecent(q);
                 if (r.isEmpty) {
-                  showInfo(c, 'No places found for “$q”.');
-                } else if (r.length == 1) {
+                  if (!fromTyping) showInfo(c, 'No places found for “$q”.');
+                  setSheet(() => results = const []);
+                } else if (r.length == 1 && !fromTyping) {
+                  _addRecent(q);
                   Navigator.pop(c);
                   _gotoResult(r.first.cast<String, dynamic>());
                 } else {
+                  if (!fromTyping) _addRecent(q);
                   setSheet(() => results = r.cast<Map<String, dynamic>>());
                 }
               } catch (e) {
-                if (c.mounted && seq == searchSeq) showError(c, e);
+                if (c.mounted && seq == searchSeq && !fromTyping) showError(c, e);
               } finally {
-                if (c.mounted && seq == searchSeq) {
+                if (c.mounted && seq == searchSeq && !fromTyping) {
                   setSheet(() => busy = false);
                 }
               }
@@ -664,6 +673,16 @@ class _MapScreenState extends State<MapScreen> {
                       autofocus: true,
                       textInputAction: TextInputAction.search,
                       onSubmitted: (_) => run(),
+                      // Apple-Maps-style type-ahead: search as you type, debounced.
+                      onChanged: (v) {
+                        debounce?.cancel();
+                        if (v.trim().length < 3) {
+                          setSheet(() => results = const []);
+                          return;
+                        }
+                        debounce = Timer(const Duration(milliseconds: 350),
+                            () => run(fromTyping: true));
+                      },
                       decoration: InputDecoration(
                         hintText: 'Search a place or address',
                         prefixIcon: const Icon(Icons.search),
@@ -757,7 +776,10 @@ class _MapScreenState extends State<MapScreen> {
           },
         ),
       ),
-    ).whenComplete(ctrl.dispose);
+    ).whenComplete(() {
+      debounce?.cancel();
+      ctrl.dispose();
+    });
   }
 
   void _toggle(void Function() change) {
