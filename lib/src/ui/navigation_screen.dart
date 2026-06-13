@@ -61,14 +61,19 @@ class _NavigationScreenState extends State<NavigationScreen> {
   bool _mapReady = false;
   bool _arrived = false;
   bool _rerouting = false;
+  bool _muted = false;
   DateTime _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
   int? _spokenStep;
+
+  void _say(String text) {
+    if (!_muted) speak(text);
+  }
 
   @override
   void initState() {
     super.initState();
     final first = widget.steps.isNotEmpty ? widget.steps.first.instruction : '';
-    speak(first.isEmpty ? 'Starting navigation' : 'Starting. $first');
+    _say(first.isEmpty ? 'Starting navigation' : 'Starting. $first');
     _sub = fixStream().listen(_onFix);
   }
 
@@ -101,7 +106,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     // Arrival.
     if (!_arrived && _distance(fix.point, widget.destination) < 30) {
       _arrived = true;
-      speak('You have arrived${widget.destName != null ? ' at ${widget.destName}' : ''}.');
+      _say('You have arrived${widget.destName != null ? ' at ${widget.destName}' : ''}.');
     }
 
     // Voice the upcoming maneuver once we're close (or immediately after a turn).
@@ -110,7 +115,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       final d = cur.location != null ? _distance(fix.point, cur.location!) : 0.0;
       if (d < 250) {
         final say = cur.instruction.isEmpty ? 'Continue' : cur.instruction;
-        speak(say);
+        _say(say);
         _spokenStep = _step;
       }
     }
@@ -135,7 +140,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     if (_rerouting || from == null || !hasMapbox) return;
     _rerouting = true;
     _lastReroute = DateTime.now();
-    speak('Re-routing');
+    _say('Re-routing');
     try {
       final r = await driveRoute([from, widget.destination]);
       if (mounted && r != null && r.line.length >= 2) {
@@ -180,6 +185,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final cur = (_step < _steps.length) ? _steps[_step] : null;
+    final next = (_step + 1 < _steps.length) ? _steps[_step + 1] : null;
     final toTurn = (cur?.location != null && _pos != null)
         ? _distance(_pos!, cur!.location!)
         : null;
@@ -269,6 +275,27 @@ class _NavigationScreenState extends State<NavigationScreen> {
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold),
                           ),
+                          if (!_arrived &&
+                              next != null &&
+                              next.instruction.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Row(
+                                children: [
+                                  Icon(_icon(next),
+                                      color: Colors.white54, size: 16),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text('Then ${next.instruction}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            color: Colors.white54,
+                                            fontSize: 13)),
+                                  ),
+                                ],
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -310,6 +337,16 @@ class _NavigationScreenState extends State<NavigationScreen> {
                         ],
                       ),
                     ),
+                    IconButton(
+                      icon: Icon(
+                          _muted ? Icons.volume_off : Icons.volume_up_outlined),
+                      tooltip: _muted ? 'Unmute voice' : 'Mute voice',
+                      onPressed: () {
+                        setState(() => _muted = !_muted);
+                        if (_muted) stopSpeaking();
+                      },
+                    ),
+                    const SizedBox(width: 4),
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
                           backgroundColor: scheme.error,
