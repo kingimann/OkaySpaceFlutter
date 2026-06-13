@@ -50,20 +50,36 @@ CHANGE (optional)
   The app will use them when present and skip the extra calls.
 
 --------------------------------------------------------------------------------
-3. POST /payments/payouts/account-session — components               [LOW]
+3. Create connected accounts as PLATFORM-CONTROLLED — the last external
+   browser hop                                                        [MED]
 --------------------------------------------------------------------------------
-CONTEXT
-  Only affects the "Manage on the Stripe form" advanced option (identity/
-  address edits). Card + direct deposit are native in-app forms now and
-  don't use this. The app requests the onboarding component (renders
-  inline for Express accounts); account-management/payouts components
-  require platform-controlled accounts.
+CONTEXT (confirmed by testing on the live site)
+  The embedded onboarding component renders inline, but for EXPRESS-type
+  accounts its "Add information" button delegates the actual data entry to
+  Stripe's hosted page — a hard Stripe rule for that account type. So
+  first-time payout setup still leaves the app. (The app no longer offers
+  any other path that hits this; card/bank/identity are native in-app.)
 
-CHANGE (only if you migrate accounts to platform-controlled)
-  Enable on the AccountSession:
+CHANGE (new accounts only — existing Express accounts can't be converted)
+  Create accounts platform-controlled so embedded components own the full
+  flow inline:
+    stripe.Account.create(
+      controller={
+        "stripe_dashboard": {"type": "none"},
+        "fees": {"payer": "application"},
+        "losses": {"payments": "application"},
+        "requirement_collection": "stripe",
+      },
+      capabilities={"transfers": {"requested": True},
+                    "card_payments": {"requested": True}},
+      country=..., email=...)
+  Then enable on the AccountSession:
     components={"account_onboarding": {"enabled": True},
                 "account_management": {"enabled": True},
                 "payouts":            {"enabled": True}}
+  Result: onboarding, account management AND the payouts dashboard all
+  render fully inside the app, for every new user. Existing users keep
+  working exactly as today.
 
 --------------------------------------------------------------------------------
 NICE-TO-HAVES (app renders these the moment they appear)
