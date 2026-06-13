@@ -482,15 +482,119 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  /// Route from the location dot to the search pin.
-  Future<void> _routeToPin() async {
-    final to = _searchPin;
-    if (to == null) return;
+  /// In-app directions to [to]: draws the route on our map and lists the
+  /// turn-by-turn steps in a sheet — no leaving the app. Falls back to the
+  /// external maps app when Mapbox isn't configured.
+  Future<void> _directionsInApp(LatLng to) async {
+    if (!hasMapbox) {
+      _openExternal(to);
+      return;
+    }
     if (_myLocation == null) {
       await _locateMe();
-      if (_myLocation == null) return;
+      if (_myLocation == null) {
+        if (mounted) {
+          showInfo(context,
+              'Allow location access to get directions from where you are.');
+        }
+        return;
+      }
     }
-    await _fetchDriveRoute([_myLocation!, to]);
+    try {
+      final r = await driveRoute([_myLocation!, to]);
+      if (r == null) {
+        if (mounted) showInfo(context, 'No drivable route found.');
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _roadRoute = r.line;
+        _routeSummary =
+            '${r.km.toStringAsFixed(1)} km · ~${r.mins} min drive (live traffic)';
+      });
+      _controller.fitCamera(CameraFit.coordinates(
+          coordinates: r.line, padding: const EdgeInsets.all(70)));
+      _showStepsSheet(to, r);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Bottom sheet listing the route summary and turn-by-turn steps.
+  void _showStepsSheet(
+      LatLng dest,
+      ({List<LatLng> line, double km, int mins, List<RouteStep> steps}) r) {
+    final scheme = Theme.of(context).colorScheme;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.5,
+        minChildSize: 0.25,
+        maxChildSize: 0.92,
+        builder: (context, scroll) => ListView(
+          controller: scroll,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.directions_car, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${r.km.toStringAsFixed(1)} km · ~${r.mins} min',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 18)),
+                        Text('Driving · live traffic',
+                            style:
+                                TextStyle(color: scheme.outline, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                    label: const Text('Maps'),
+                    onPressed: () => _openExternal(dest),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            if (r.steps.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child:
+                    Center(child: Text('Turn-by-turn steps unavailable.')),
+              )
+            else
+              for (final s in r.steps)
+                ListTile(
+                  leading: Icon(_maneuverIcon(s.type, s.modifier),
+                      color: scheme.primary),
+                  title: Text(
+                      s.instruction.isEmpty ? 'Continue' : s.instruction),
+                  trailing: Text(_fmtDistance(s.meters),
+                      style: TextStyle(color: scheme.outline, fontSize: 12)),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _maneuverIcon(String type, String modifier) {
+    if (type == 'depart') return Icons.trip_origin;
+    if (type == 'arrive') return Icons.flag;
+    if (type == 'roundabout' || type == 'rotary') return Icons.rotate_right;
+    if (modifier.contains('uturn')) return Icons.u_turn_left;
+    if (modifier.contains('left')) return Icons.turn_left;
+    if (modifier.contains('right')) return Icons.turn_right;
+    return Icons.straight;
   }
 
   /// Saves the search pin into the user's places (shows on the Saved layer).
@@ -1349,7 +1453,7 @@ class _MapScreenState extends State<MapScreen> {
             ListTile(
               leading: const Icon(Icons.directions),
               title: const Text('Directions to here'),
-              subtitle: const Text('Opens turn-by-turn in your maps app'),
+              subtitle: const Text('Route + turn-by-turn steps in the app'),
               onTap: () => Navigator.pop(context, 'directions'),
             ),
             const Divider(height: 1),
@@ -1373,7 +1477,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
     if (action == 'directions') {
-      _openExternal(p);
+      _directionsInApp(p);
     } else if (action == 'mylocation') {
       _setMyLocation(p);
     } else if (action == 'identify') {
@@ -2442,7 +2546,7 @@ class _MapScreenState extends State<MapScreen> {
                                   const EdgeInsets.symmetric(vertical: 12)),
                           icon: const Icon(Icons.directions),
                           label: const Text('Directions'),
-                          onPressed: () => _openExternal(_searchPin!),
+                          onPressed: () => _directionsInApp(_searchPin!),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -2453,10 +2557,9 @@ class _MapScreenState extends State<MapScreen> {
                             child: OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
                                   visualDensity: VisualDensity.compact),
-                              icon:
-                                  const Icon(Icons.route_outlined, size: 18),
-                              label: const Text('Route'),
-                              onPressed: _routeToPin,
+                              icon: const Icon(Icons.open_in_new, size: 18),
+                              label: const Text('Open in Maps'),
+                              onPressed: () => _openExternal(_searchPin!),
                             ),
                           ),
                           IconButton(

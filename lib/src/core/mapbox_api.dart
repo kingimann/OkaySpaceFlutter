@@ -115,18 +115,41 @@ double? _coordOf(Map r, String a, String b, [String? c]) {
   return v is num ? v.toDouble() : double.tryParse('$v');
 }
 
+/// One turn-by-turn maneuver in a driving route.
+class RouteStep {
+  const RouteStep({
+    required this.instruction,
+    required this.meters,
+    required this.type,
+    required this.modifier,
+  });
+
+  /// Human-readable instruction, e.g. "Turn left onto Main St".
+  final String instruction;
+
+  /// Distance travelled along this step, in metres.
+  final double meters;
+
+  /// Mapbox maneuver type ('depart', 'turn', 'arrive', 'roundabout', …).
+  final String type;
+
+  /// Direction modifier ('left', 'right', 'slight left', 'uturn', …).
+  final String modifier;
+}
+
 /// A driving route through [points] from the Mapbox Directions API
-/// (driving-traffic profile). Returns the polyline plus distance/duration,
-/// or null when no route exists. Throws [StateError] without a token.
-Future<({List<LatLng> line, double km, int mins})?> driveRoute(
-    List<LatLng> points) async {
+/// (driving-traffic profile). Returns the polyline, distance/duration, and the
+/// turn-by-turn [steps], or null when no route exists. Throws [StateError]
+/// without a token.
+Future<({List<LatLng> line, double km, int mins, List<RouteStep> steps})?>
+    driveRoute(List<LatLng> points) async {
   if (!hasMapbox) {
     throw StateError('Mapbox token not configured');
   }
   final coords = points.map((p) => '${p.longitude},${p.latitude}').join(';');
   final data = await _getJson(
       'https://api.mapbox.com/directions/v5/mapbox/driving-traffic/$coords'
-      '?overview=full&geometries=geojson&access_token=$kMapboxToken');
+      '?overview=full&geometries=geojson&steps=true&access_token=$kMapboxToken');
   final routes = data?['routes'];
   if (routes is! List || routes.isEmpty) return null;
   final route = routes.first;
@@ -146,9 +169,28 @@ Future<({List<LatLng> line, double km, int mins})?> driveRoute(
         LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
   ];
   if (line.length < 2) return null;
+  final steps = <RouteStep>[];
+  final legs = route['legs'];
+  if (legs is List) {
+    for (final leg in legs.whereType<Map>()) {
+      final ls = leg['steps'];
+      if (ls is! List) continue;
+      for (final s in ls.whereType<Map>()) {
+        final man = s['maneuver'];
+        steps.add(RouteStep(
+          instruction:
+              (man is Map ? man['instruction']?.toString() : null) ?? '',
+          meters: (s['distance'] is num) ? (s['distance'] as num).toDouble() : 0,
+          type: (man is Map ? man['type']?.toString() : null) ?? '',
+          modifier: (man is Map ? man['modifier']?.toString() : null) ?? '',
+        ));
+      }
+    }
+  }
   return (
     line: line,
     km: distance / 1000,
     mins: (duration / 60).round(),
+    steps: steps,
   );
 }
