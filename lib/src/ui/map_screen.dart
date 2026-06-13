@@ -1106,11 +1106,18 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _savePlaceAt(LatLng p) async {
-    final title = await promptText(context, title: 'Place name', action: 'Save');
-    if (title == null || title.trim().isEmpty) return;
+    final result = await showDialog<(String, String)>(
+      context: context,
+      builder: (_) => const _SavePlaceDialog(),
+    );
+    if (result == null) return;
+    final (title, category) = result;
     try {
       await api.guides.addPlace(
-          title: title.trim(), latitude: p.latitude, longitude: p.longitude);
+          title: title,
+          category: category,
+          latitude: p.latitude,
+          longitude: p.longitude);
       if (!mounted) return;
       showInfo(context, 'Place saved');
       if (_showSaved) _loadSaved();
@@ -2598,5 +2605,82 @@ class _PlaceReviewsTileState extends State<_PlaceReviewsTile> {
       trailing: const Icon(Icons.chevron_right),
       onTap: widget.onTap,
     );
+  }
+}
+
+/// Name + category picker for saving a place dropped on the map. Returns
+/// (title, category); the category drives the saved-places map filter.
+class _SavePlaceDialog extends StatefulWidget {
+  const _SavePlaceDialog();
+
+  @override
+  State<_SavePlaceDialog> createState() => _SavePlaceDialogState();
+}
+
+class _SavePlaceDialogState extends State<_SavePlaceDialog> {
+  static const _categories = <(String, IconData)>[
+    ('Favorite', Icons.star),
+    ('Home', Icons.home_outlined),
+    ('Work', Icons.work_outline),
+    ('Food', Icons.restaurant),
+    ('Shop', Icons.shopping_bag_outlined),
+    ('Park', Icons.park_outlined),
+    ('Other', Icons.place_outlined),
+  ];
+
+  final _name = TextEditingController();
+  String _category = 'Favorite';
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Save place'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _name,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+                labelText: 'Place name', border: OutlineInputBorder()),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final (label, icon) in _categories)
+                ChoiceChip(
+                  avatar: Icon(icon, size: 16),
+                  label: Text(label),
+                  selected: _category == label,
+                  onSelected: (_) => setState(() => _category = label),
+                ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Save')),
+      ],
+    );
+  }
+
+  void _submit() {
+    final title = _name.text.trim();
+    if (title.isEmpty) return;
+    Navigator.pop(context, (title, _category));
   }
 }
