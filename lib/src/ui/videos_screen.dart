@@ -588,9 +588,25 @@ class VideoComposerScreen extends StatefulWidget {
 class _VideoComposerScreenState extends State<VideoComposerScreen> {
   final _title = TextEditingController();
   final _description = TextEditingController();
+  final _tags = TextEditingController();
+  final _playlist = TextEditingController();
   Uint8List? _bytes;
   String? _fileName;
+  Uint8List? _thumb; // optional custom thumbnail
   bool _busy = false;
+
+  // Categories double as the flair label.
+  static const _categories = [
+    'None', 'Music', 'Gaming', 'Vlog', 'Education', 'Comedy',
+    'Sports', 'Tech', 'News', 'Food', 'Travel', 'Art'
+  ];
+  String _category = 'None';
+
+  // Visibility → min_sub_tier (public = none, subscribers = tier 1).
+  String _visibility = 'public'; // public | subscribers
+  // Who can comment.
+  String _comments = 'everyone'; // everyone | followers | off
+  bool _allowLikes = true;
 
   // Keep video uploads sane for the data-URI upload path.
   static const _maxBytes = 200 * 1024 * 1024; // 200 MB
@@ -599,7 +615,21 @@ class _VideoComposerScreenState extends State<VideoComposerScreen> {
   void dispose() {
     _title.dispose();
     _description.dispose();
+    _tags.dispose();
+    _playlist.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickThumb() async {
+    try {
+      final file = await ImagePicker().pickImage(
+          source: ImageSource.gallery, maxWidth: 1280, imageQuality: 85);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (mounted) setState(() => _thumb = bytes);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Future<void> _pick() async {
@@ -649,14 +679,41 @@ class _VideoComposerScreenState extends State<VideoComposerScreen> {
         }
         return;
       }
+      // Custom thumbnail (optional) → Cloudinary; else the auto poster.
+      String? thumbnail = up.thumbnail;
+      final customThumb = _thumb;
+      if (customThumb != null) {
+        thumbnail = await cloudinaryUploadImage(customThumb,
+                folder: 'video-thumbs') ??
+            thumbnail;
+      }
+      // Tags become hashtags appended to the description so they're
+      // searchable; a playlist name is added as a tag too (until a real
+      // playlists API exists).
+      final tags = [
+        for (final t in _tags.text.split(RegExp(r'[\s,]+')))
+          if (t.trim().isNotEmpty)
+            '#${t.trim().replaceAll('#', '')}',
+        if (_playlist.text.trim().isNotEmpty)
+          '#${_playlist.text.trim().replaceAll(RegExp(r'\s+'), '')}',
+      ].join(' ');
+      final body = [
+        _description.text.trim(),
+        if (tags.isNotEmpty) tags,
+      ].where((s) => s.isNotEmpty).join('\n\n');
+
       await api.feed.createPost(PostCreate(
-        text: _description.text.trim(),
+        text: body,
         title: title,
+        flair: _category == 'None' ? null : _category,
+        minSubTier: _visibility == 'subscribers' ? 1 : null,
+        commentPolicy: _comments == 'everyone' ? null : _comments,
+        likesDisabled: _allowLikes ? null : true,
         media: [
           PostMedia(
             type: 'video',
             url: up.url,
-            thumbnail: up.thumbnail,
+            thumbnail: thumbnail,
             width: up.width,
             height: up.height,
           ),
@@ -730,14 +787,129 @@ class _VideoComposerScreenState extends State<VideoComposerScreen> {
             const SizedBox(height: 12),
             TextField(
               controller: _description,
-              maxLines: 5,
+              maxLines: 4,
               decoration: const InputDecoration(
                 labelText: 'Description (optional)',
                 alignLabelWithHint: true,
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+            // Custom thumbnail.
+            Row(
+              children: [
+                Container(
+                  width: 96,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                    image: _thumb != null
+                        ? DecorationImage(
+                            image: MemoryImage(_thumb!), fit: BoxFit.cover)
+                        : null,
+                  ),
+                  child: _thumb == null
+                      ? Icon(Icons.image_outlined, color: scheme.outline)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Thumbnail',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      Text('Optional — a cover image for your video',
+                          style: TextStyle(
+                              color: scheme.outline, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: _busy ? null : _pickThumb,
+                  child: Text(_thumb == null ? 'Add' : 'Change'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _tags,
+              decoration: const InputDecoration(
+                labelText: 'Tags',
+                hintText: 'gaming, funny, tutorial',
+                helperText: 'Comma or space separated — added as #hashtags',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _playlist,
+              decoration: const InputDecoration(
+                labelText: 'Playlist (optional)',
+                hintText: 'e.g. My Vlogs',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Category', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final c in _categories)
+                  ChoiceChip(
+                    label: Text(c),
+                    selected: _category == c,
+                    onSelected: (_) => setState(() => _category = c),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('Privacy', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (id, label) in const [
+                  ('public', 'Public'),
+                  ('subscribers', 'Subscribers only'),
+                ])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: _visibility == id,
+                    onSelected: (_) => setState(() => _visibility = id),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('Who can comment',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (id, label) in const [
+                  ('everyone', 'Everyone'),
+                  ('followers', 'Followers'),
+                  ('off', 'Off'),
+                ])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: _comments == id,
+                    onSelected: (_) => setState(() => _comments = id),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Allow likes'),
+              value: _allowLikes,
+              onChanged: (v) => setState(() => _allowLikes = v),
+            ),
+            const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: _busy ? null : _publish,
               icon: _busy

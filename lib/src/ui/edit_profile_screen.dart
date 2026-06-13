@@ -70,6 +70,54 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? _generatedAvatarUrl;
   bool _busy = false;
 
+  /// Tapping the avatar opens a clear chooser so the generate option is
+  /// never hidden behind a tiny icon.
+  Future<void> _changeAvatar() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+                title: Text('Profile picture',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('Generate an avatar'),
+              subtitle: const Text('Pick from cartoon, robots, pixel & more'),
+              onTap: () => Navigator.pop(sheetContext, 'generate'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Upload a photo'),
+              onTap: () => Navigator.pop(sheetContext, 'upload'),
+            ),
+            if (_newPicture != null || _generatedAvatarUrl != null)
+              ListTile(
+                leading: const Icon(Icons.undo),
+                title: const Text('Reset to current'),
+                onTap: () => Navigator.pop(sheetContext, 'reset'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case 'generate':
+        await _generateAvatar();
+      case 'upload':
+        await _pickPicture();
+      case 'reset':
+        setState(() {
+          _newPicture = null;
+          _generatedAvatarUrl = null;
+        });
+    }
+  }
+
   Future<void> _pickPicture() async {
     final file = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -329,67 +377,51 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 Positioned(
                   left: 16,
                   bottom: 0,
-                  child: Stack(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: Theme.of(context)
-                                  .scaffoldBackgroundColor,
-                              width: 3),
+                  child: GestureDetector(
+                    onTap: _changeAvatar,
+                    child: Stack(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: Theme.of(context)
+                                    .scaffoldBackgroundColor,
+                                width: 3),
+                          ),
+                          child: _newPicture != null
+                              ? CircleAvatar(
+                                  radius: 38,
+                                  backgroundImage: MemoryImage(_newPicture!))
+                              : _generatedAvatarUrl != null
+                                  ? CircleAvatar(
+                                      radius: 38,
+                                      backgroundImage:
+                                          NetworkImage(_generatedAvatarUrl!))
+                                  : Avatar(
+                                      url: widget.user.picture,
+                                      name: widget.user.name,
+                                      radius: 38),
                         ),
-                        child: _newPicture != null
-                            ? CircleAvatar(
-                                radius: 38,
-                                backgroundImage: MemoryImage(_newPicture!))
-                            : _generatedAvatarUrl != null
-                                ? CircleAvatar(
-                                    radius: 38,
-                                    backgroundImage:
-                                        NetworkImage(_generatedAvatarUrl!))
-                                : Avatar(
-                                    url: widget.user.picture,
-                                    name: widget.user.name,
-                                    radius: 38),
-                      ),
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Material(
-                              color: Theme.of(context).colorScheme.secondary,
-                              shape: const CircleBorder(),
-                              clipBehavior: Clip.antiAlias,
-                              child: InkWell(
-                                onTap: _generateAvatar,
-                                child: const Padding(
-                                  padding: EdgeInsets.all(6),
-                                  child: Icon(Icons.auto_awesome,
-                                      size: 16, color: Colors.white),
-                                ),
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Material(
+                            color: Theme.of(context).colorScheme.primary,
+                            shape: const CircleBorder(),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              onTap: _changeAvatar,
+                              child: const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: Icon(Icons.edit,
+                                    size: 16, color: Colors.white),
                               ),
                             ),
-                            const SizedBox(width: 4),
-                            Material(
-                              color: Theme.of(context).colorScheme.primary,
-                              shape: const CircleBorder(),
-                              clipBehavior: Clip.antiAlias,
-                              child: InkWell(
-                                onTap: _pickPicture,
-                                child: const Padding(
-                                  padding: EdgeInsets.all(6),
-                                  child: Icon(Icons.camera_alt,
-                                      size: 16, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
