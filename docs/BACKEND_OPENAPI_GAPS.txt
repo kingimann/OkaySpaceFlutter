@@ -29,13 +29,15 @@ These silently fail today (like the registration bug). Live probe results:
 Classification + recommended fix:
 
   APP-SIDE PATH/METHOD FIXES (backend route exists under another name):
-    - "Reset money" / "Reset analytics": call /admin/reset/money and
+    [FIXED 2026-06-13 in admin_service.dart]
+    - "Reset money" / "Reset analytics": now call /admin/reset/money and
       /admin/reset/analytics (slash, not hyphen).
-    - "Force web update": POST /admin/web-build (there is no /bump route).
-    - Render env-var set: PUT /admin/render/services/{sid}/env-vars/{key}
-      (not POST .../env-vars).
-    - Edit/delete a user transaction: use /admin/users/{id}/transaction
-      (singular; id in body) — the plural/{txn} path doesn't exist.
+    - "Force web update": now POST /admin/web-build (there is no /bump route).
+    - Render env-var set: now PUT /admin/render/services/{sid}/env-vars/{key}
+      with {value} (was POST .../env-vars).
+    - Edit/delete a user transaction: now use /admin/users/{id}/transaction
+      (singular) with ref=txnId in the body (edit) / query (delete) and
+      adjust_balance — the plural/{txn} path didn't exist.
 
   NEEDS A DECISION (no backend route at all):
     - /admin/mobile-only (PC gate): the app's "Mobile only (PC gate)" toggle
