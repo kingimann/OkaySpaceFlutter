@@ -590,17 +590,16 @@ class _CashOutScreenState extends State<CashOutScreen> {
     try {
       // Route to the pot that holds the money, and track whether the path
       // taken is actually instant so the message can't claim "minutes to
-      // your card" for a 1-2 day bank payout.
-      // - In-app wallet ledger → /payments/payouts/cashout (Stripe Instant
-      //   Payouts to the debit card — always instant by definition).
-      // - Stripe balance (received transfers) → /stripe/payout, where the
-      //   toggle chooses instant-to-card vs standard-to-bank.
+      // your card" for a 1-2 day bank payout. Both endpoints honor the
+      // user's "Instant to debit card" toggle, so the message follows it.
+      // - In-app wallet ledger → /payments/payouts/cashout
+      // - Stripe balance (received transfers) → /stripe/payout
       final bool wasInstant;
       Map<String, dynamic> result;
       if (amount <= _ledger || _stripeAvail <= 0) {
         result =
             await api.payments.cashout({'amount': amount, 'instant': _instant});
-        wasInstant = true;
+        wasInstant = _instant;
       } else if (amount <= _stripeAvail) {
         result =
             await api.payments.stripePayout(amount: amount, instant: _instant);

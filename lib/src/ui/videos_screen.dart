@@ -594,6 +594,16 @@ class _SubscribeButtonState extends State<_SubscribeButton> {
   bool _following = false;
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Reflect the real follow state so an already-subscribed channel doesn't
+    // show "Subscribe". Best-effort — leave the default if it can't load.
+    api.users.publicProfile(widget.userId).then((u) {
+      if (mounted) setState(() => _following = u.isFollowing);
+    }).catchError((_) {});
+  }
+
   Future<void> _toggle() async {
     if (_busy) return;
     setState(() {
