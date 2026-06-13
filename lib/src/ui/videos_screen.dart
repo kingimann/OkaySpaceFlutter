@@ -254,15 +254,18 @@ class _VideoWatchScreenState extends State<VideoWatchScreen> {
 
   Future<void> _like() async {
     if (_busy) return;
+    // Capture the post this like targets; if the user swaps to another video
+    // (Up next) before it resolves, don't roll back the wrong video.
+    final targetId = _post.id;
     setState(() {
       _busy = true;
       _liked = !_liked;
     });
     try {
-      await api.feed.toggleLike(_post.id);
+      await api.feed.toggleLike(targetId);
     } catch (e) {
       if (mounted) {
-        setState(() => _liked = !_liked);
+        if (_post.id == targetId) setState(() => _liked = !_liked);
         showError(context, e);
       }
     } finally {
@@ -620,6 +623,25 @@ class _VideoComposerScreenState extends State<VideoComposerScreen> {
     super.dispose();
   }
 
+  /// Finds an existing playlist by name (case-insensitive) or creates one,
+  /// returning its id.
+  Future<String?> _resolvePlaylist(String name) async {
+    try {
+      final raw = await api.feed.playlists();
+      final list = raw is Map ? (raw['data'] ?? raw['playlists']) : raw;
+      if (list is List) {
+        for (final p in list.whereType<Map>()) {
+          if ('${p['name'] ?? ''}'.toLowerCase() == name.toLowerCase()) {
+            return '${p['id'] ?? ''}';
+          }
+        }
+      }
+    } catch (_) {/* fall through to create */}
+    final created = await api.feed.createPlaylist(name);
+    final id = '${created['id'] ?? ''}';
+    return id.isEmpty ? null : id;
+  }
+
   Future<void> _pickThumb() async {
     try {
       final file = await ImagePicker().pickImage(
@@ -687,22 +709,17 @@ class _VideoComposerScreenState extends State<VideoComposerScreen> {
                 folder: 'video-thumbs') ??
             thumbnail;
       }
-      // Tags become hashtags appended to the description so they're
-      // searchable; a playlist name is added as a tag too (until a real
-      // playlists API exists).
+      // Tags become searchable hashtags appended to the description.
       final tags = [
         for (final t in _tags.text.split(RegExp(r'[\s,]+')))
-          if (t.trim().isNotEmpty)
-            '#${t.trim().replaceAll('#', '')}',
-        if (_playlist.text.trim().isNotEmpty)
-          '#${_playlist.text.trim().replaceAll(RegExp(r'\s+'), '')}',
+          if (t.trim().isNotEmpty) '#${t.trim().replaceAll('#', '')}',
       ].join(' ');
       final body = [
         _description.text.trim(),
         if (tags.isNotEmpty) tags,
       ].where((s) => s.isNotEmpty).join('\n\n');
 
-      await api.feed.createPost(PostCreate(
+      final post = await api.feed.createPost(PostCreate(
         text: body,
         title: title,
         flair: _category == 'None' ? null : _category,
@@ -719,6 +736,16 @@ class _VideoComposerScreenState extends State<VideoComposerScreen> {
           ),
         ],
       ));
+
+      // Real playlists: add the new video to the named playlist (created or
+      // reused). Best-effort — a playlist hiccup must not lose the upload.
+      final playlistName = _playlist.text.trim();
+      if (playlistName.isNotEmpty && post.id.isNotEmpty) {
+        try {
+          final pid = await _resolvePlaylist(playlistName);
+          if (pid != null) await api.feed.addToPlaylist(pid, post.id);
+        } catch (_) {/* video is published; playlist add is non-critical */}
+      }
       if (mounted) {
         showInfo(context, 'Video published 🎬');
         Navigator.of(context).pop(true);
