@@ -1317,6 +1317,13 @@ class _MapScreenState extends State<MapScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.directions),
+              title: const Text('Directions to here'),
+              subtitle: const Text('Opens turn-by-turn in your maps app'),
+              onTap: () => Navigator.pop(context, 'directions'),
+            ),
+            const Divider(height: 1),
+            ListTile(
               leading: const Icon(Icons.bookmark_add_outlined),
               title: const Text('Save as a place'),
               onTap: () => Navigator.pop(context, 'save'),
@@ -1335,7 +1342,9 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
-    if (action == 'mylocation') {
+    if (action == 'directions') {
+      _openExternal(p);
+    } else if (action == 'mylocation') {
       _setMyLocation(p);
     } else if (action == 'identify') {
       _identifyAt(p);
