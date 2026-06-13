@@ -292,8 +292,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
       }
     }
 
-    // Off-route detection → re-route (throttled).
-    if (!_rerouting && _route.isNotEmpty) {
+    // Off-route detection → re-route (throttled; not once we've arrived).
+    if (!_rerouting && !_arrived && _route.isNotEmpty) {
       var minD = double.infinity;
       for (final p in _route) {
         final dd = _distance(fix.point, p);
