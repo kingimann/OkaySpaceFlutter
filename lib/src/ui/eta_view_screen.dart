@@ -66,13 +66,21 @@ class _EtaViewScreenState extends State<EtaViewScreen> {
       // Once the share is inactive, stop polling — nothing more will change.
       if (s['active'] == false) _poll?.cancel();
       final cur = _current;
+      final dest = _destination;
       if (cur != null && _firstFix) {
         _firstFix = false;
-        _controller.move(cur, 14);
+        // Frame the whole journey if we know both ends; else center on them.
+        if (dest != null) {
+          _controller.fitCamera(CameraFit.coordinates(
+              coordinates: [cur, dest],
+              padding: const EdgeInsets.all(70)));
+        } else {
+          _controller.move(cur, 14);
+        }
       } else if (cur != null) {
         _controller.move(cur, _controller.camera.zoom);
       }
-      _maybeUpdateRoute(cur, _destination, active: s['active'] != false);
+      _maybeUpdateRoute(cur, dest, active: s['active'] != false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
