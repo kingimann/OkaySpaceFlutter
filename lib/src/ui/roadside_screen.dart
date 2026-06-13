@@ -632,12 +632,12 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
   /// while waiting (or if the request falls through).
   Future<void> _transitNearby(RoadsideRequest r) async {
     final future = api.roadside
-        .transitNearby(lat: r.latitude, lng: r.longitude, radius: 1200);
+        .transitInfo(lat: r.latitude, lng: r.longitude, radius: 1200);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
-        child: FutureBuilder<List<Map<String, dynamic>>>(
+        child: FutureBuilder<Map<String, dynamic>>(
           future: future,
           builder: (sheetContext, snap) {
             if (snap.hasError) {
@@ -652,8 +652,14 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                 child: Center(child: CircularProgressIndicator()),
               );
             }
-            final stops = snap.data!;
-            if (stops.isEmpty) {
+            final data = snap.data!;
+            final stops = (data['stops'] is List)
+                ? (data['stops'] as List).whereType<Map>().toList()
+                : const [];
+            final departures = (data['departures'] is List)
+                ? (data['departures'] as List).whereType<Map>().toList()
+                : const [];
+            if (stops.isEmpty && departures.isEmpty) {
               return const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(
@@ -666,24 +672,46 @@ class _RoadsideDetailScreenState extends State<RoadsideDetailScreen> {
                 const ListTile(
                     title: Text('Transit nearby',
                         style: TextStyle(fontWeight: FontWeight.bold))),
-                for (final stop in stops.take(12))
+                for (final d in departures.take(10))
+                  ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 15,
+                      backgroundColor: const Color(0x336366F1),
+                      child: Text('${d['route'] ?? '—'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF4F46E5))),
+                    ),
+                    title: Text(
+                        '${d['headsign'] ?? d['route_long'] ?? 'Service'}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                        '${d['stop_name'] ?? ''}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: Text(
+                      d['minutes'] is num
+                          ? ((d['minutes'] as num) <= 0
+                              ? 'Now'
+                              : '${(d['minutes'] as num).round()} min')
+                          : '${d['time_label'] ?? ''}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                if (departures.isNotEmpty && stops.isNotEmpty)
+                  const Divider(height: 1),
+                for (final stop in stops.take(8))
                   ListTile(
                     dense: true,
                     leading: const Icon(Icons.directions_bus_outlined),
                     title: Text(
                         '${stop['name'] ?? stop['title'] ?? stop['stop_name'] ?? 'Stop'}'),
-                    subtitle: Text(
-                      [
-                        if (stop['lines'] is List)
-                          (stop['lines'] as List).join(', ')
-                        else if (stop['routes'] is List)
-                          (stop['routes'] as List).join(', '),
-                        if (stop['distance'] != null)
-                          '${stop['distance']} m',
-                      ].whereType<String>().join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    subtitle: stop['distance'] != null
+                        ? Text('${(stop['distance'] as num?)?.round() ?? stop['distance']} m away')
+                        : null,
                   ),
               ],
             );
