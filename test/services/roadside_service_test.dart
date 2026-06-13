@@ -44,6 +44,22 @@ void main() {
       expect(api.request('/roadside/active').method, 'GET');
     });
 
+    test('publicEta() fetches the public share snapshot', () async {
+      final api = FakeApi()
+        ..on('GET', '/public/eta/abc', json: {
+          'share_id': 'abc',
+          'name': 'Sam',
+          'current_latitude': 43.6,
+          'current_longitude': -79.3,
+          'eta_minutes': 7,
+          'active': true,
+        });
+      final out = await RoadsideService(api.client()).publicEta('abc');
+      expect(api.request('/public/eta/abc').method, 'GET');
+      expect(out['name'], 'Sam');
+      expect(out['eta_minutes'], 7);
+    });
+
     test('transitInfo() returns the full payload with stops + departures', () async {
       final api = FakeApi()
         ..on('GET', '/transit/nearby', json: {

@@ -125,6 +125,12 @@ class RoadsideService {
     await _client.postJson('/eta/$shareId/stop');
   }
 
+  /// Public, no-auth snapshot of a shared ETA — for the recipient's in-app
+  /// live viewer. Returns the raw share payload (current position, destination,
+  /// eta_minutes, active, updated_at).
+  Future<Map<String, dynamic>> publicEta(String shareId) async =>
+      asMapOrNull(await _client.getJson('/public/eta/$shareId')) ?? const {};
+
   /// Full nearby-transit payload: `{configured, stops:[...], departures:[...]}`
   /// where each departure carries route, headsign, minutes-until, realtime/delay
   /// and its stop_id.
