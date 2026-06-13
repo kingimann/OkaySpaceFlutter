@@ -359,18 +359,34 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        _arrived
-                            ? 'Arrived'
-                            : (_rerouting
-                                ? 'Re-routing…'
-                                : '~$etaMin min · ${_fmt(remaining)}'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: false,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 17),
-                      ),
+                      child: _arrived
+                          ? const Text('Arrived',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 22))
+                          : Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_rerouting ? 'Re-routing…' : '$etaMin min',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    softWrap: false,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 22)),
+                                const SizedBox(height: 1),
+                                Text(
+                                  '${_fmt(remaining)} · arrive ${TimeOfDay.fromDateTime(DateTime.now().add(Duration(minutes: etaMin))).format(context)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                      color: scheme.outline, fontSize: 13),
+                                ),
+                              ],
+                            ),
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
