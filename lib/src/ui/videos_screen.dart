@@ -168,6 +168,25 @@ class _VideoCard extends StatelessWidget {
                     child: Icon(Icons.play_arrow, color: Colors.white),
                   ),
                 ),
+                // Duration badge (bottom-right), when known.
+                if (media?.durationLabel != null)
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.75),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(media!.durationLabel!,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -452,7 +471,8 @@ class _UpNextTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final thumb = _videoOf(post)?.thumbnail;
+    final media = _videoOf(post);
+    final thumb = media?.thumbnail;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -466,12 +486,35 @@ class _UpNextTile extends StatelessWidget {
                 width: 160,
                 child: AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: thumb != null && thumb.isNotEmpty
-                      ? Image.network(thumb,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => ColoredBox(
-                              color: scheme.surfaceContainerHighest))
-                      : ColoredBox(color: scheme.surfaceContainerHighest),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      thumb != null && thumb.isNotEmpty
+                          ? Image.network(thumb,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => ColoredBox(
+                                  color: scheme.surfaceContainerHighest))
+                          : ColoredBox(color: scheme.surfaceContainerHighest),
+                      if (media?.durationLabel != null)
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.75),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(media!.durationLabel!,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -733,6 +776,7 @@ class _VideoComposerScreenState extends State<VideoComposerScreen> {
             thumbnail: thumbnail,
             width: up.width,
             height: up.height,
+            duration: up.duration,
           ),
         ],
       ));

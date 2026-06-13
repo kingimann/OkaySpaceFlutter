@@ -47,6 +47,7 @@ class PostMedia {
     this.base64,
     this.width,
     this.height,
+    this.duration,
   });
 
   final String type; // 'image' | 'video'
@@ -58,7 +59,19 @@ class PostMedia {
   final int? width;
   final int? height;
 
+  /// Video length in seconds (null for images / when unknown).
+  final double? duration;
+
   bool get isVideo => type == 'video';
+
+  /// Duration as m:ss for a badge, or null when unknown.
+  String? get durationLabel {
+    final d = duration;
+    if (d == null || d <= 0) return null;
+    final total = d.round();
+    final m = total ~/ 60, s = total % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
 
   factory PostMedia.fromJson(Map<String, dynamic> json) => PostMedia(
         type: asString(json['type'], 'image'),
@@ -67,6 +80,7 @@ class PostMedia {
         base64: asStringOrNull(json['base64']),
         width: asIntOrNull(json['width']),
         height: asIntOrNull(json['height']),
+        duration: asDoubleOrNull(json['duration']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -76,6 +90,7 @@ class PostMedia {
         if (thumbnail != null) 'thumbnail': thumbnail,
         if (width != null) 'width': width,
         if (height != null) 'height': height,
+        if (duration != null) 'duration': duration,
       };
 }
 
