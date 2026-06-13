@@ -206,6 +206,11 @@ class _NavigationScreenState extends State<NavigationScreen> {
     final remaining = _remainingMeters;
     final etaMin =
         (remaining / 1000 / (_speedKmh > 8 ? _speedKmh : 40) * 60).round();
+    // Arrival clock, formatted manually (no localization dependency).
+    final arrival = DateTime.now().add(Duration(minutes: etaMin.clamp(0, 100000)));
+    final h12 = arrival.hour % 12 == 0 ? 12 : arrival.hour % 12;
+    final arrivalClock =
+        '$h12:${arrival.minute.toString().padLeft(2, '0')} ${arrival.hour >= 12 ? 'PM' : 'AM'}';
 
     return Scaffold(
       body: Stack(
@@ -379,37 +384,36 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: _arrived
-                          ? const Text('Arrived',
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _arrived
+                                ? 'Arrived'
+                                : (_rerouting ? 'Re-routing…' : '$etaMin min'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: scheme.onSurface,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20),
+                          ),
+                          if (!_arrived)
+                            Text(
+                              '${_fmt(remaining)} · arrive $arrivalClock',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 22))
-                          : Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_rerouting ? 'Re-routing…' : '$etaMin min',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    softWrap: false,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 22)),
-                                const SizedBox(height: 1),
-                                Text(
-                                  '${_fmt(remaining)} · arrive ${TimeOfDay.fromDateTime(DateTime.now().add(Duration(minutes: etaMin))).format(context)}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  softWrap: false,
-                                  style: TextStyle(
-                                      color: scheme.outline, fontSize: 13),
-                                ),
-                              ],
+                                  color: scheme.onSurfaceVariant, fontSize: 12),
                             ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 6),
                     IconButton(
                       visualDensity: VisualDensity.compact,
+                      color: scheme.onSurfaceVariant,
                       icon: Icon(
                           _muted ? Icons.volume_off : Icons.volume_up_outlined),
                       tooltip: _muted ? 'Unmute voice' : 'Mute voice',
