@@ -12,6 +12,8 @@ class MarketplaceService {
 
   Listing _listing(Object? d) => Listing.fromJson(asMapOrNull(d) ?? const {});
 
+  Map<String, dynamic> _map(Object? d) => asMapOrNull(d) ?? const {};
+
   /// Browses listings with optional filters (category, query, price range,
   /// condition, geo radius, sort…).
   Future<List<Listing>> listings({
@@ -167,4 +169,46 @@ class MarketplaceService {
     await _client.postJson('/marketplace/users/$userId/reviews',
         body: {'rating': rating, if (text != null) 'text': text});
   }
+
+  // --- Offers / negotiation -----------------------------------------------
+
+  /// Makes (or updates) an offer on a listing. Re-offering replaces your open
+  /// offer rather than stacking duplicates.
+  Future<Map<String, dynamic>> makeOffer(String listingId, num amount,
+          {String? message}) async =>
+      _map(await _client.postJson('/listings/$listingId/offers', body: {
+        'amount': amount,
+        if (message != null && message.isNotEmpty) 'message': message,
+      }));
+
+  /// Offers on a listing: the seller sees all; anyone else sees only their own.
+  Future<List<Map<String, dynamic>>> listingOffers(String listingId) async {
+    final data = await _client.getJson('/listings/$listingId/offers');
+    final list = data is Map ? data['offers'] : data;
+    return list is List
+        ? list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : const [];
+  }
+
+  /// The current user's offers, split into `made` (as buyer) and `received`
+  /// (on their listings, as seller).
+  Future<Map<String, dynamic>> myOffers() async =>
+      _map(await _client.getJson('/offers'));
+
+  // Seller actions.
+  Future<Map<String, dynamic>> acceptOffer(String offerId) async =>
+      _map(await _client.postJson('/offers/$offerId/accept'));
+
+  Future<Map<String, dynamic>> declineOffer(String offerId) async =>
+      _map(await _client.postJson('/offers/$offerId/decline'));
+
+  Future<Map<String, dynamic>> counterOffer(String offerId, num amount) async =>
+      _map(await _client.postJson('/offers/$offerId/counter', body: {'amount': amount}));
+
+  // Buyer actions.
+  Future<Map<String, dynamic>> acceptCounter(String offerId) async =>
+      _map(await _client.postJson('/offers/$offerId/accept-counter'));
+
+  Future<Map<String, dynamic>> withdrawOffer(String offerId) async =>
+      _map(await _client.postJson('/offers/$offerId/withdraw'));
 }

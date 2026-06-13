@@ -23,8 +23,8 @@ class MarketplaceScreen extends StatefulWidget {
 
 const _kSorts = <(String, String?)>[
   ('Newest', null),
-  ('Price: low to high', 'price_asc'),
-  ('Price: high to low', 'price_desc'),
+  ('Price: low to high', 'price_low'),
+  ('Price: high to low', 'price_high'),
   ('Most popular', 'popular'),
 ];
 
@@ -516,6 +516,65 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     }
   }
 
+  Future<void> _makeOffer(Listing l) async {
+    final amountCtl =
+        TextEditingController(text: l.price > 0 ? l.price.toStringAsFixed(0) : '');
+    final msgCtl = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Make an offer'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountCtl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                  prefixText: '${l.currency} ', labelText: 'Your offer'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: msgCtl,
+              decoration: const InputDecoration(labelText: 'Message (optional)'),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Send offer')),
+        ],
+      ),
+    );
+    if (submitted != true) return;
+    final amount = num.tryParse(amountCtl.text.trim());
+    if (amount == null || amount <= 0) {
+      if (mounted) showInfo(context, 'Enter a valid amount');
+      return;
+    }
+    try {
+      await api.marketplace
+          .makeOffer(l.id, amount, message: msgCtl.text.trim());
+      if (mounted) showInfo(context, 'Offer sent');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _viewOffers(Listing l) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _ListingOffersSheet(listingId: l.id, currency: l.currency),
+    );
+  }
+
   Future<void> _copyLink() async {
     await Clipboard.setData(ClipboardData(
         text: 'https://okayspace.ca/listing/${widget.listingId}'));
@@ -692,6 +751,30 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         ),
                       ],
                     ),
+                    if (currentUserId != null &&
+                        currentUserId != l.userId &&
+                        l.status != 'sold') ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _makeOffer(l),
+                          icon: const Icon(Icons.local_offer_outlined),
+                          label: const Text('Make an offer'),
+                        ),
+                      ),
+                    ],
+                    if (currentUserId != null && currentUserId == l.userId) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _viewOffers(l),
+                          icon: const Icon(Icons.local_offer_outlined),
+                          label: const Text('View offers'),
+                        ),
+                      ),
+                    ],
                     if (_moreFromSeller != null)
                       FutureBuilder<List<Listing>>(
                         future: _moreFromSeller,
@@ -985,6 +1068,162 @@ class _SavedListingsScreenState extends State<_SavedListingsScreen> {
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Seller's view of the offers on a listing, with accept / decline / counter.
+class _ListingOffersSheet extends StatefulWidget {
+  const _ListingOffersSheet({required this.listingId, required this.currency});
+
+  final String listingId;
+  final String currency;
+
+  @override
+  State<_ListingOffersSheet> createState() => _ListingOffersSheetState();
+}
+
+class _ListingOffersSheetState extends State<_ListingOffersSheet> {
+  late Future<List<Map<String, dynamic>>> _offers;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _offers = api.marketplace.listingOffers(widget.listingId);
+  }
+
+  void _reload() =>
+      setState(() => _offers = api.marketplace.listingOffers(widget.listingId));
+
+  Future<void> _act(Future<void> Function() op) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await op();
+      _reload();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _counter(String offerId) async {
+    final ctl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Counter offer'),
+        content: TextField(
+          controller: ctl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(prefixText: '${widget.currency} ', labelText: 'Your price'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Counter')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final amount = num.tryParse(ctl.text.trim());
+    if (amount == null || amount <= 0) {
+      if (mounted) showInfo(context, 'Enter a valid amount');
+      return;
+    }
+    await _act(() => api.marketplace.counterOffer(offerId, amount));
+  }
+
+  String _money(Object? v) =>
+      '${widget.currency} ${(num.tryParse('${v ?? 0}') ?? 0).toStringAsFixed(2)}';
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _offers,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final offers = snap.data ?? const [];
+            if (offers.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Text('No offers yet.', textAlign: TextAlign.center),
+              );
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Offers',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: offers.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final o = offers[i];
+                      final status = '${o['status'] ?? 'pending'}';
+                      final open = status == 'pending' || status == 'countered';
+                      final id = '${o['id']}';
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                            '${o['buyer_name'] ?? 'A buyer'} · ${_money(o['amount'])}'),
+                        subtitle: Text([
+                          status,
+                          if (o['counter_amount'] != null)
+                            'countered ${_money(o['counter_amount'])}',
+                          if ((o['message'] ?? '').toString().isNotEmpty) '“${o['message']}”',
+                        ].join(' · ')),
+                        trailing: open
+                            ? Wrap(
+                                spacing: 4,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Accept',
+                                    icon: const Icon(Icons.check_circle_outline),
+                                    onPressed: _busy
+                                        ? null
+                                        : () => _act(() => api.marketplace.acceptOffer(id)),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Counter',
+                                    icon: const Icon(Icons.swap_horiz),
+                                    onPressed: _busy ? null : () => _counter(id),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Decline',
+                                    icon: const Icon(Icons.cancel_outlined),
+                                    onPressed: _busy
+                                        ? null
+                                        : () => _act(() => api.marketplace.declineOffer(id)),
+                                  ),
+                                ],
+                              )
+                            : null,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
