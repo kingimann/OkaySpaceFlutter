@@ -2185,9 +2185,8 @@ class _MapScreenState extends State<MapScreen> {
                 ],
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.star_outline),
-              title: const Text('Reviews'),
+            _PlaceReviewsTile(
+              placeKey: pl.id,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(MaterialPageRoute<void>(
@@ -2516,6 +2515,48 @@ class _ShareEtaDialogState extends State<_ShareEtaDialog> {
           child: const Text('Share'),
         ),
       ],
+    );
+  }
+}
+
+/// "Reviews" row for the saved-place sheet that loads the place's rating
+/// summary (★ 4.3 · 27 reviews) and links to the full reviews screen.
+class _PlaceReviewsTile extends StatefulWidget {
+  const _PlaceReviewsTile({required this.placeKey, required this.onTap});
+
+  final String placeKey;
+  final VoidCallback onTap;
+
+  @override
+  State<_PlaceReviewsTile> createState() => _PlaceReviewsTileState();
+}
+
+class _PlaceReviewsTileState extends State<_PlaceReviewsTile> {
+  ReviewSummary? _summary;
+
+  @override
+  void initState() {
+    super.initState();
+    api.guides.placeReviewSummary(widget.placeKey).then((s) {
+      if (mounted) setState(() => _summary = s);
+    }).catchError((_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _summary;
+    final Widget? subtitle = s == null
+        ? null
+        : (s.count > 0
+            ? Text('★ ${s.average.toStringAsFixed(1)} · '
+                '${s.count == 1 ? '1 review' : '${s.count} reviews'}')
+            : const Text('No reviews yet'));
+    return ListTile(
+      leading: const Icon(Icons.star_outline),
+      title: const Text('Reviews'),
+      subtitle: subtitle,
+      trailing: const Icon(Icons.chevron_right),
+      onTap: widget.onTap,
     );
   }
 }
