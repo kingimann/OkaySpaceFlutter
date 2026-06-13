@@ -290,6 +290,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
                                 : (cur?.instruction.isNotEmpty == true
                                     ? cur!.instruction
                                     : 'Continue'),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 20,
