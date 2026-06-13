@@ -147,14 +147,21 @@ class _ExpandableBioState extends State<_ExpandableBio> {
 
 /// Public profile of another user, with a follow toggle.
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key, required this.userId});
+  const ProfileScreen(
+      {super.key, required this.userId, this.previewAsVisitor = false});
 
   final String userId;
 
+  /// When true, render the public visitor view even when this is your own
+  /// profile (the "View as visitor" preview).
+  final bool previewAsVisitor;
+
   /// Pushes this screen onto the navigator.
-  static Future<void> open(BuildContext context, String userId) =>
+  static Future<void> open(BuildContext context, String userId,
+          {bool previewAsVisitor = false}) =>
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ProfileScreen(userId: userId),
+        builder: (_) => ProfileScreen(
+            userId: userId, previewAsVisitor: previewAsVisitor),
       ));
 
   @override
@@ -746,8 +753,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           Padding(
             padding: const EdgeInsets.all(16),
-            child: u.userId == currentUserId
+            child: (u.userId == currentUserId && !widget.previewAsVisitor)
                 // Your own profile: owner actions, not Follow/Message/Pay.
+                // The "View as visitor" preview forces the visitor view.
                 ? Row(
                     children: [
                       Expanded(
@@ -783,20 +791,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           label: const Text('Message'),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF008CFF),
-                              foregroundColor: Colors.white),
-                          onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      SendMoneyScreen(recipient: u))),
-                          icon: const Icon(Icons.attach_money, size: 18),
-                          label: const Text('Pay'),
+                      // Never a self-pay, even in the visitor preview.
+                      if (u.userId != currentUserId) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF008CFF),
+                                foregroundColor: Colors.white),
+                            onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        SendMoneyScreen(recipient: u))),
+                            icon: const Icon(Icons.attach_money, size: 18),
+                            label: const Text('Pay'),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
           ),
@@ -1855,7 +1866,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => ProfileScreen.open(context, u.userId),
+                    onPressed: () => ProfileScreen.open(context, u.userId,
+                        previewAsVisitor: true),
                     icon: const Icon(Icons.visibility_outlined),
                     label: const Text('View as visitor'),
                   ),
