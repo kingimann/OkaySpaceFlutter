@@ -498,6 +498,24 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Opens shared reviews for the searched spot. Reviews of unsaved places are
+  /// keyed by a coarse geo key (~11 m grid) so everyone who searches the same
+  /// spot lands on the same review thread.
+  void _reviewSearchPin() {
+    final pin = _searchPin;
+    if (pin == null) return;
+    final key = 'geo:${pin.latitude.toStringAsFixed(4)},'
+        '${pin.longitude.toStringAsFixed(4)}';
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => PlaceReviewsScreen(
+        placeKey: key,
+        placeName: _searchLabel ?? 'Dropped pin',
+        latitude: pin.latitude,
+        longitude: pin.longitude,
+      ),
+    ));
+  }
+
   /// Search panel (opened from the app-bar icon): search field, recents,
   /// geocode results and the layer toggles — replaces the on-map search bar.
   void _openSearch() {
@@ -2132,6 +2150,11 @@ class _MapScreenState extends State<MapScreen> {
                             onPressed: _routeToPin,
                           ),
                           const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.star_outline, size: 22),
+                            tooltip: 'Reviews',
+                            onPressed: _reviewSearchPin,
+                          ),
                           IconButton(
                             icon: const Icon(Icons.bookmark_add_outlined,
                                 size: 22),
