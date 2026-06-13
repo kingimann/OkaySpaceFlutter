@@ -9,24 +9,6 @@ import 'profile_screen.dart';
 
 String _price(Listing l) => '${l.currency} ${l.price.toStringAsFixed(2)}';
 
-/// Human label for a stored condition value (e.g. 'like_new' → 'Like new').
-String _conditionLabel(String? c) {
-  switch (c) {
-    case 'new':
-      return 'New';
-    case 'like_new':
-      return 'Like new';
-    case 'good':
-      return 'Good';
-    case 'fair':
-      return 'Fair';
-    case 'used':
-      return 'Used';
-    default:
-      return c ?? '';
-  }
-}
-
 /// Marketplace browse grid with a search field.
 class MarketplaceScreen extends StatefulWidget {
   const MarketplaceScreen({super.key, this.embedded = false});
@@ -671,7 +653,7 @@ class _ListingCard extends StatelessWidget {
           Row(
             children: [
               if (listing.condition != null) ...[
-                Text(_conditionLabel(listing.condition),
+                Text(conditionLabel(listing.condition),
                     style: TextStyle(color: scheme.outline, fontSize: 12)),
                 if (listing.locality != null)
                   Text(' · ',
@@ -984,7 +966,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         if (l.status == 'sold')
                           const _MetaChip(label: 'Sold', icon: Icons.sell),
                         if (l.condition != null)
-                          _MetaChip(label: _conditionLabel(l.condition)),
+                          _MetaChip(label: conditionLabel(l.condition)),
                         if (l.negotiable && l.status != 'sold')
                           const _MetaChip(
                               label: 'Negotiable',

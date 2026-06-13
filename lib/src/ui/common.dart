@@ -25,6 +25,27 @@ Future<void> refreshMarketplaceOffersBadge() async {
   }
 }
 
+/// Human label for a stored listing condition (e.g. 'like_new' → 'Like new').
+/// Shared so the create form, browse cards and detail all read the same.
+String conditionLabel(String? c) {
+  switch (c) {
+    case 'new':
+      return 'New';
+    case 'like_new':
+      return 'Like new';
+    case 'good':
+      return 'Good';
+    case 'fair':
+      return 'Fair';
+    case 'poor':
+      return 'Poor';
+    case 'used':
+      return 'Used';
+    default:
+      return c ?? '';
+  }
+}
+
 /// Animated progress of the top & bottom bars: 1.0 = fully shown, 0.0 = fully
 /// hidden. The root app animates this toward [barsVisible]; [OkayAppBar] and
 /// [OkayBottomNav] listen and collapse their reserved space accordingly, so the
