@@ -26,12 +26,18 @@ class EtaViewScreen extends StatefulWidget {
 }
 
 class _EtaViewScreenState extends State<EtaViewScreen> {
+  static const _distance = Distance();
+
   final _controller = MapController();
   Timer? _poll;
   Map<String, dynamic>? _share;
   Object? _error;
   bool _loading = true;
   bool _firstFix = true;
+
+  // Driving route polyline (refetched when the sharer moves enough).
+  List<LatLng> _route = const [];
+  LatLng? _routedFrom;
 
   @override
   void initState() {
@@ -66,6 +72,7 @@ class _EtaViewScreenState extends State<EtaViewScreen> {
       } else if (cur != null) {
         _controller.move(cur, _controller.camera.zoom);
       }
+      _maybeUpdateRoute(cur, _destination, active: s['active'] != false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -73,6 +80,23 @@ class _EtaViewScreenState extends State<EtaViewScreen> {
         _loading = false;
       });
     }
+  }
+
+  /// Fetches a driving route from the sharer to their destination, but only
+  /// on the first fix or after they've moved ~150 m, to limit Directions calls.
+  Future<void> _maybeUpdateRoute(LatLng? cur, LatLng? dest,
+      {required bool active}) async {
+    if (!active || !hasMapbox || cur == null || dest == null) return;
+    if (_route.isNotEmpty &&
+        _routedFrom != null &&
+        _distance(_routedFrom!, cur) < 150) {
+      return;
+    }
+    _routedFrom = cur;
+    try {
+      final r = await driveRoute([cur, dest]);
+      if (mounted && r != null) setState(() => _route = r.line);
+    } catch (_) {/* fall back to the straight line */}
   }
 
   LatLng? get _current {
@@ -119,7 +143,15 @@ class _EtaViewScreenState extends State<EtaViewScreen> {
                       ),
                       children: [
                         mapboxTileLayer(),
-                        if (cur != null && dest != null)
+                        if (_route.length >= 2)
+                          PolylineLayer(polylines: [
+                            Polyline(
+                              points: _route,
+                              strokeWidth: 5,
+                              color: const Color(0xFF2563EB),
+                            ),
+                          ])
+                        else if (cur != null && dest != null)
                           PolylineLayer(polylines: [
                             Polyline(
                               points: [cur, dest],
