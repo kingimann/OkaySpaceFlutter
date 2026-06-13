@@ -865,18 +865,31 @@ class _MapScreenState extends State<MapScreen> {
                       children: [
                         if (results.isNotEmpty)
                           for (final r in results.take(8))
-                            ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.place_outlined),
-                              title: Text(
-                                  '${r['name'] ?? r['display_name'] ?? r['label'] ?? 'Result'}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
-                              onTap: () {
-                                Navigator.pop(c);
-                                _gotoResult(r);
-                              },
-                            )
+                            Builder(builder: (context) {
+                              final name =
+                                  '${r['name'] ?? r['display_name'] ?? r['label'] ?? 'Result'}';
+                              final addr =
+                                  (r['full_address'] ?? r['display_name'])
+                                      ?.toString();
+                              return ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.place_outlined),
+                                title: Text(name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                subtitle: (addr != null &&
+                                        addr.isNotEmpty &&
+                                        addr != name)
+                                    ? Text(addr,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis)
+                                    : null,
+                                onTap: () {
+                                  Navigator.pop(c);
+                                  _gotoResult(r);
+                                },
+                              );
+                            })
                         else ...[
                           // Apple-Maps-style "Find nearby" category shortcuts.
                           Padding(
