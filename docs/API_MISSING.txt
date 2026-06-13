@@ -1,0 +1,134 @@
+================================================================================
+OKAYSPACE BACKEND — MISSING / INCOMPLETE APIs FOR FULLY IN-APP MONEY FLOWS
+================================================================================
+Goal: every money flow happens inside the app, DoorDash-style — no browser,
+no hosted Stripe pages (those remain only as explicit user-chosen fallbacks).
+
+The Flutter app is already wired for ALL of the below (as of PR #76). Each
+item lights up automatically the moment the backend ships it — no app
+changes or redeploys needed.
+
+Priority order:
+
+--------------------------------------------------------------------------------
+1. POST /wallet/topup/intent — must return the client_secret of an
+   UNCONFIRMED PaymentIntent                                       [CRITICAL]
+--------------------------------------------------------------------------------
+WHY
+  This powers the in-app card form for "Add money" (web Payment Element and
+  native PaymentSheet). It is very likely THE reason Add money still wasn't
+  embedded: if this endpoint errors or returns no client_secret, the app
+  cannot start the inline form.
+
+CONTRACT
+  Request:   {"amount": 25.00}            (optionally "currency")
+  Behavior:  stripe.PaymentIntent.create(
+                 amount=2500, currency="usd",
+                 automatic_payment_methods={"enabled": true},
+                 metadata={"user_id": <caller>, "kind": "topup"})
+             DO NOT confirm it server-side. The app confirms it with the
+             card the user types.
+  Response:  {"client_secret": "pi_..._secret_...", "intent_id": "pi_..."}
+
+CREDITING (both must exist; both idempotent by intent id)
+  - POST /wallet/topup/confirm-intent {"intent_id": "pi_..."}  ✔ exists
+  - webhook payment_intent.succeeded with metadata.kind == "topup"
+
+--------------------------------------------------------------------------------
+2. POST /payments/identity/start — include the VerificationSession
+   client_secret                                                       [HIGH]
+--------------------------------------------------------------------------------
+WHY
+  Stripe Identity has an in-page modal (camera + ID scan, fully in-app).
+  It needs the session's client_secret. Today the endpoint returns only a
+  hosted `url`, which forces a browser hop.
+
+CONTRACT
+  Keep everything as-is, just add one field from the object you already
+  create:
+  Response:  {"url": "https://verify.stripe.com/...",        (keep)
+              "client_secret": "vs_..._secret_..."}          (ADD)
+  (stripe.identity.VerificationSession.create(...).client_secret)
+
+--------------------------------------------------------------------------------
+3. POST /payments/payouts/account-session — enable ALL components      [HIGH]
+--------------------------------------------------------------------------------
+WHY
+  Stripe renders embedded components that the session does NOT enable as a
+  silent blank element. This is what caused the white "Payout method"
+  screen. The app picks the best enabled component from the `components`
+  list you return — but they must be enabled on the Stripe side.
+
+CONTRACT
+  stripe.AccountSession.create(
+    account=<acct>,
+    components={
+      "account_onboarding": {"enabled": True},
+      "account_management": {"enabled": True},
+      "payouts":            {"enabled": True},   # full inline dashboard
+    })
+  Response: {"client_secret": "...",
+             "components": ["account_onboarding", "account_management",
+                            "payouts"]}
+  (The app already normalizes underscore/dash spellings.)
+
+--------------------------------------------------------------------------------
+4. NEW: GET /payments/payouts/methods — list saved payout destinations [NEW]
+--------------------------------------------------------------------------------
+WHY
+  The app can now ADD a debit card fully in-app (tokenized via Stripe's
+  card Element → your existing POST /payments/payouts/debit-card {token}),
+  but it cannot SHOW what's on file. DoorDash shows "Visa •• 4242 ·
+  default" — this endpoint is the missing piece.
+
+CONTRACT
+  Response:
+    {"data": [
+       {"id": "ba_... | card_...",
+        "type": "bank_account" | "card",
+        "brand": "visa",            // cards
+        "bank_name": "RBC",         // banks
+        "last4": "4242",
+        "default": true,
+        "instant_eligible": true},  // card supports Instant Payouts
+     ]}
+  Source: stripe.Account.list_external_accounts(<acct>) — map fields above.
+
+  Optional but ideal companions:
+    DELETE /payments/payouts/methods/{id}            (remove a card/bank)
+    POST   /payments/payouts/methods/{id}/default    (set default)
+
+--------------------------------------------------------------------------------
+5. GET /wallet/activity — include `status` on every transaction        [HIGH]
+--------------------------------------------------------------------------------
+WHY
+  The app now renders status labels on every transaction (Approved green,
+  Pending amber + hourglass, Canceled gray struck-through, Failed/Reversed
+  red) and excludes canceled/failed from spending-limit math. Rows without
+  a status field display as "Approved".
+
+CONTRACT
+  Each activity item gains:
+    "status": "pending" | "completed" | "canceled" | "failed" | "reversed"
+  (The app's matcher is tolerant: processing/on-hold/requires_action read
+  as pending, declined/rejected as failed, refunded as reversed.)
+
+--------------------------------------------------------------------------------
+ALREADY DONE — NO ACTION (shipped in recent backend deploys, app wired)
+--------------------------------------------------------------------------------
+  ✔ /payments/checkout kind enum incl. "topup" (credits buyer's wallet)
+  ✔ /stripe/account | balance | transfer | payout | transactions | webhook
+  ✔ /wallet/topup/sync (reconcile missed credits) — app runs it every load
+  ✔ /payments/payouts/debit-card + bank-account {token}
+  ✔ GET /capabilities (app gates the Instant toggle with it)
+  ✔ Idempotency-Key headers sent on /stripe/transfer and /stripe/payout —
+    make sure the backend actually stores/replays by that key
+  ✔ /admin/integrations?live= accepts booleans
+
+HOW TO VERIFY EACH ITEM AFTER SHIPPING
+  1. Add money → in-app card form appears (no dialog, no redirect)
+  2. Cash out → Verify identity → modal opens in-page
+  3. Cash out → Payout method → Stripe form renders inline (not blank)
+  4. (after #4 ships + app update) saved card shows as "Visa •• 4242"
+  5. All activity → canceled/pending rows show colored labels
+================================================================================

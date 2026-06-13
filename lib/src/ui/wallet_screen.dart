@@ -1669,18 +1669,39 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         // null = sheet unavailable (no client secret) → hosted fallbacks.
       }
       // Web: the inline Payment Element — card entry embedded in the app,
-      // no redirect to stripe.com. Hosted paths below are fallbacks only.
+      // no redirect to stripe.com. The hosted page is never opened
+      // automatically: if the inline flow can't start, the user is told
+      // why and chooses whether to use Stripe's page instead.
       if (stripeElementsSupported) {
-        final paid = await _inlineWebTopUp(amount);
-        if (paid != null) {
-          if (paid && mounted) {
+        final result = await _inlineWebTopUp(amount);
+        if (result.paid != null) {
+          if (result.paid! && mounted) {
             showInfo(context,
                 'Payment complete — your balance updates in a moment.');
             Navigator.of(context).pop(true);
           }
           return; // paid or user-cancelled
         }
-        // null = couldn't start the inline flow → hosted fallbacks.
+        if (!mounted) return;
+        final useHosted = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Card form unavailable'),
+            content: Text(
+                '${result.failure ?? 'The in-app card form couldn\'t start.'}\n\n'
+                'You can finish on Stripe\'s secure checkout page instead.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Use Stripe page')),
+            ],
+          ),
+        );
+        if (useHosted != true || !mounted) return;
+        // Fall through to the hosted paths below — explicit user choice.
       }
       // Hosted fallback: a dashboard-created Stripe Payment Link — pure
       // Stripe, no backend call to start the payment. client_reference_id
@@ -1749,23 +1770,36 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   }
 
   /// Runs the inline web card form (Stripe Payment Element) against a
-  /// backend PaymentIntent. Returns true = paid, false = cancelled,
-  /// null = couldn't start (caller falls through to hosted options).
-  Future<bool?> _inlineWebTopUp(num amount) async {
+  /// backend PaymentIntent. paid: true = paid, false = user cancelled,
+  /// null = couldn't start ([failure] says why).
+  Future<({bool? paid, String? failure})> _inlineWebTopUp(num amount) async {
     final String pk;
     final String secret;
     try {
       final cfg = await api.payments.config();
       pk = '${cfg['publishable_key'] ?? ''}';
-      if (pk.isEmpty) return null;
+      if (pk.isEmpty) {
+        return (
+          paid: null,
+          failure: 'The server has no Stripe publishable key configured.'
+        );
+      }
       final intent = await api.wallet.topupIntent(amount);
       secret =
           '${intent['client_secret'] ?? intent['clientSecret'] ?? intent['payment_intent_client_secret'] ?? ''}';
-      if (secret.isEmpty) return null;
-    } catch (_) {
-      return null;
+      if (secret.isEmpty) {
+        return (
+          paid: null,
+          failure: 'The server didn\'t return a payment client secret '
+              '(keys in the reply: ${intent.keys.join(', ')}).'
+        );
+      }
+    } on ApiException catch (e) {
+      return (paid: null, failure: 'Starting the top-up failed: ${e.message}');
+    } catch (e) {
+      return (paid: null, failure: messageFor(e));
     }
-    if (!mounted) return false;
+    if (!mounted) return (paid: false, failure: null);
     final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (_) => _InlineCardPayScreen(
@@ -1777,9 +1811,9 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       try {
         await api.wallet.confirmTopupIntent({'intent_id': intentId});
       } catch (_) {/* topup/sync reconciles on the next wallet load */}
-      return true;
+      return (paid: true, failure: null);
     }
-    return false; // backed out or cancelled
+    return (paid: false, failure: null); // backed out or cancelled
   }
 
   /// Runs the native PaymentSheet against a backend PaymentIntent.
