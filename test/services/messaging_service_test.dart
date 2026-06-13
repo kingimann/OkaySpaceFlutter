@@ -45,5 +45,33 @@ void main() {
       await MessagingService(api.client()).setDisappearing('c1', 3600);
       expect(api.body('/conversations/c1/disappearing', method: 'POST'), {'seconds': 3600});
     });
+
+    test('scheduleMessage() wraps text in a MessageCreate body (not a bare string)', () async {
+      final api = FakeApi()..on('POST', '/conversations/c1/scheduled', json: {'ok': true});
+      await MessagingService(api.client())
+          .scheduleMessage('c1', 'later!', DateTime.utc(2030, 1, 1, 12));
+      final body = api.body('/conversations/c1/scheduled', method: 'POST');
+      // Regression guard: backend ScheduledCreate.body is a MessageCreate object.
+      expect(body['body'], {'type': 'text', 'text': 'later!'});
+      expect(body['send_at'], '2030-01-01T12:00:00.000Z');
+    });
+
+    test('send() posts the MessageCreate payload', () async {
+      final api = FakeApi()..on('POST', '/conversations/c1/messages', json: {'id': 'm1', 'type': 'text'});
+      await MessagingService(api.client()).sendText('c1', 'hello');
+      expect(api.body('/conversations/c1/messages', method: 'POST'),
+          {'type': 'text', 'text': 'hello'});
+    });
+
+    test('reactToMessage() posts {emoji}; editMessage() patches {text}', () async {
+      final api = FakeApi()
+        ..on('POST', '/conversations/c1/messages/m1/react', json: {'id': 'm1', 'type': 'text'})
+        ..on('PATCH', '/conversations/c1/messages/m1', json: {'id': 'm1', 'type': 'text'});
+      final svc = MessagingService(api.client());
+      await svc.reactToMessage('c1', 'm1', '🔥');
+      await svc.editMessage('c1', 'm1', 'edited');
+      expect(api.body('/conversations/c1/messages/m1/react', method: 'POST'), {'emoji': '🔥'});
+      expect(api.body('/conversations/c1/messages/m1', method: 'PATCH'), {'text': 'edited'});
+    });
   });
 }
