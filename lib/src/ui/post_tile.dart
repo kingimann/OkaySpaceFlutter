@@ -255,7 +255,7 @@ Future<void> _promotePost(BuildContext context, Post post) async {
 
 /// Long-press the like button to react — including 👎 to dislike (the dislike
 /// lives here so like + dislike are one button: tap to like, hold to dislike).
-Future<void> _reactToPost(BuildContext context, Post post) async {
+Future<void> reactToPost(BuildContext context, Post post) async {
   const emojis = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🔥'];
   final emoji = await showModalBottomSheet<String>(
     context: context,
@@ -600,21 +600,21 @@ class _PostTileState extends State<PostTile> {
           // pick any reaction (👎 included), so like/dislike are combined.
           Row(
             children: [
-              _PostAction(
+              PostAction(
                 icon: _liked ? Icons.favorite : Icons.favorite_border,
                 count: _likes,
                 color: _liked ? OkayColors.danger : null,
                 onTap: _like,
-                onLongPress: () => _reactToPost(context, post),
+                onLongPress: () => reactToPost(context, post),
               ),
               const SizedBox(width: 8),
-              _PostAction(
+              PostAction(
                 icon: Icons.mode_comment_outlined,
                 count: post.repliesCount,
                 onTap: () => PostDetailScreen.open(context, post),
               ),
               const SizedBox(width: 8),
-              _PostAction(
+              PostAction(
                 icon: Icons.repeat,
                 count: _reposts,
                 color: _reposted ? const Color(0xFF22C55E) : null,
@@ -623,7 +623,7 @@ class _PostTileState extends State<PostTile> {
               ),
               if (post.viewsCount > 0) ...[
                 const SizedBox(width: 8),
-                _PostAction(
+                PostAction(
                     icon: Icons.visibility_outlined, count: post.viewsCount),
               ],
             ],
@@ -837,8 +837,9 @@ class _QuotedPost extends StatelessWidget {
 }
 
 /// A single icon + formatted count engagement button.
-class _PostAction extends StatelessWidget {
-  const _PostAction({
+class PostAction extends StatelessWidget {
+  const PostAction({
+    super.key,
     required this.icon,
     required this.count,
     this.color,
