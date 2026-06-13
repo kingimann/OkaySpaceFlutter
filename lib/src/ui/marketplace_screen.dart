@@ -443,6 +443,95 @@ class _MetaChip extends StatelessWidget {
   }
 }
 
+/// A swipeable listing photo gallery with page dots, a count badge, and
+/// loading/error placeholders.
+class _ListingGallery extends StatefulWidget {
+  const _ListingGallery({required this.photos});
+
+  final List<String> photos;
+
+  @override
+  State<_ListingGallery> createState() => _ListingGalleryState();
+}
+
+class _ListingGalleryState extends State<_ListingGallery> {
+  final _ctrl = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final multi = widget.photos.length > 1;
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView(
+            controller: _ctrl,
+            onPageChanged: (i) => setState(() => _page = i),
+            children: [
+              for (final p in widget.photos)
+                Image.network(p,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (_, child, progress) => progress == null
+                        ? child
+                        : ColoredBox(color: scheme.surfaceContainerHighest),
+                    errorBuilder: (_, __, ___) => ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: const Icon(Icons.image_not_supported))),
+            ],
+          ),
+          if (multi)
+            Positioned(
+              top: 10,
+              right: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text('${_page + 1}/${widget.photos.length}',
+                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ),
+            ),
+          if (multi)
+            Positioned(
+              bottom: 10,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (int i = 0; i < widget.photos.length; i++)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: i == _page ? 9 : 7,
+                      height: i == _page ? 9 : 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: i == _page
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A colored pill for an offer's status (pending/countered/accepted/…).
 class _OfferStatusPill extends StatelessWidget {
   const _OfferStatusPill(this.status);
@@ -875,19 +964,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
           final l = snapshot.data!;
           return ListView(
             children: [
-              if (l.photos.isNotEmpty)
-                AspectRatio(
-                  aspectRatio: 1,
-                  child: PageView(
-                    children: [
-                      for (final p in l.photos)
-                        Image.network(p,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const ColoredBox(color: Colors.black12)),
-                    ],
-                  ),
-                ),
+              if (l.photos.isNotEmpty) _ListingGallery(photos: l.photos),
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -1742,13 +1819,21 @@ class _SavedSearchesScreenState extends State<SavedSearchesScreen> {
           }
           final searches = snap.data ?? const [];
           if (searches.isEmpty) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text(
-                    'No saved searches yet. Set filters or a query, then '
-                    '"Save current search".',
-                    textAlign: TextAlign.center),
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bookmark_added_outlined,
+                        size: 48, color: Theme.of(context).colorScheme.outline),
+                    const SizedBox(height: 12),
+                    const Text(
+                        'No saved searches yet. Set filters or a query, then '
+                        '"Save current search".',
+                        textAlign: TextAlign.center),
+                  ],
+                ),
               ),
             );
           }
