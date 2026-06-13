@@ -177,6 +177,7 @@ class _MapScreenState extends State<MapScreen> {
   List<Listing> _listings = const [];
   List<RoadsideRequest> _roadside = const [];
   List<Map<String, dynamic>> _transit = const [];
+  List<Map<String, dynamic>> _transitDepartures = const [];
   List<Place> _saved = const [];
   List<NearbyRatedPlace> _rated = const [];
 
@@ -382,12 +383,12 @@ class _MapScreenState extends State<MapScreen> {
       _showTransit
           // Transit radius is in metres and the API caps it at 100–2000.
           ? api.roadside
-              .transitNearby(
+              .transitInfo(
                   lat: lat,
                   lng: lng,
                   radius: (_radiusKm * 1000).clamp(100, 2000).toDouble())
-              .catchError((_) => <Map<String, dynamic>>[])
-          : Future.value(const <Map<String, dynamic>>[]),
+              .catchError((_) => <String, dynamic>{})
+          : Future.value(const <String, dynamic>{}),
       _showRated
           ? api.guides
               .nearbyRatedPlaces(lat: lat, lng: lng, radiusKm: _radiusKm)
@@ -398,7 +399,9 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _listings = results[0] as List<Listing>;
       _roadside = results[1] as List<RoadsideRequest>;
-      _transit = results[2] as List<Map<String, dynamic>>;
+      final transit = results[2] as Map<String, dynamic>;
+      _transit = _mapList(transit['stops']);
+      _transitDepartures = _mapList(transit['departures']);
       _rated = results[3] as List<NearbyRatedPlace>;
       _loading = false;
     });
@@ -1011,6 +1014,14 @@ class _MapScreenState extends State<MapScreen> {
 
   double? _num(dynamic v) =>
       v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
+
+  /// Coerces a dynamic JSON list into a list of string-keyed maps.
+  List<Map<String, dynamic>> _mapList(dynamic v) => v is List
+      ? v
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList()
+      : const [];
 
   static const _distance = Distance();
 
@@ -2812,20 +2823,85 @@ class _MapScreenState extends State<MapScreen> {
 
   void _showTransitStop(Map<String, dynamic> t) {
     final name = '${t['name'] ?? t['stop_name'] ?? t['title'] ?? 'Transit stop'}';
-    final lines = t['lines'] ?? t['routes'];
+    final id = t['onestop_id'] ?? t['stop_id'];
+    // Next departures the backend already fetched for this stop.
+    final deps = _transitDepartures
+        .where((d) => id != null && d['stop_id'] == id)
+        .toList();
     showModalBottomSheet<void>(
       context: context,
+      showDragHandle: true,
       builder: (_) => SafeArea(
-        child: ListTile(
-          leading: const CircleAvatar(
-            backgroundColor: Color(0x336366F1),
-            child: Icon(Icons.directions_transit, color: Color(0xFF6366F1)),
-          ),
-          title: Text(name),
-          subtitle: lines is List && lines.isNotEmpty
-              ? Text('Lines: ${lines.join(', ')}')
-              : null,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Color(0x336366F1),
+                child:
+                    Icon(Icons.directions_transit, color: Color(0xFF6366F1)),
+              ),
+              title: Text(name),
+              subtitle: t['distance'] != null
+                  ? Text('${_fmtDistance((_num(t['distance']) ?? 0))} away')
+                  : null,
+            ),
+            if (deps.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 16),
+                child: Text('No upcoming departures.'),
+              )
+            else
+              ...deps.take(8).map(_departureTile),
+            const SizedBox(height: 8),
+          ],
         ),
+      ),
+    );
+  }
+
+  /// A single "next departure" row: route, headsign and minutes-until, with a
+  /// live dot + delay when real-time data is available.
+  Widget _departureTile(Map<String, dynamic> d) {
+    final mins = _num(d['minutes'])?.round();
+    final realtime = d['realtime'] == true;
+    final delay = _num(d['delay']);
+    final when = mins == null
+        ? (d['time_label'] ?? '—').toString()
+        : (mins <= 0 ? 'Now' : '$mins min');
+    String? delayLabel;
+    if (realtime && delay != null && delay.abs() >= 60) {
+      final m = (delay.abs() / 60).round();
+      delayLabel = delay > 0 ? '$m min late' : '$m min early';
+    }
+    return ListTile(
+      dense: true,
+      leading: CircleAvatar(
+        radius: 16,
+        backgroundColor: const Color(0x336366F1),
+        child: Text('${d['route'] ?? '—'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF4F46E5))),
+      ),
+      title: Text('${d['headsign'] ?? d['route_long'] ?? 'Service'}',
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: delayLabel != null ? Text(delayLabel) : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (realtime)
+            const Padding(
+              padding: EdgeInsets.only(right: 6),
+              child: Icon(Icons.rss_feed, size: 14, color: Color(0xFF22C55E)),
+            ),
+          Text(when,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }

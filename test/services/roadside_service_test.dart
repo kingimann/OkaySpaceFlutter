@@ -43,5 +43,25 @@ void main() {
       await RoadsideService(api.client()).active();
       expect(api.request('/roadside/active').method, 'GET');
     });
+
+    test('transitInfo() returns the full payload with stops + departures', () async {
+      final api = FakeApi()
+        ..on('GET', '/transit/nearby', json: {
+          'configured': true,
+          'stops': [
+            {'name': 'Main St', 'onestop_id': 's-1', 'lat': 43.6, 'lon': -79.3},
+          ],
+          'departures': [
+            {'stop_id': 's-1', 'route': '501', 'minutes': 4, 'realtime': true},
+          ],
+        });
+      final out = await RoadsideService(api.client())
+          .transitInfo(lat: 43.6, lng: -79.3, radius: 800);
+      final q = api.request('/transit/nearby').url.queryParameters;
+      expect(q['lat'], '43.6');
+      expect(q['lon'], '-79.3');
+      expect((out['stops'] as List).length, 1);
+      expect((out['departures'] as List).first['route'], '501');
+    });
   });
 }

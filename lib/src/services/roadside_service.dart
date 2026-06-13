@@ -125,6 +125,19 @@ class RoadsideService {
     await _client.postJson('/eta/$shareId/stop');
   }
 
+  /// Full nearby-transit payload: `{configured, stops:[...], departures:[...]}`
+  /// where each departure carries route, headsign, minutes-until, realtime/delay
+  /// and its stop_id.
+  Future<Map<String, dynamic>> transitInfo({
+    required double lat,
+    required double lng,
+    double? radius,
+  }) async {
+    final data = await _client.getJson('/transit/nearby',
+        query: {'lat': lat, 'lon': lng, 'radius': radius});
+    return asMapOrNull(data) ?? const {};
+  }
+
   /// Public transit stops/lines near a location (raw payloads).
   Future<List<Map<String, dynamic>>> transitNearby({
     required double lat,
