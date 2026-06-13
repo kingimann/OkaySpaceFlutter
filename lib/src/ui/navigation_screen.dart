@@ -227,10 +227,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
             children: [
               mapboxTileLayer(),
               PolylineLayer(polylines: [
+                // Apple/Google-style casing: a darker border under the line.
                 Polyline(
                     points: _route,
-                    strokeWidth: 7,
-                    color: const Color(0xFF2563EB)),
+                    strokeWidth: 8,
+                    color: const Color(0xFF3B82F6),
+                    borderStrokeWidth: 3,
+                    borderColor: const Color(0xFF1E3A8A)),
               ]),
               MarkerLayer(markers: [
                 Marker(
@@ -242,12 +245,22 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 if (_pos != null)
                   Marker(
                     point: _pos!,
-                    width: 34,
-                    height: 34,
-                    child: Transform.rotate(
-                      angle: _heading * 3.1415926 / 180,
-                      child: const Icon(Icons.navigation,
-                          color: Color(0xFF2563EB), size: 30),
+                    width: 38,
+                    height: 38,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF2563EB),
+                        border: Border.all(color: Colors.white, width: 3),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black38, blurRadius: 5),
+                        ],
+                      ),
+                      child: Transform.rotate(
+                        angle: _heading * 3.1415926 / 180,
+                        child:
+                            const Icon(Icons.navigation, color: Colors.white, size: 20),
+                      ),
                     ),
                   ),
               ]),
