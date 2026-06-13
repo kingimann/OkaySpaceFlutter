@@ -2176,8 +2176,10 @@ class _MapScreenState extends State<MapScreen> {
                 PolylineLayer(polylines: [
                   Polyline(
                     points: _roadRoute,
-                    strokeWidth: 5,
-                    color: const Color(0xFF2563EB),
+                    strokeWidth: 6,
+                    color: const Color(0xFF3B82F6),
+                    borderStrokeWidth: 2.5,
+                    borderColor: const Color(0xFF1E3A8A),
                   ),
                 ]),
               // Tow pickup → drop-off connectors.
