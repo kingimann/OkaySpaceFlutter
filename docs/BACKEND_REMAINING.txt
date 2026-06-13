@@ -1,0 +1,92 @@
+================================================================================
+OKAYSPACE BACKEND — WHAT'S LEFT TO DO
+================================================================================
+Date: 2026-06-13 · base https://okayspace-v0vx.onrender.com/api/v1
+
+Every API endpoint/field the app calls is now LIVE and consumed — the OpenAPI
+list is closed. What remains is NOT new endpoints; it's hardening the money
+system before real users move real money. Do Priority 1 first.
+
+================================================================================
+PRIORITY 1 — SERVER-SIDE ANTI-CHEAT  (do before real users)
+================================================================================
+The app has client-side guards (caps, self-pay blocks, duplicate detection,
+type-to-confirm). A modified client bypasses ALL of them. These MUST be
+enforced server-side or they don't exist:
+
+  BALANCE CORRECTNESS
+  [ ] Atomic balance updates: debit + credit in ONE DB transaction with a
+      row lock (SELECT … FOR UPDATE). Two concurrent sends must never
+      double-spend the same balance.
+  [ ] Reject amounts <= 0, non-finite, or > 2 decimal places.
+  [ ] Server caps per transaction (suggest: top-up $1,000, send $2,000).
+  [ ] Reject self-transfer (from == to) → 400.
+  [ ] Never trust client-sent balances/fees — recompute everything.
+
+  REPLAY / DOUBLE-SUBMIT
+  [ ] Honor the Idempotency-Key header on every money POST (store key →
+      response 24h; a replay returns the stored response). The app already
+      sends keys on /stripe/transfer and /stripe/payout.
+  [ ] Stripe webhooks: verify the signature, and dedupe by event id (a
+      replayed event must not credit twice).
+  [ ] Confirm /wallet/topup/confirm-intent and /wallet/topup/sync are
+      idempotent by intent/session id (add tests).
+
+  VELOCITY / ABUSE  (per user AND per IP/device)
+  [ ] Rate limits: e.g. sends 10/hr & $2,000/day; top-ups 5/day pending;
+      cash-outs 2/day. Return HTTP 429 with the standard error envelope.
+  [ ] New accounts: lower limits for the first 7 days until id_verified.
+  [ ] Cash-out only when id_verified (gate outflows on KYC).
+
+  INTEGRITY
+  [ ] State machines: a top-up cancels only from "pending"; a transfer
+      can't be reversed twice. Check CURRENT state inside the same
+      transaction that changes it.
+  [ ] Every money mutation appends to the immutable audit log
+      (who/what/when/request-id/IP). /admin/audit already exists.
+  [ ] Admin money endpoints (set wallet / add transaction) need a second
+      factor or at minimum heavy audit + alerting (you have
+      /admin/money-alerts — wire it).
+  [ ] Alert on anomalies: any negative balance, a credit with no matching
+      Stripe event, velocity spikes.
+
+================================================================================
+PRIORITY 2 — STRIPE / OPS CONFIG  (dashboard + infra, not code)
+================================================================================
+  [ ] Stripe IP allowlist: keep Render's outbound IPs allow-listed (or
+      disable the restriction) so server→Stripe calls never start failing.
+  [ ] Stripe Connect → Payouts: ensure Instant Payouts / debit-card payout
+      methods are enabled for connected accounts (so cards are offered).
+  [ ] (Optional, for fully-inline onboarding on NEW accounts) create
+      connected accounts as PLATFORM-CONTROLLED instead of Express:
+        controller={stripe_dashboard:{type:"none"},
+                    requirement_collection:"stripe", …}
+      Existing Express accounts can't convert — they keep today's flow.
+  [ ] Render: a paid always-on instance (or document cold-start latency) so
+      the app's 20s timeouts aren't hit on spin-up.
+  [ ] Make the cash-out fee/min admin-settable (POST /admin/fees +=
+      cashout_fee_cents, cashout_min_cents) so policy changes need no deploy.
+
+================================================================================
+PRIORITY 3 — SPEC HYGIENE  (optional, helps SDKs)
+================================================================================
+  [ ] Declare response_model on any money/stripe routes that still have an
+      empty 200 schema (most are done now).
+  [ ] One error envelope: responses still carry BOTH {"error":{…}} and
+      {"detail":{…}} — pick one; publish the "code" values.
+  [ ] Auth before body-validation on protected routes (some 422 before 401).
+
+================================================================================
+DONE — no action (for context)
+================================================================================
+  ✔ Add money (topup intent + confirm + sync), checkout kind=topup
+  ✔ Cash-out $20/$2 + arrival_date; payouts/status carries both balances
+  ✔ Payout methods (+instant_eligible), schedule, debit-card/bank-account
+  ✔ Stripe rails: account/balance/transfer/payout/transactions/webhook
+  ✔ Protected transfers: security_question/answer on /money/send,
+    security_question + body on accept, auto-deposit
+  ✔ Registration mode + invites; invite_code on register
+  ✔ Playlists; PostMedia.duration; wallet/activity status+client_secret
+  ✔ /capabilities, /errors, /public/app-config, mobile-web gate,
+    money-alerts endpoint
+================================================================================
