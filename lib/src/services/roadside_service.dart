@@ -20,6 +20,31 @@ class RoadsideService {
   /// A price quote for a service (raw payload).
   Future<dynamic> quote() => _client.getJson('/roadside/quote');
 
+  /// Requester verification: identity bar plus admin-approved insurance +
+  /// ownership documents.
+  Future<dynamic> verificationStatus() =>
+      _client.getJson('/roadside/verification');
+
+  /// Submits insurance + ownership documents for admin review. Photos are
+  /// URLs (Cloudinary) or data-URLs.
+  Future<Map<String, dynamic>> submitVerification({
+    required String insurancePhoto,
+    required String ownershipPhoto,
+    String? vehicleYear,
+    String? vehicleMake,
+    String? vehicleModel,
+    String? note,
+  }) async =>
+      asMapOrNull(await _client.postJson('/roadside/verification', body: {
+        'insurance_photo': insurancePhoto,
+        'ownership_photo': ownershipPhoto,
+        if (vehicleYear != null) 'vehicle_year': vehicleYear,
+        if (vehicleMake != null) 'vehicle_make': vehicleMake,
+        if (vehicleModel != null) 'vehicle_model': vehicleModel,
+        if (note != null) 'note': note,
+      })) ??
+      const {};
+
   /// The user's currently active request, if any.
   Future<dynamic> active() => _client.getJson('/roadside/active');
 

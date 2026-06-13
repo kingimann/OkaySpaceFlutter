@@ -118,6 +118,14 @@ class _CashOutScreenState extends State<CashOutScreen> {
       }
       _gotBalance = true;
     } catch (_) {/* stripe balance unavailable */}
+    try {
+      final s = await api.payments.payoutSchedule();
+      final interval = '${s['interval'] ?? ''}'.toLowerCase();
+      if (const ['manual', 'weekly', 'biweekly', 'monthly']
+          .contains(interval)) {
+        _schedule = interval;
+      }
+    } catch (_) {/* schedule endpoint optional */}
     if (mounted) setState(() => _loading = false);
   }
 

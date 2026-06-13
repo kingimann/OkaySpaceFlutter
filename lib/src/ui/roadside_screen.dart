@@ -1272,6 +1272,9 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Requester verification: insurance + ownership docs, reviewed
+            // by an admin. Surfaced up-front so the request can't dead-end.
+            _VerificationBanner(),
             _sectionTitle('What do you need?'),
             // Service grid: big tappable cards instead of cramped chips.
             GridView.count(
@@ -1727,6 +1730,271 @@ class _RoadsideRequestFormState extends State<RoadsideRequestForm> {
                       : 'Submit request'),
             ),
             const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Requester-verification banner for the request form: hidden while
+/// verified, otherwise shows the current status (none/pending/rejected)
+/// with a path to submit documents.
+class _VerificationBanner extends StatefulWidget {
+  @override
+  State<_VerificationBanner> createState() => _VerificationBannerState();
+}
+
+class _VerificationBannerState extends State<_VerificationBanner> {
+  Map<String, dynamic>? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final s = await api.roadside.verificationStatus();
+      if (mounted && s is Map) {
+        setState(() => _status = s.cast<String, dynamic>());
+      }
+    } catch (_) {/* endpoint optional — banner stays hidden */}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _status;
+    if (s == null || s['verified'] == true) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final status = '${s['status'] ?? 'none'}'.toLowerCase();
+    final pending = status == 'pending';
+    final rejected = status == 'rejected' || status == 'denied';
+    final color = pending ? const Color(0xFFF59E0B) : scheme.error;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                  pending
+                      ? Icons.hourglass_top
+                      : Icons.verified_user_outlined,
+                  color: color,
+                  size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                    pending
+                        ? 'Verification pending review'
+                        : rejected
+                            ? 'Verification was declined'
+                            : 'Get verified to request help',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+              pending
+                  ? 'An admin is reviewing your insurance and ownership '
+                      'documents — usually quick.'
+                  : rejected
+                      ? '${s['reason'] ?? 'Check your documents and resubmit.'}'
+                      : 'Submit proof of insurance and vehicle ownership '
+                          'once; an admin approves it and you\'re set.',
+              style: TextStyle(color: scheme.outline, fontSize: 12.5)),
+          if (!pending) ...[
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              icon: const Icon(Icons.upload_file, size: 18),
+              label: Text(rejected ? 'Resubmit documents' : 'Get verified'),
+              onPressed: () async {
+                final done = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                      builder: (_) => const RoadsideVerificationScreen()),
+                );
+                if (done == true) _load();
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Submit insurance + ownership documents for roadside verification —
+/// fully in-app: pick the photos, they upload (Cloudinary when configured),
+/// an admin approves.
+class RoadsideVerificationScreen extends StatefulWidget {
+  const RoadsideVerificationScreen({super.key});
+
+  @override
+  State<RoadsideVerificationScreen> createState() =>
+      _RoadsideVerificationScreenState();
+}
+
+class _RoadsideVerificationScreenState
+    extends State<RoadsideVerificationScreen> {
+  Uint8List? _insurance;
+  Uint8List? _ownership;
+  final _year = TextEditingController();
+  final _make = TextEditingController();
+  final _model = TextEditingController();
+  final _note = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _year.dispose();
+    _make.dispose();
+    _model.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pick(bool insurance) async {
+    try {
+      final f = await ImagePicker().pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1600,
+          maxHeight: 1600,
+          imageQuality: 80);
+      if (f == null) return;
+      final bytes = await f.readAsBytes();
+      if (mounted) {
+        setState(() => insurance ? _insurance = bytes : _ownership = bytes);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _submit() async {
+    final ins = _insurance;
+    final own = _ownership;
+    if (ins == null || own == null) {
+      showInfo(context, 'Add both documents first.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final insUrl = await cloudinaryUploadImage(ins, folder: 'roadside-docs') ??
+          'data:image/jpeg;base64,${base64Encode(ins)}';
+      final ownUrl = await cloudinaryUploadImage(own, folder: 'roadside-docs') ??
+          'data:image/jpeg;base64,${base64Encode(own)}';
+      await api.roadside.submitVerification(
+        insurancePhoto: insUrl,
+        ownershipPhoto: ownUrl,
+        vehicleYear: _year.text.trim().isEmpty ? null : _year.text.trim(),
+        vehicleMake: _make.text.trim().isEmpty ? null : _make.text.trim(),
+        vehicleModel: _model.text.trim().isEmpty ? null : _model.text.trim(),
+        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+      );
+      if (mounted) {
+        showInfo(context, 'Submitted — an admin will review it shortly.');
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _docTile(String title, Uint8List? bytes, VoidCallback onPick) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: ListTile(
+        leading: bytes == null
+            ? Icon(Icons.add_a_photo_outlined, color: scheme.primary)
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child:
+                    Image.memory(bytes, width: 44, height: 44, fit: BoxFit.cover),
+              ),
+        title: Text(title),
+        subtitle: Text(bytes == null ? 'Tap to add a photo' : 'Added ✓'),
+        onTap: _busy ? null : onPick,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const OkayAppBar(title: Text('Roadside verification')),
+      body: MaxWidth(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+                'To request help you need a one-time verification: a photo '
+                'of your insurance card and proof of vehicle ownership. An '
+                'admin reviews them — documents are only used for this '
+                'check.',
+                style: TextStyle(color: scheme.outline, fontSize: 13)),
+            const SizedBox(height: 14),
+            _docTile('Proof of insurance', _insurance, () => _pick(true)),
+            _docTile('Proof of ownership', _ownership, () => _pick(false)),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _year,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'Year', border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: _make,
+                    decoration: const InputDecoration(
+                        labelText: 'Make', border: OutlineInputBorder()),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _model,
+              decoration: const InputDecoration(
+                  labelText: 'Model', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _note,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                  labelText: 'Note for the reviewer (optional)',
+                  border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: _busy ? null : _submit,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.verified_user_outlined),
+              label: Text(_busy ? 'Submitting…' : 'Submit for review'),
+            ),
           ],
         ),
       ),
