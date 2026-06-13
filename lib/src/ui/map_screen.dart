@@ -1014,6 +1014,14 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  /// Re-copies the public tracking link for the active share.
+  void _copyEtaLink() {
+    final id = _etaShareId;
+    if (id == null) return;
+    Clipboard.setData(ClipboardData(text: 'https://okayspace.ca/eta/$id'));
+    showInfo(context, 'ETA link copied');
+  }
+
   Future<void> _stopEta() async {
     final id = _etaShareId;
     if (id == null) return;
@@ -2129,6 +2137,19 @@ class _MapScreenState extends State<MapScreen> {
                             style: TextStyle(
                                 color: scheme.onPrimaryContainer,
                                 fontWeight: FontWeight.w600)),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 20),
+                        tooltip: 'Copy link',
+                        color: scheme.onPrimaryContainer,
+                        onPressed: _copyEtaLink,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.visibility_outlined, size: 20),
+                        tooltip: "Preview recipient's view",
+                        color: scheme.onPrimaryContainer,
+                        onPressed: () =>
+                            EtaViewScreen.open(context, _etaShareId!),
                       ),
                       TextButton(
                         onPressed: _stopEta,
