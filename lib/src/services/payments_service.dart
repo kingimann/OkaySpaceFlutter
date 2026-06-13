@@ -91,6 +91,20 @@ class PaymentsService {
       _map(await _client
           .postJson('/payments/payouts/bank-account', body: {'token': token}));
 
+  /// Saved payout destinations (debit cards + bank accounts) with brand/
+  /// last4/default, for the "Visa •• 4242" list.
+  Future<dynamic> payoutMethods() =>
+      _client.getJson('/payments/payouts/methods');
+
+  Future<void> deletePayoutMethod(String methodId) async {
+    await _client.deleteJson('/payments/payouts/methods/$methodId');
+  }
+
+  Future<Map<String, dynamic>> setDefaultPayoutMethod(
+          String methodId) async =>
+      _map(await _client
+          .postJson('/payments/payouts/methods/$methodId/default'));
+
   // --- Stripe Connect money rails ------------------------------------------
   // The wallet's Stripe-native endpoints: balance/transactions live at
   // Stripe, transfers move money user→user, payouts cash out (optionally

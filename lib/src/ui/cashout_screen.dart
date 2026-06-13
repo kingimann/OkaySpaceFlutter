@@ -28,6 +28,45 @@ class _CashOutScreenState extends State<CashOutScreen> {
     super.initState();
     _load();
     _loadConfig();
+    _loadMethods();
+  }
+
+  /// Saved payout destinations ("Visa •• 4242 · default").
+  List<Map<String, dynamic>> _methods = const [];
+
+  Future<void> _loadMethods() async {
+    try {
+      final raw = await api.payments.payoutMethods();
+      final list = raw is Map
+          ? (raw['data'] ?? raw['methods'] ?? raw['items'])
+          : raw;
+      if (list is List && mounted) {
+        setState(() => _methods = [
+              for (final m in list.whereType<Map>())
+                m.cast<String, dynamic>(),
+            ]);
+      }
+    } catch (_) {/* endpoint optional; the section just stays hidden */}
+  }
+
+  Future<void> _methodAction(Map<String, dynamic> m, String action) async {
+    final id = '${m['id'] ?? ''}';
+    if (id.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      if (action == 'default') {
+        await api.payments.setDefaultPayoutMethod(id);
+        if (mounted) showInfo(context, 'Default payout method updated');
+      } else if (action == 'remove') {
+        await api.payments.deletePayoutMethod(id);
+        if (mounted) showInfo(context, 'Payout method removed');
+      }
+      await _loadMethods();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -74,6 +113,7 @@ class _CashOutScreenState extends State<CashOutScreen> {
       );
       if (embedded == true) {
         await _load();
+        await _loadMethods();
         return;
       }
       // Backing out (null) is a cancel — never auto-open a browser. Only
@@ -92,7 +132,10 @@ class _CashOutScreenState extends State<CashOutScreen> {
       final added = await Navigator.of(context).push<bool>(
         MaterialPageRoute(builder: (_) => const AddPayoutCardScreen()),
       );
-      if (added == true) await _load();
+      if (added == true) {
+        await _load();
+        await _loadMethods();
+      }
       return;
     }
     // Native fallback until the in-app native card form ships.
@@ -374,6 +417,49 @@ class _CashOutScreenState extends State<CashOutScreen> {
                         ),
                       ),
                     if (_ready) ...[
+                      // Saved payout destinations, DoorDash-style.
+                      if (_methods.isNotEmpty)
+                        Card(
+                          child: Column(
+                            children: [
+                              for (final m in _methods)
+                                ListTile(
+                                  dense: true,
+                                  leading: Icon(
+                                      '${m['type']}' == 'card'
+                                          ? Icons.credit_card
+                                          : Icons.account_balance,
+                                      color: scheme.primary),
+                                  title: Text(
+                                      '${(m['brand'] ?? m['bank_name'] ?? 'Account').toString().toUpperCase()} '
+                                      '•• ${m['last4'] ?? '????'}',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14)),
+                                  subtitle: Text([
+                                    if (m['default'] == true) 'Default',
+                                    if (m['instant_eligible'] == true)
+                                      'Instant eligible',
+                                    if ('${m['type']}' == 'bank_account')
+                                      '1–2 business days',
+                                  ].join(' · ')),
+                                  trailing: PopupMenuButton<String>(
+                                    enabled: !_busy,
+                                    onSelected: (a) => _methodAction(m, a),
+                                    itemBuilder: (_) => [
+                                      if (m['default'] != true)
+                                        const PopupMenuItem(
+                                            value: 'default',
+                                            child: Text('Make default')),
+                                      const PopupMenuItem(
+                                          value: 'remove',
+                                          child: Text('Remove')),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       // Bank / debit card on file — managed via Stripe's
                       // account-update link (same flow as onboarding).
                       Card(
