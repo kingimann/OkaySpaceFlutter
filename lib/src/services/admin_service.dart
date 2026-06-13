@@ -167,6 +167,11 @@ class AdminService {
     await _client.postJson('/admin/reset/money');
   }
 
+  /// Removes posts whose author no longer exists (deleted-user posts).
+  /// Returns {removed, scanned}.
+  Future<Map<String, dynamic>> cleanupOrphanedPosts() async =>
+      _map(await _client.postJson('/admin/cleanup/orphaned-posts'));
+
   Future<void> resetAnalytics() async {
     await _client.postJson('/admin/reset/analytics');
   }
