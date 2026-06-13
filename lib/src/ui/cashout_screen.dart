@@ -177,11 +177,15 @@ class _CashOutScreenState extends State<CashOutScreen> {
               subtitle: const Text('Standard payouts — 1–2 business days'),
               onTap: () => Navigator.pop(sheetContext, 'bank'),
             ),
+            // No "Stripe form" option: for Express accounts Stripe's
+            // embedded components delegate data entry to their hosted page
+            // (account-type limitation) — everything users need is covered
+            // by the in-app forms above and the identity modal below.
             ListTile(
-              leading: const Icon(Icons.manage_accounts_outlined),
-              title: const Text('Manage on the Stripe form'),
-              subtitle: const Text('Identity, address and account details'),
-              onTap: () => Navigator.pop(sheetContext, 'stripe'),
+              leading: const Icon(Icons.badge_outlined),
+              title: const Text('Verify identity'),
+              subtitle: const Text('Government ID + selfie, in-app'),
+              onTap: () => Navigator.pop(sheetContext, 'identity'),
             ),
           ],
         ),
@@ -193,11 +197,8 @@ class _CashOutScreenState extends State<CashOutScreen> {
         await _addDebitCard();
       case 'bank':
         await _addBankAccount();
-      case 'stripe':
-        // account-onboarding in update mode renders inline for Express
-        // accounts; account-management would show Stripe's sign-in wall
-        // (whose button opens an external browser).
-        await _setup();
+      case 'identity':
+        await _verifyIdentity();
     }
   }
 
