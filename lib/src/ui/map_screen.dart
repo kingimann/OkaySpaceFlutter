@@ -2233,10 +2233,50 @@ class _MapScreenState extends State<MapScreen> {
                 ));
               },
             ),
+            ListTile(
+              leading: Icon(Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error),
+              title: Text('Remove place',
+                  style:
+                      TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteSavedPlace(pl);
+              },
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _deleteSavedPlace(Place pl) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Remove place?'),
+        content: Text('Remove "${pl.title}" from your saved places?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await api.guides.deletePlace(pl.id);
+      if (!mounted) return;
+      setState(() => _saved = _saved.where((p) => p.id != pl.id).toList());
+      showInfo(context, 'Place removed');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Marker _dot(LatLng p, Color color) => Marker(
