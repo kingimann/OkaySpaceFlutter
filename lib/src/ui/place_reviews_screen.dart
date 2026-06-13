@@ -319,13 +319,30 @@ class _ReviewTile extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Expanded(
+                    Flexible(
                       child: Text(review.userName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style:
                               const TextStyle(fontWeight: FontWeight.w600)),
                     ),
+                    if (isMine) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('You',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onPrimaryContainer)),
+                      ),
+                    ],
+                    const Spacer(),
                     Text(shortAgo(review.createdAt),
                         style:
                             TextStyle(color: scheme.outline, fontSize: 12)),
