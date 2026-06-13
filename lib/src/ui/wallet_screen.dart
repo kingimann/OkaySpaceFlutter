@@ -1264,11 +1264,16 @@ class _TransferTile extends StatelessWidget {
     final toUserId = _pick(transfer, ['to_user_id', 'recipient_id']);
     final incoming = transfer['_incoming'] as bool? ??
         (currentUserId != null && toUserId == currentUserId);
-    final who = _pick(transfer, [
-      incoming ? 'from_name' : 'to_name',
-      'counterparty_name',
-      'user_name',
-    ], 'Someone');
+    // The counterparty is an `other_user` object now; fall back to the old
+    // flat name fields.
+    final other = transfer['other_user'];
+    final who = other is Map && '${other['name'] ?? ''}'.isNotEmpty
+        ? '${other['name']}'
+        : _pick(transfer, [
+            incoming ? 'from_name' : 'to_name',
+            'counterparty_name',
+            'user_name',
+          ], 'Someone');
     final pending = status.toLowerCase() == 'pending';
     final reversible = !incoming &&
         (transfer['can_reverse'] == true || pending);
