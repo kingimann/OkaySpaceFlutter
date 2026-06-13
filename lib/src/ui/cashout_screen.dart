@@ -6,6 +6,7 @@ import '../../okayspace_api.dart';
 import '../core/stripe_connect_embed.dart';
 import '../core/stripe_elements.dart';
 import 'common.dart';
+import 'money_guards.dart';
 
 /// Stripe-backed payouts: onboarding status, identity verification, and
 /// cashing out the available balance.
@@ -472,6 +473,15 @@ class _CashOutScreenState extends State<CashOutScreen> {
           'account.');
       return;
     }
+    // Guards: fat-finger confirm on big amounts, repeat detection.
+    if (!await confirmLargeAmount(context, amount) || !mounted) return;
+    final dupKey = 'cashout:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(context,
+          'requested a $_symbol${amount.toStringAsFixed(2)} cash-out');
+      if (!repeat || !mounted) return;
+    }
+    markMoneyAction(dupKey);
     setState(() => _busy = true);
     try {
       // Route to the pot that holds the money: the in-app ledger uses the

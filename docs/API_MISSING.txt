@@ -143,6 +143,50 @@ IMPLEMENTATION NOTES
     (instant) payouts stay user-triggered via the Cash out button.
 
 --------------------------------------------------------------------------------
+6. SERVER-SIDE ANTI-CHEAT CHECKLIST                                    [HIGH]
+--------------------------------------------------------------------------------
+The app now ships client-side guards (per-transaction caps, self-pay
+blocks, duplicate detection, type-to-confirm on large amounts, cents
+normalization) — but a modified client skips ALL of them. Every rule
+below must be enforced in the backend or it doesn't exist:
+
+  MONEY CORRECTNESS
+  - Atomic balance updates: debit + credit in one DB transaction with a
+    row lock (SELECT ... FOR UPDATE) — two concurrent sends must never
+    double-spend the same balance.
+  - Reject amounts that are <= 0, non-finite, more than 2 decimals, or
+    above a server cap (mirror: topup $1,000 / send $2,000 per txn).
+  - Self-transfer rejected server-side (from == to → 400).
+  - Never trust client-sent balances/fees — recompute everything.
+
+  REPLAY / DOUBLE-SUBMIT
+  - Honor Idempotency-Key on every money POST (store key → response 24h,
+    replay returns the stored response). The app already sends keys on
+    /stripe/transfer and /stripe/payout.
+  - Webhooks: verify Stripe signatures, and dedupe by event id (an event
+    replayed must not credit twice). Same for topup/confirm-intent and
+    topup/sync — idempotent by intent/session id (descriptions say they
+    are; add tests).
+
+  VELOCITY / ABUSE LIMITS (per user AND per IP/device)
+  - Sends: e.g. max 10/hour, $2,000/day; top-ups: max 5/day pending;
+    cash-outs: max 2/day. Return 429 with the standard error envelope.
+  - New-account caps: first 7 days → lower limits until id_verified.
+  - Cash-out only when id_verified (gate big outflows on KYC).
+
+  INTEGRITY
+  - Cancel/refund state machine: a topup can only be cancelled from
+    pending; a transfer can't be reversed twice; check the CURRENT state
+    inside the same transaction that changes it.
+  - All money writes append to an immutable audit log (who, what, when,
+    request id, IP) — the admin audit endpoint already exists; make sure
+    every money mutation lands there.
+  - Admin endpoints that mint money (set wallet/add transaction) must
+    require a second factor or at least be heavily audited + alerted.
+  - Alert on anomalies: balance below zero anywhere, credits without a
+    matching Stripe event, velocity spikes.
+
+--------------------------------------------------------------------------------
 NICE-TO-HAVES (app renders these the moment they appear)
 --------------------------------------------------------------------------------
   - "instant_eligible": true per method in GET /payments/payouts/methods

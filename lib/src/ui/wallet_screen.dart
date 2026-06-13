@@ -11,6 +11,7 @@ import '../core/stripe_elements.dart';
 import '../core/stripe_pay.dart';
 import 'cashout_screen.dart';
 import 'common.dart';
+import 'money_guards.dart';
 import 'pay_qr_screen.dart';
 import 'spending_limits.dart';
 import 'split_bill_screen.dart';
@@ -1802,11 +1803,24 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   }
 
   Future<void> _topUp() async {
-    final amount = num.tryParse(_amount.text.trim());
-    if (amount == null || !amount.isFinite || amount <= 0) {
+    final amount = parseMoney(_amount.text);
+    if (amount == null) {
       showInfo(context, 'Enter a valid amount.');
       return;
     }
+    final issue = amountIssue(amount, max: kMaxTopUp, what: 'top-up');
+    if (issue != null) {
+      showInfo(context, issue);
+      return;
+    }
+    if (!await confirmLargeAmount(context, amount) || !mounted) return;
+    final dupKey = 'topup:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(
+          context, 'started a \$${amount.toStringAsFixed(2)} top-up');
+      if (!repeat || !mounted) return;
+    }
+    markMoneyAction(dupKey);
     setState(() => _busy = true);
     try {
       // Native apps: the full Stripe PaymentSheet — card entry inside the
@@ -2533,17 +2547,31 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
   }
 
   Future<void> _send() async {
-    final amount = num.tryParse(_amount.text.trim());
-    if (_recipient == null ||
-        amount == null ||
-        !amount.isFinite ||
-        amount <= 0) {
+    final amount = parseMoney(_amount.text);
+    if (_recipient == null || amount == null) {
       showInfo(context, 'Pick a recipient and a valid amount.');
+      return;
+    }
+    // Guards: self-pay, per-transaction cap, fat-finger confirm, repeats.
+    if (isSelf(_recipient!.userId)) {
+      showInfo(context, 'You can\'t send money to yourself.');
+      return;
+    }
+    final issue = amountIssue(amount, max: kMaxSend, what: 'send');
+    if (issue != null) {
+      showInfo(context, issue);
       return;
     }
     if (_overBalance) {
       showInfo(context, 'That\'s more than your available balance.');
       return;
+    }
+    if (!await confirmLargeAmount(context, amount) || !mounted) return;
+    final dupKey = 'send:${_recipient!.userId}:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(context,
+          'sent ${_money(amount, _currency)} to ${_recipient!.name}');
+      if (!repeat || !mounted) return;
     }
     // Self-imposed spending limits: warn before crossing one, but let the
     // user override — it's their own cap.
@@ -2595,6 +2623,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
           rethrow;
         }
       }
+      markMoneyAction(dupKey);
       if (mounted) {
         await Navigator.of(context).push(MaterialPageRoute(
           fullscreenDialog: true,
@@ -2851,11 +2880,27 @@ class _RequestMoneyScreenState extends State<RequestMoneyScreen> {
   }
 
   Future<void> _request() async {
-    final amount = num.tryParse(_amount.text.trim());
-    if (_from == null || amount == null || !amount.isFinite || amount <= 0) {
+    final amount = parseMoney(_amount.text);
+    if (_from == null || amount == null) {
       showInfo(context, 'Pick someone and a valid amount.');
       return;
     }
+    if (isSelf(_from!.userId)) {
+      showInfo(context, 'You can\'t request money from yourself.');
+      return;
+    }
+    final issue = amountIssue(amount, max: kMaxRequest, what: 'request');
+    if (issue != null) {
+      showInfo(context, issue);
+      return;
+    }
+    final dupKey = 'request:${_from!.userId}:$amount';
+    if (isRecentDuplicate(dupKey)) {
+      final repeat = await confirmDuplicate(context,
+          'requested \$${amount.toStringAsFixed(2)} from ${_from!.name}');
+      if (!repeat || !mounted) return;
+    }
+    markMoneyAction(dupKey);
     final note = _note.text.trim().isEmpty ? null : _note.text.trim();
     final confirmed = await _confirmPayment(context,
         to: _from!, amount: amount, currency: '', note: note, request: true);
