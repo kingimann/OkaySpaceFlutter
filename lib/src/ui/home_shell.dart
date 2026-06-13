@@ -41,6 +41,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     loadCurrentUserId();
+    refreshMarketplaceOffersBadge();
     _visited.add(_currentId);
     homeTabSignal.addListener(_onTabSignal);
     navController.addListener(_onNavChanged);
