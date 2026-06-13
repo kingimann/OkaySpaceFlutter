@@ -49,15 +49,15 @@ void main() {
       expect(body.containsKey('note'), isFalse);
     });
 
-    test('payRequest() includes the answer only when provided', () async {
+    test('payRequest() always sends answer (required by backend PayRequest)', () async {
       final api = FakeApi()
         ..on('POST', '/money/requests/r1/pay', json: {'ok': true})
         ..on('POST', '/money/requests/r2/pay', json: {'ok': true});
       final svc = WalletService(api.client());
       await svc.payRequest('r1', answer: 'secret');
-      await svc.payRequest('r2');
+      await svc.payRequest('r2');   // no answer → empty string, not omitted
       expect(api.body('/money/requests/r1/pay', method: 'POST'), {'answer': 'secret'});
-      expect(api.body('/money/requests/r2/pay', method: 'POST'), const {});
+      expect(api.body('/money/requests/r2/pay', method: 'POST'), {'answer': ''});
     });
 
     test('acceptTransfer() sends the answer when set', () async {
