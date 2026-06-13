@@ -392,27 +392,27 @@ class _PostHeader extends StatelessWidget {
               onTap: () => showPostInsightsSheet(context, post.id),
             ),
           const Divider(height: 24),
+          // Match the newsfeed: a single like (tap to like, hold to dislike),
+          // then comment / repost / views grouped on the left; bookmark right.
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              IconButton(
-                tooltip: 'Like',
-                onPressed: onLike,
-                icon: Icon(
-                  post.likedByMe ? Icons.favorite : Icons.favorite_border,
-                  color: post.likedByMe ? Colors.red : muted,
-                ),
-              ),
-              IconButton(
-                tooltip: 'Dislike',
-                onPressed: onDislike,
-                icon: Icon(
-                  post.dislikedByMe
-                      ? Icons.thumb_down
-                      : Icons.thumb_down_outlined,
-                  color: post.dislikedByMe
-                      ? Theme.of(context).colorScheme.primary
-                      : muted,
+              GestureDetector(
+                onLongPress: onDislike,
+                child: IconButton(
+                  tooltip: 'Like (hold to dislike)',
+                  onPressed: onLike,
+                  icon: Icon(
+                    post.likedByMe
+                        ? Icons.favorite
+                        : (post.dislikedByMe
+                            ? Icons.thumb_down
+                            : Icons.favorite_border),
+                    color: post.likedByMe
+                        ? Colors.red
+                        : (post.dislikedByMe
+                            ? Theme.of(context).colorScheme.primary
+                            : muted),
+                  ),
                 ),
               ),
               IconButton(
@@ -428,6 +428,13 @@ class _PostHeader extends StatelessWidget {
                         ? Theme.of(context).colorScheme.primary
                         : muted),
               ),
+              if (post.viewsCount > 0)
+                IconButton(
+                  tooltip: '${formatCount(post.viewsCount)} views',
+                  onPressed: null,
+                  icon: Icon(Icons.visibility_outlined, color: muted),
+                ),
+              const Spacer(),
               IconButton(
                 tooltip: 'Bookmark',
                 onPressed: onBookmark,
