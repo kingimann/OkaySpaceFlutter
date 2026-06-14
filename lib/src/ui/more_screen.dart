@@ -23,6 +23,7 @@ import 'reels_screen.dart';
 import 'roadside_screen.dart';
 import 'search_screen.dart';
 import 'support_screen.dart';
+import 'unit_converter_screen.dart';
 import 'videos_screen.dart';
 import 'wallet_screen.dart';
 
@@ -55,6 +56,8 @@ class MoreScreen extends StatelessWidget {
               () => const CameraScreen()),
           _Item('Calculator', Icons.calculate_outlined,
               const Color(0xFF0EA5E9), () => const CalculatorScreen()),
+          _Item('Converter', Icons.swap_horiz, const Color(0xFF14B8A6),
+              () => const UnitConverterScreen()),
           _Item('Bookmarks', Icons.bookmark_outline, const Color(0xFFEAB308),
               () => const BookmarksScreen()),
         ]),
