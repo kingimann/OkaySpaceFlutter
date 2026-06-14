@@ -45,6 +45,9 @@ dependencies:
   audioplayers: ^6.1.0
   # In-app form viewer on mobile (web uses an iframe platform view instead).
   webview_flutter: ^4.10.0
+  # End-to-end encryption for form responses (NaCl box, libsodium-compatible).
+  pinenacl: ^0.6.0
+  cryptography: ^2.7.0
 
 dev_dependencies:
   flutter_test:
