@@ -5438,7 +5438,10 @@ void _openGamePage(BuildContext context, String gameId, String gameType,
             'poker' => _PokerBoard(gameId: gameId, mine: mine),
             'pong' => _PongBoard(gameId: gameId, otherUserId: otherUserId),
             'snake' => _SnakeBoard(gameId: gameId, otherUserId: otherUserId),
-            _ => _TicTacToeBoard(gameId: gameId),
+            'tictactoe' => _TicTacToeBoard(gameId: gameId),
+            // Games without a native board (e.g. Connect 4, Dots & Boxes) are
+            // playable in the web app. Don't fall back to a mismatched board.
+            _ => const _WebOnlyGameBoard(),
           };
     return Scaffold(
       appBar: OkayAppBar(
@@ -5569,6 +5572,36 @@ class _GameChip extends StatelessWidget {
           ),
           Icon(Icons.chevron_right, color: scheme.outline),
         ]),
+      ),
+    );
+  }
+}
+
+/// Shown for games that only have a web (Canvas) renderer when opened on a
+/// non-web build, instead of falling back to a mismatched native board.
+class _WebOnlyGameBoard extends StatelessWidget {
+  const _WebOnlyGameBoard();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.public, size: 56, color: scheme.outline),
+            const SizedBox(height: 14),
+            const Text('Play this game in the web app',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text('It needs a browser to render.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.onSurfaceVariant)),
+          ],
+        ),
       ),
     );
   }
