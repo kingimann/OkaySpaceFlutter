@@ -5240,7 +5240,9 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
 
 /// Opens the game in a popup dialog (the board lives here, not in the bubble).
 /// Game types that render as a Three.js (WebGL) WebView when supported.
-const _threeGames = {'pong', 'snake', 'tictactoe'};
+const _threeGames = {
+  'pong', 'snake', 'tictactoe', 'chess', 'checkers', 'blackjack', 'poker',
+};
 
 /// Opens a game on its own full-screen page (back returns to the chat).
 void _openGamePage(BuildContext context, String gameId, String gameType,
@@ -5253,7 +5255,7 @@ void _openGamePage(BuildContext context, String gameId, String gameType,
         ? (isArcade
             ? _ThreeArcade(
                 gameId: gameId, gameType: gameType, otherUserId: otherUserId)
-            : _ThreeBridged(gameId: gameId, gameType: gameType))
+            : _ThreeBridged(gameId: gameId, gameType: gameType, mine: mine))
         : switch (gameType) {
             'blackjack' => _BlackjackBoard(gameId: gameId, mine: mine),
             'chess' => _ChessBoard(gameId: gameId),
@@ -6101,9 +6103,11 @@ class _ThreeArcadeState extends State<_ThreeArcade> {
 /// pushing the new state back. Tic-tac-toe today; chess/checkers/etc. plug in
 /// here by adding an [_actionFor] branch.
 class _ThreeBridged extends StatefulWidget {
-  const _ThreeBridged({required this.gameId, required this.gameType});
+  const _ThreeBridged(
+      {required this.gameId, required this.gameType, this.mine = false});
   final String gameId;
   final String gameType;
+  final bool mine;
   @override
   State<_ThreeBridged> createState() => _ThreeBridgedState();
 }
@@ -6126,9 +6130,18 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
 
   /// Current state of the game as a plain map the WebView understands.
   Future<Map<String, dynamic>> _fetchState() async {
+    final api2 = api.messaging;
     switch (widget.gameType) {
       case 'tictactoe':
-        return _tttState(await api.messaging.game(widget.gameId));
+        return _tttState(await api2.game(widget.gameId));
+      case 'chess':
+        return _chessState(await api2.chess(widget.gameId));
+      case 'checkers':
+        return _checkersState(await api2.checkers(widget.gameId));
+      case 'blackjack':
+        return _bjState(await api2.blackjack(widget.gameId));
+      case 'poker':
+        return _pokerState(await api2.poker(widget.gameId));
       default:
         return const {};
     }
@@ -6144,19 +6157,88 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
         'you': currentUserId,
       };
 
+  Map<String, dynamic> _chessState(ChessView v) => {
+        'board': v.board,
+        'turn': v.turn,
+        'status': v.status,
+        'winner': v.winner,
+        'white': v.whitePlayer,
+        'black': v.blackPlayer,
+        'inCheck': v.inCheck,
+        'you': currentUserId,
+      };
+
+  Map<String, dynamic> _checkersState(CheckersView v) => {
+        'board': v.board,
+        'turn': v.turn,
+        'status': v.status,
+        'winner': v.winner,
+        'white': v.whitePlayer,
+        'black': v.blackPlayer,
+        'chain': v.chain,
+        'you': currentUserId,
+      };
+
+  Map<String, dynamic> _bjState(BlackjackView v) => {
+        'player': v.player,
+        'dealer': v.dealer,
+        'playerTotal': v.playerTotal,
+        'dealerTotal': v.dealerTotal,
+        'status': v.status,
+        'mine': widget.mine,
+      };
+
+  Map<String, dynamic> _pokerState(PokerView v) => {
+        'you': v.you,
+        'opponent': v.opponent,
+        'yourHand': v.yourHand,
+        'opponentHand': v.opponentHand,
+        'status': v.status,
+        'mine': widget.mine,
+      };
+
   /// Applies a move from the WebView and returns the resulting state.
   Future<Map<String, dynamic>?> _onAction(Map<String, dynamic> action) async {
+    final api2 = api.messaging;
     try {
-      if (widget.gameType == 'tictactoe') {
-        final cell = action['cell'];
-        if (cell is! int) return null;
-        var g = await api.messaging.gameMove(widget.gameId, cell);
-        // CPU replies after a brief pause (so it isn't instant).
-        if (!g.isOver && g.turn == 'cpu') {
-          await Future.delayed(const Duration(milliseconds: 700));
-          g = await api.messaging.cpuMove(widget.gameId);
-        }
-        return _tttState(g);
+      switch (widget.gameType) {
+        case 'tictactoe':
+          final cell = action['cell'];
+          if (cell is! int) return null;
+          var g = await api2.gameMove(widget.gameId, cell);
+          if (!g.isOver && g.turn == 'cpu') {
+            await Future.delayed(const Duration(milliseconds: 700));
+            g = await api2.cpuMove(widget.gameId);
+          }
+          return _tttState(g);
+        case 'chess':
+          return _chessState(await api2.chessMove(
+              widget.gameId, '${action['from']}', '${action['to']}'));
+        case 'checkers':
+          final from = action['from'], to = action['to'];
+          if (from is! int || to is! int) return null;
+          return _checkersState(
+              await api2.checkersMove(widget.gameId, from, to));
+        case 'blackjack':
+          final m = action['move'];
+          if (m == 'hit') return _bjState(await api2.blackjackHit(widget.gameId));
+          if (m == 'stand') {
+            return _bjState(await api2.blackjackStand(widget.gameId));
+          }
+          return _bjState(await api2.blackjack(widget.gameId));
+        case 'poker':
+          final m = action['move'];
+          if (m == 'draw') {
+            final holds = (action['holds'] as List?)
+                    ?.whereType<num>()
+                    .map((e) => e.toInt())
+                    .toList() ??
+                const <int>[];
+            await api2.pokerDraw(widget.gameId, holds);
+            await Future.delayed(const Duration(milliseconds: 800));
+            return _pokerState(await api2.pokerReveal(widget.gameId));
+          }
+          return _pokerState(await api2.poker(widget.gameId));
       }
     } catch (e) {
       if (mounted) showError(context, e);

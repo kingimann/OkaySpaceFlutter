@@ -199,6 +199,139 @@ GAMES.tictactoe=function(){
   };
 };
 
+// ===== shared 3D helpers for the board/card games =====
+function setButtons(defs){
+  var pad=D.getElementById("pad");pad.innerHTML="";
+  if(!defs||!defs.length){pad.style.display="none";return;}
+  pad.style.display="flex";
+  for(var i=0;i<defs.length;i++){(function(def){var b=D.createElement("button");b.textContent=def.label;b.onclick=def.cb;pad.appendChild(b);})(defs[i]);}
+}
+function dispPos(sq,amWhite){var k=amWhite?sq:63-sq;return {x:(k%8)-3.5,z:Math.floor(k/8)-3.5};}
+function buildBoard(amWhite,lightC,darkC){
+  var tiles=[];
+  for(var sq=0;sq<64;sq++){
+    var f=sq%8,r=Math.floor(sq/8),light=((f+r)%2===0),p=dispPos(sq,amWhite);
+    var t=new THREE.Mesh(new THREE.BoxGeometry(0.96,0.2,0.96),new THREE.MeshStandardMaterial({color:light?lightC:darkC}));
+    t.position.set(p.x,0,p.z);t.userData={sq:sq};scene.add(t);pickables.push(t);tiles.push(t);
+  }
+  return tiles;
+}
+function sqName(sq){return String.fromCharCode(97+(sq%8))+(8-Math.floor(sq/8));}
+function glyphSprite(ch,color){
+  var cv=D.createElement("canvas");cv.width=128;cv.height=128;var x=cv.getContext("2d");
+  x.fillStyle=color;x.font="104px serif";x.textAlign="center";x.textBaseline="middle";x.fillText(ch,64,72);
+  var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true}));
+  sp.scale.set(1.05,1.05,1.05);return sp;
+}
+function cardMesh(card){
+  var cv=D.createElement("canvas");cv.width=128;cv.height=180;var x=cv.getContext("2d");
+  if(card&&card.r!=="?"&&card.r!==undefined){
+    x.fillStyle="#fff";x.fillRect(0,0,128,180);x.strokeStyle="#bbb";x.lineWidth=4;x.strokeRect(2,2,124,176);
+    var red=(card.s==="♥"||card.s==="♦");x.fillStyle=red?"#dc2626":"#111";
+    x.font="bold 40px sans-serif";x.textAlign="left";x.fillText(card.r,12,50);
+    x.font="62px sans-serif";x.textAlign="center";x.fillText(card.s,64,118);
+  }else{x.fillStyle="#1e293b";x.fillRect(0,0,128,180);x.strokeStyle="#475569";x.lineWidth=4;x.strokeRect(2,2,124,176);}
+  return new THREE.Mesh(new THREE.PlaneGeometry(1.35,1.9),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(cv)}));
+}
+
+// ===== Chess (3D, backend-bridged) =====
+var CG={k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
+GAMES.chess=function(){
+  var st=null,amWhite=true,sel=null,grp=null,hl=null;
+  function status(){
+    if(st.status==="checkmate")return st.winner===you?"Checkmate — you win!":"Checkmate — you lost";
+    if(st.status==="stalemate")return "Stalemate — draw";
+    if(st.status==="draw")return "Draw";
+    return (st.turn===you?"Your move":"Their move")+(st.inCheck?" · check!":"");
+  }
+  function highlight(){
+    if(hl){scene.remove(hl);hl=null;}
+    if(sel===null)return;
+    var p=dispPos(sel,amWhite);hl=new THREE.Mesh(new THREE.BoxGeometry(0.98,0.24,0.98),new THREE.MeshBasicMaterial({color:0x86efac,transparent:true,opacity:0.6}));hl.position.set(p.x,0.12,p.z);scene.add(hl);
+  }
+  function draw(){
+    if(grp)scene.remove(grp);grp=new THREE.Group();
+    for(var sq=0;sq<64;sq++){var c=st.board[sq];if(c===".")continue;var sp=glyphSprite(CG[c.toLowerCase()],(c===c.toUpperCase())?"#f8fafc":"#0f172a");var p=dispPos(sq,amWhite);sp.position.set(p.x,0.7,p.z);grp.add(sp);}
+    scene.add(grp);hud(status());
+  }
+  return {
+    bg:0x0b1220,
+    build:function(state){st=state;amWhite=(st.white===you);camera.position.set(0,9,8);camera.lookAt(0,0,0);buildBoard(amWhite,0xedd9b5,0xb48761);draw();},
+    onState:function(state){st=state;sel=null;highlight();draw();},
+    pick:function(ud){
+      if(st.turn!==you||st.status!=="active")return;
+      var sq=ud.sq,pc=st.board[sq],mineHere=pc!=="."&&(amWhite?pc===pc.toUpperCase():pc===pc.toLowerCase());
+      if(sel===null){if(mineHere){sel=sq;highlight();}return;}
+      if(sq===sel){sel=null;highlight();return;}
+      if(mineHere){sel=sq;highlight();return;}
+      var from=sqName(sel),to=sqName(sq);sel=null;highlight();hud("...");send("action",{action:{from:from,to:to}});
+    }
+  };
+};
+
+// ===== Checkers (3D, backend-bridged) =====
+GAMES.checkers=function(){
+  var st=null,amWhite=true,sel=null,grp=null,hl=null;
+  function status(){if(st.status!=="active")return st.winner===you?"You win!":"You lost";return st.turn===you?"Your move":"Their move";}
+  function highlight(){if(hl){scene.remove(hl);hl=null;}if(sel===null)return;var p=dispPos(sel,amWhite);hl=new THREE.Mesh(new THREE.BoxGeometry(0.98,0.24,0.98),new THREE.MeshBasicMaterial({color:0x86efac,transparent:true,opacity:0.6}));hl.position.set(p.x,0.12,p.z);scene.add(hl);}
+  function disc(white,king){var m=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.36,0.22,24),new THREE.MeshStandardMaterial({color:white?0xf1f5f9:0x1f2937}));if(king){var c=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.26,24),new THREE.MeshStandardMaterial({color:0xf6c455}));c.position.y=0.12;m.add(c);}return m;}
+  function draw(){if(grp)scene.remove(grp);grp=new THREE.Group();for(var sq=0;sq<64;sq++){var c=st.board[sq];if(c===".")continue;var white=(c==="w"||c==="W"),king=(c==="W"||c==="B");var d=disc(white,king);var p=dispPos(sq,amWhite);d.position.set(p.x,0.22,p.z);grp.add(d);}scene.add(grp);hud(status());}
+  return {
+    bg:0x0b1220,
+    build:function(state){st=state;amWhite=(st.white===you);camera.position.set(0,9,8);camera.lookAt(0,0,0);buildBoard(amWhite,0xead9bd,0x8d6748);draw();},
+    onState:function(state){st=state;sel=(st.turn===you&&st.chain!==null&&st.chain!==undefined)?st.chain:null;highlight();draw();},
+    pick:function(ud){
+      if(st.turn!==you||st.status!=="active")return;
+      var sq=ud.sq,p=st.board[sq],mineHere=amWhite?(p==="w"||p==="W"):(p==="b"||p==="B");
+      if(sel===null){if(mineHere){sel=sq;highlight();}return;}
+      if(sq===sel){sel=null;highlight();return;}
+      if(mineHere){sel=sq;highlight();return;}
+      var from=sel;sel=null;highlight();hud("...");send("action",{action:{from:from,to:sq}});
+    }
+  };
+};
+
+// ===== Blackjack (3D cards, backend-bridged) =====
+GAMES.blackjack=function(){
+  var st=null,grp=null;
+  function result(s){return s==="blackjack"?"Blackjack! You win":s==="win"?"You win":s==="lose"?"Dealer wins":s==="push"?"Push — tie":"";}
+  function row(cards,z){for(var i=0;i<cards.length;i++){var m=cardMesh(cards[i]);m.position.set((i-(cards.length-1)/2)*1.5,0.01,z);m.rotation.x=-Math.PI/2;grp.add(m);}}
+  function draw(){
+    if(grp)scene.remove(grp);grp=new THREE.Group();
+    row(st.dealer,-2.0);row(st.player,2.0);scene.add(grp);
+    var over=(st.status!=="active");
+    hud("Dealer "+(over?st.dealerTotal:"?")+"   ·   You "+st.playerTotal);
+    if(over){showOver(result(st.status));setButtons(null);}
+    else{hideOver();if(st.mine)setButtons([{label:"Hit",cb:function(){hud("...");send("action",{action:{move:"hit"}});}},{label:"Stand",cb:function(){hud("...");send("action",{action:{move:"stand"}});}}]);else setButtons(null);}
+  }
+  D.getElementById("again").onclick=function(){send("action",{action:{move:"rematch"}});};
+  return {bg:0x0b3b24,build:function(state){st=state;camera.position.set(0,7,6.5);camera.lookAt(0,0,0);draw();},onState:function(state){st=state;draw();}};
+};
+
+// ===== Poker (3D cards, backend-bridged) =====
+GAMES.poker=function(){
+  var st=null,grp=null,holds={};
+  function result(s){return s==="win"?"You win":s==="lose"?"Dealer wins":s==="push"?"Split — tie":"";}
+  function draw(){
+    if(grp)scene.remove(grp);grp=new THREE.Group();pickables=[];
+    for(var i=0;i<st.opponent.length;i++){var d=cardMesh(st.opponent[i]);d.position.set((i-2)*1.55,0.01,-2.4);d.rotation.x=-Math.PI/2;grp.add(d);}
+    for(var i=0;i<st.you.length;i++){var m=cardMesh(st.you[i]);m.position.set((i-2)*1.55,holds[i]?0.5:0.01,2.4);m.rotation.x=-Math.PI/2;m.userData={hold:i};grp.add(m);pickables.push(m);}
+    scene.add(grp);
+    var over=(st.status==="win"||st.status==="lose"||st.status==="push");
+    hud("You: "+st.yourHand+(st.opponentHand?("   ·   Dealer: "+st.opponentHand):""));
+    if(over){showOver(result(st.status));setButtons(null);}
+    else if(st.status==="active"&&st.mine){hideOver();setButtons([{label:"Draw",cb:function(){var h=[];for(var k in holds)if(holds[k])h.push(parseInt(k,10));hud("Dealing...");setButtons(null);send("action",{action:{move:"draw",holds:h}});}}]);}
+    else setButtons(null);
+  }
+  D.getElementById("again").onclick=function(){holds={};send("action",{action:{move:"rematch"}});};
+  return {
+    bg:0x0b3b24,
+    build:function(state){st=state;camera.position.set(0,7,6.5);camera.lookAt(0,0,0);draw();},
+    onState:function(state){st=state;draw();},
+    pick:function(ud){if(ud.hold===undefined||st.status!=="active")return;holds[ud.hold]=!holds[ud.hold];draw();}
+  };
+};
+
 send("ready");
 </script></body></html>
 ''';
