@@ -45,10 +45,14 @@ class _CameraScreenState extends State<CameraScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Camera')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _busy ? null : _capture,
-        icon: const Icon(Icons.photo_camera),
-        label: Text(_shots.isEmpty ? 'Take a photo' : 'Take another'),
+      // Lifted so it clears the floating bottom nav on pushed screens.
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 72),
+        child: FloatingActionButton.extended(
+          onPressed: _busy ? null : _capture,
+          icon: const Icon(Icons.photo_camera),
+          label: Text(_shots.isEmpty ? 'Take a photo' : 'Take another'),
+        ),
       ),
       body: _shots.isEmpty
           ? Center(

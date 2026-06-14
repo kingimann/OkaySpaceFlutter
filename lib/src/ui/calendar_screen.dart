@@ -64,10 +64,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Calendar')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _edit(),
-        icon: const Icon(Icons.add),
-        label: const Text('New event'),
+      // Lifted so it clears the floating bottom nav on pushed screens.
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 72),
+        child: FloatingActionButton.extended(
+          onPressed: () => _edit(),
+          icon: const Icon(Icons.add),
+          label: const Text('New event'),
+        ),
       ),
       body: FutureBuilder<List<CalendarEvent>>(
         future: _future,

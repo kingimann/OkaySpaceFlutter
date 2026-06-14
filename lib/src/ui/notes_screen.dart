@@ -60,10 +60,14 @@ class _NotesScreenState extends State<NotesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Notes')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _edit(),
-        icon: const Icon(Icons.add),
-        label: const Text('New note'),
+      // Lifted so it clears the floating bottom nav on pushed screens.
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 72),
+        child: FloatingActionButton.extended(
+          onPressed: () => _edit(),
+          icon: const Icon(Icons.add),
+          label: const Text('New note'),
+        ),
       ),
       body: FutureBuilder<List<Note>>(
         future: _future,
