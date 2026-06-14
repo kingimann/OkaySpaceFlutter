@@ -148,15 +148,17 @@ GAMES.poker=function(){
 
 // ===== Pong (arcade, self-contained) =====
 GAMES.pong=function(){
-  var pw,px,cx,bx,by,vx,vy,ps=0,cs=0,over=false,R=8;
-  function reset(toP){bx=W/2;by=H/2;var sp=Math.max(4.5,H*0.007);vx=(Math.random()<0.5?1:-1)*sp*0.55;vy=toP?sp:-sp;}
+  var pw,px,cx,bx,by,vx,vy,ps=0,cs=0,over=false,R=8,spk=1,cpk=0.013,predict=true;
+  function reset(toP){bx=W/2;by=H/2;var sp=Math.max(4.5,H*0.007)*spk;vx=(Math.random()<0.5?1:-1)*sp*0.55;vy=toP?sp:-sp;}
+  // Anticipate where the ball will cross the CPU's line (reflecting off walls).
+  function predictX(){if(vy>=0||!predict)return bx;var t=(by-22)/(-vy);var x=bx+vx*t;var span=W-2*R;if(span<=0)return bx;x=(((x-R)%(2*span))+2*span)%(2*span);if(x>span)x=2*span-x;return x+R;}
   function setPX(clientX){var r=canvas.getBoundingClientRect();px=Math.max(pw/2,Math.min(W-pw/2,clientX-r.left));}
   function pm(e){setPX(e.clientX);}function tm(e){if(e.touches[0])setPX(e.touches[0].clientX);e.preventDefault();}
   function end(){over=true;showOver((ps>cs)?"You win!":"CPU wins");send("score",{score:ps});}
   D.getElementById("again").onclick=function(){ps=0;cs=0;over=false;reset(true);hideOver();};
   return {
-    build:function(){pw=Math.min(130,W*0.32);px=W/2;cx=W/2;reset(true);hud("You 0 — CPU 0");canvas.addEventListener("pointermove",pm);canvas.addEventListener("touchmove",tm,{passive:false});},
-    tick:function(){if(over)return;cx+=Math.max(-W*0.013,Math.min(W*0.013,bx-cx));bx+=vx;by+=vy;
+    build:function(s){var d=(s&&s.difficulty)||"medium";spk=d==="easy"?0.8:d==="hard"?1.3:1.0;cpk=d==="easy"?0.009:d==="hard"?0.022:0.014;predict=d!=="easy";pw=Math.min(130,W*0.32);px=W/2;cx=W/2;reset(true);hud("You 0 — CPU 0");canvas.addEventListener("pointermove",pm);canvas.addEventListener("touchmove",tm,{passive:false});},
+    tick:function(){if(over)return;var tgt=predictX();cx+=Math.max(-W*cpk,Math.min(W*cpk,tgt-cx));bx+=vx;by+=vy;
       if(bx<R){bx=R;vx=Math.abs(vx);}if(bx>W-R){bx=W-R;vx=-Math.abs(vx);}
       if(by>H-22){if(Math.abs(bx-px)<pw/2){by=H-22;vy=-Math.abs(vy);vx+=(bx-px)*0.03;}else{cs++;if(cs>=7)end();else reset(false);}hud("You "+ps+" — CPU "+cs);}
       if(by<22){if(Math.abs(bx-cx)<pw/2){by=22;vy=Math.abs(vy);}else{ps++;if(ps>=7)end();else reset(true);}hud("You "+ps+" — CPU "+cs);}},
@@ -169,7 +171,7 @@ GAMES.pong=function(){
 
 // ===== Snake (arcade, self-contained) =====
 GAMES.snake=function(){
-  var N=17,snake,dir,nd,food,score,dead,acc;
+  var N=17,snake,dir,nd,food,score,dead,acc,stepN=10;
   function geom(){var s=Math.max(150,Math.min(W-16,H-150));return {cs:s/N,ox:(W-s)/2,oy:Math.max(70,(H-s)/2-10)};}
   function spawn(){while(true){var p={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N)};var on=false;for(var i=0;i<snake.length;i++)if(snake[i].x===p.x&&snake[i].y===p.y)on=true;if(!on){food=p;return;}}}
   function steer(x,y){if(x===-dir.x&&y===-dir.y)return;nd={x:x,y:y};}
@@ -180,8 +182,8 @@ GAMES.snake=function(){
   function start2(){snake=[{x:8,y:8},{x:7,y:8},{x:6,y:8}];dir={x:1,y:0};nd={x:1,y:0};score=0;dead=false;acc=0;spawn();hud("Score: 0");}
   D.getElementById("again").onclick=function(){start2();hideOver();};
   return {
-    build:function(){start2();Wd.addEventListener("keydown",key);canvas.addEventListener("touchstart",ts);canvas.addEventListener("touchend",te);},
-    tick:function(){if(dead)return;acc++;if(acc>=10){acc=0;step();}},
+    build:function(s){var d=(s&&s.difficulty)||"medium";stepN=d==="easy"?14:d==="hard"?6:10;start2();Wd.addEventListener("keydown",key);canvas.addEventListener("touchstart",ts);canvas.addEventListener("touchend",te);},
+    tick:function(){if(dead)return;acc++;if(acc>=stepN){acc=0;step();}},
     draw:function(){var g=geom();ctx.fillStyle="#0b1626";ctx.fillRect(g.ox,g.oy,g.cs*N,g.cs*N);
       ctx.fillStyle="#ef4444";ctx.fillRect(g.ox+food.x*g.cs+1,g.oy+food.y*g.cs+1,g.cs-2,g.cs-2);
       for(var i=0;i<snake.length;i++){ctx.fillStyle=i===0?"#4ade80":"#22c55e";ctx.fillRect(g.ox+snake[i].x*g.cs+1,g.oy+snake[i].y*g.cs+1,g.cs-2,g.cs-2);}},

@@ -174,10 +174,28 @@ class MessagingService {
   // --- In-chat games ------------------------------------------------------
 
   /// Starts a game in a DM (creator goes first). Returns the `game` message.
+  /// [vsCpu] forces a computer opponent; [difficulty] is easy|medium|hard.
   Future<Message> createGame(String convId,
-          {String type = 'tictactoe'}) async =>
-      _msg(await _client.postJson('/conversations/$convId/chat-games',
-          body: {'game_type': type}));
+          {String type = 'tictactoe',
+          String difficulty = 'medium',
+          bool vsCpu = false}) async =>
+      _msg(await _client.postJson('/conversations/$convId/chat-games', body: {
+        'game_type': type,
+        'difficulty': difficulty,
+        'vs_cpu': vsCpu,
+      }));
+
+  /// Plays the computer's chess move (called after a short pause).
+  Future<ChessView> chessCpuMove(String gameId) async => ChessView.fromJson(
+      asMapOrNull(
+              await _client.postJson('/chat-games/$gameId/chess/cpu-move')) ??
+          const {});
+
+  /// Plays the computer's checkers move (called after a short pause).
+  Future<CheckersView> checkersCpuMove(String gameId) async =>
+      CheckersView.fromJson(asMapOrNull(await _client
+              .postJson('/chat-games/$gameId/checkers/cpu-move')) ??
+          const {});
 
   /// Plays a move (tic-tac-toe cell 0..8). Returns the updated game.
   Future<GameView> gameMove(String gameId, int cell) async =>
