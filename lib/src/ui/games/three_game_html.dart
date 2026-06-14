@@ -123,13 +123,13 @@ function drawChessPiece(px,py,s,white,kind){
           [0.105,0.255],[0.20,0.34],[0.215,0.55],[0.23,0.78]]);
   }
   ctx.lineJoin="round"; ctx.lineCap="round";
-  ctx.fillStyle=white?"#f2efe6":"#383838";
+  ctx.fillStyle=white?"#f8f6ef":"#46443f";
   ctx.shadowColor="rgba(0,0,0,0.28)"; ctx.shadowBlur=s*0.045; ctx.shadowOffsetY=s*0.025;
   for(var a=0;a<parts.length;a++){ctx.beginPath();parts[a]();ctx.fill();}
   ctx.shadowColor="transparent"; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
-  ctx.lineWidth=Math.max(1,s*0.024); ctx.strokeStyle=white?"#5b564e":"#0b0b0b";
+  ctx.lineWidth=Math.max(1,s*0.026); ctx.strokeStyle=white?"#7a756b":"#1c1a17";
   for(var b2=0;b2<parts.length;b2++){ctx.beginPath();parts[b2]();ctx.stroke();}
-  if(kind==="n"){ctx.beginPath();ctx.arc(cx-0.135*s,Y(0.31),s*0.022,0,7);ctx.fillStyle=white?"#5b564e":"#d2d8e0";ctx.fill();}
+  if(kind==="n"){ctx.beginPath();ctx.arc(cx-0.135*s,Y(0.31),s*0.022,0,7);ctx.fillStyle=white?"#7a756b":"#d2d8e0";ctx.fill();}
 }
 var CT={light:"#eeeed2",dark:"#769656",last:"rgba(245,222,82,0.55)",sel:"rgba(245,222,82,0.85)"};
 GAMES.chess=function(){
@@ -143,7 +143,7 @@ GAMES.chess=function(){
     build:function(s){st=s;amWhite=(st.white===you);prev=s.board;lastFrom=lastTo=-1;},
     onState:function(s){diffLast(s.board);st=s;sel=null;},
     draw:function(){hud(status());var g=boardGeom();var chk=checkSq();
-      ctx.save();ctx.shadowColor="rgba(0,0,0,0.4)";ctx.shadowBlur=16;ctx.shadowOffsetY=5;ctx.fillStyle="#3f3527";rr(g.ox-5,g.oy-5,g.bs+10,g.bs+10,9);ctx.fill();ctx.restore();
+      ctx.save();ctx.shadowColor="rgba(0,0,0,0.35)";ctx.shadowBlur=14;ctx.shadowOffsetY=4;ctx.fillStyle="#262522";rr(g.ox-3,g.oy-3,g.bs+6,g.bs+6,6);ctx.fill();ctx.restore();
       for(var sq=0;sq<64;sq++){var p=sqXY(sq,amWhite,g);var f=sq%8,r=Math.floor(sq/8);var light=((f+r)%2===0);
         ctx.fillStyle=light?CT.light:CT.dark;ctx.fillRect(p.x,p.y,g.cs,g.cs);
         if(sq===lastFrom||sq===lastTo){ctx.fillStyle=CT.last;ctx.fillRect(p.x,p.y,g.cs,g.cs);}
