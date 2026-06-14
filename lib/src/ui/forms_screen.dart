@@ -4,8 +4,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
+import '../core/forms_e2e.dart';
 import 'common.dart';
 import 'form_viewer_screen.dart';
+
+/// Asks for a form's end-to-end passphrase (obscured). Returns null on cancel.
+Future<String?> _askPassphrase(BuildContext context,
+    {required String title, String? subtitle, String action = 'Unlock'}) async {
+  final ctrl = TextEditingController();
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (subtitle != null) ...[
+              Text(subtitle,
+                  style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+              const SizedBox(height: 12),
+            ],
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              obscureText: true,
+              decoration: const InputDecoration(
+                  labelText: 'Passphrase', border: OutlineInputBorder()),
+              onSubmitted: (v) => Navigator.pop(context, v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text),
+              child: Text(action)),
+        ],
+      ),
+    );
+  } finally {
+    ctrl.dispose();
+  }
+}
 
 /// Field types supported by the form builder, grouped by category
 /// (label, api value matching the backend, icon).
@@ -435,6 +479,12 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
       text: '${widget.existing?['success_message'] ?? ''}');
   late bool _aiValidate = widget.existing?['ai_validate'] == true;
   late String? _accent = (widget.existing?['accent'] as String?);
+  // End-to-end encryption: when on, responses are encrypted in the browser to
+  // [_e2ePublicKey] and can only be read with the passphrase that derives the
+  // matching private key (re-derivable via [_e2eSalt]).
+  late bool _e2e = widget.existing?['e2e'] == true;
+  late String? _e2ePublicKey = widget.existing?['e2e_public_key'] as String?;
+  late String? _e2eSalt = widget.existing?['e2e_salt'] as String?;
 
   static const _accentChoices = <String>[
     '#00A884', '#3B82F6', '#8B5CF6', '#EC4899', '#EF4444',
@@ -546,9 +596,89 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
     );
   }
 
+  bool get _hasPayment => _fields.any((f) => '${f['type']}' == 'payment');
+
+  Future<void> _toggleE2E(bool on) async {
+    if (!on) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Turn off encryption?'),
+          content: const Text(
+              'New responses will no longer be end-to-end encrypted. Existing '
+              'encrypted responses stay locked to the original passphrase.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Turn off')),
+          ],
+        ),
+      );
+      if (ok == true) {
+        setState(() {
+          _e2e = false;
+          _e2ePublicKey = null;
+          _e2eSalt = null;
+        });
+      }
+      return;
+    }
+    if (_hasPayment) {
+      showInfo(context,
+          'End-to-end encryption can’t be used on a form that takes payment.');
+      return;
+    }
+    // Already set up (editing an E2E form) — keep the existing key so old
+    // responses stay readable with the same passphrase.
+    if (_e2ePublicKey != null && _e2eSalt != null) {
+      setState(() => _e2e = true);
+      return;
+    }
+    final pass = await _askPassphrase(context,
+        title: 'Set a passphrase',
+        subtitle:
+            'Responses are encrypted so only you can read them — using this '
+            'passphrase. We can’t recover it. If you lose it, the responses are '
+            'unreadable forever. Store it somewhere safe.',
+        action: 'Set passphrase');
+    if (pass == null) return;
+    if (pass.trim().length < 6) {
+      if (mounted) showInfo(context, 'Use at least 6 characters.');
+      return;
+    }
+    if (!mounted) return;
+    final confirm = await _askPassphrase(context,
+        title: 'Confirm passphrase', action: 'Confirm');
+    if (confirm == null) return;
+    if (confirm != pass) {
+      if (mounted) showInfo(context, 'Passphrases didn’t match.');
+      return;
+    }
+    try {
+      final keys = await FormsE2E.setup(pass);
+      if (!mounted) return;
+      setState(() {
+        _e2e = true;
+        _e2ePublicKey = keys.publicKey;
+        _e2eSalt = keys.salt;
+      });
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _save() async {
     if (_title.text.trim().isEmpty || _fields.isEmpty) {
       showInfo(context, 'Add a title and at least one field.');
+      return;
+    }
+    if (_e2e && _hasPayment) {
+      showInfo(context,
+          'End-to-end encryption can’t be used on a form that takes payment. '
+          'Remove the payment field or turn off encryption.');
       return;
     }
     setState(() => _busy = true);
@@ -565,6 +695,9 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
           'success_message': _successMessage.text.trim(),
         'ai_validate': _aiValidate,
         if (_accent != null) 'accent': _accent,
+        'e2e': _e2e,
+        if (_e2ePublicKey != null) 'e2e_public_key': _e2ePublicKey,
+        if (_e2eSalt != null) 'e2e_salt': _e2eSalt,
         'fields': _fields,
       };
       final existingId = '${widget.existing?['id'] ?? ''}';
@@ -583,6 +716,9 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
               : _successMessage.text.trim(),
           aiValidate: _aiValidate,
           accent: _accent,
+          e2e: _e2e,
+          e2ePublicKey: _e2ePublicKey,
+          e2eSalt: _e2eSalt,
           fields: _fields,
         );
       }
@@ -667,6 +803,36 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
                     subtitle: const Text(
                         'Flag incomplete or implausible submissions'),
                   ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _e2e,
+                    onChanged: (v) => _toggleE2E(v),
+                    secondary: const Icon(Icons.lock_outline),
+                    title: const Text('End-to-end encrypt responses'),
+                    subtitle: Text(_e2e
+                        ? 'On — responses can only be read with your passphrase'
+                        : 'Only you can read responses; not even the server can'),
+                  ),
+                  if (_e2e)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.outline),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                                'Keep your passphrase safe — it can’t be recovered.',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        Theme.of(context).colorScheme.outline)),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 6),
                   Align(
                     alignment: Alignment.centerLeft,
@@ -1132,6 +1298,13 @@ class FormSubmissionsScreen extends StatefulWidget {
 class _FormSubmissionsScreenState extends State<FormSubmissionsScreen> {
   late Future<List<Map<String, dynamic>>> _submissions;
   Map<String, Map<String, dynamic>> _byId = {};
+  // End-to-end state: when [_e2e] is set, each response is an opaque blob we
+  // decrypt locally once the owner enters [_passphrase].
+  bool _e2e = false;
+  String? _e2eSalt;
+  String? _passphrase;
+  bool _decrypting = false;
+  final Map<String, Map<String, dynamic>?> _decrypted = {};
 
   @override
   void initState() {
@@ -1145,12 +1318,61 @@ class _FormSubmissionsScreenState extends State<FormSubmissionsScreen> {
       final f = await api.forms.form(widget.formId);
       final fields = (f['fields'] as List?) ?? const [];
       if (mounted) {
-        setState(() => _byId = {
-              for (final fl in fields)
-                if (fl is Map) '${fl['id']}': Map<String, dynamic>.from(fl)
-            });
+        setState(() {
+          _byId = {
+            for (final fl in fields)
+              if (fl is Map) '${fl['id']}': Map<String, dynamic>.from(fl)
+          };
+          _e2e = f['e2e'] == true;
+          _e2eSalt = f['e2e_salt'] as String?;
+        });
       }
     } catch (_) {/* labels just fall back to ids */}
+  }
+
+  /// Returns the blob from a submission's values map, or null if not E2E.
+  String? _e2eBlob(Map<String, dynamic> s) {
+    final v = s['values'];
+    final blob = (v is Map) ? v['__e2e__'] : null;
+    return blob is String ? blob : null;
+  }
+
+  Future<void> _unlock() async {
+    final pass = await _askPassphrase(context,
+        title: 'Unlock responses',
+        subtitle: 'Enter the passphrase you set for this form to read its '
+            'encrypted responses.');
+    if (pass == null || pass.isEmpty) return;
+    setState(() => _decrypting = true);
+    List<Map<String, dynamic>> items;
+    try {
+      items = await _submissions;
+    } catch (_) {
+      items = const [];
+    }
+    final out = <String, Map<String, dynamic>?>{};
+    var decryptedAny = false;
+    var sawBlob = false;
+    for (final s in items) {
+      final blob = _e2eBlob(s);
+      if (blob == null) continue;
+      sawBlob = true;
+      final dec = await FormsE2E.decrypt(blob, _e2eSalt ?? '', pass);
+      out['${s['id']}'] = dec;
+      if (dec != null) decryptedAny = true;
+    }
+    if (!mounted) return;
+    final wrong = sawBlob && !decryptedAny;
+    setState(() {
+      _decrypting = false;
+      if (!wrong) {
+        _passphrase = pass;
+        _decrypted
+          ..clear()
+          ..addAll(out);
+      }
+    });
+    if (wrong) showInfo(context, 'That passphrase didn’t match.');
   }
 
   /// Renders a base64 image data URL (signature / photo) as an image.
@@ -1170,70 +1392,183 @@ class _FormSubmissionsScreenState extends State<FormSubmissionsScreen> {
   Future<void> _reload() async {
     setState(() => _submissions = api.forms.submissions(widget.formId));
     await _submissions;
+    // Re-decrypt freshly fetched rows if we're already unlocked.
+    if (_e2e && _passphrase != null) {
+      final pass = _passphrase!;
+      List<Map<String, dynamic>> items;
+      try {
+        items = await _submissions;
+      } catch (_) {
+        items = const [];
+      }
+      final out = <String, Map<String, dynamic>?>{};
+      for (final s in items) {
+        final blob = _e2eBlob(s);
+        if (blob != null) {
+          out['${s['id']}'] = await FormsE2E.decrypt(blob, _e2eSalt ?? '', pass);
+        }
+      }
+      if (mounted) {
+        setState(() => _decrypted
+          ..clear()
+          ..addAll(out));
+      }
+    }
+  }
+
+  /// The values to display for a submission, resolving any E2E blob.
+  /// Returns null when the response is encrypted and still locked.
+  Map<String, dynamic>? _resolveValues(Map<String, dynamic> s) {
+    final raw = s['values'] is Map
+        ? Map<String, dynamic>.from(s['values'] as Map)
+        : <String, dynamic>{};
+    if (!raw.containsKey('__e2e__')) return raw; // plaintext / at-rest only
+    if (_passphrase == null) return null; // locked
+    return _decrypted['${s['id']}'] ?? const {}; // decrypted (or {} if failed)
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: OkayAppBar(title: Text(widget.title)),
-      body: MaxWidth(
-        child: RefreshIndicator(
-          onRefresh: _reload,
-          child: AsyncList<Map<String, dynamic>>(
-            future: _submissions,
-            emptyMessage: 'No responses yet.',
-            emptyIcon: Icons.inbox_outlined,
-            builder: (context, items) => ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: items.length,
-              itemBuilder: (context, i) {
-                final s = items[i];
-                final values = s['values'] is Map
-                    ? Map<String, dynamic>.from(s['values'] as Map)
-                    : <String, dynamic>{};
-                final when = DateTime.tryParse('${s['created_at'] ?? ''}');
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Response ${items.length - i}'
-                            '${when != null ? ' · ${shortAgo(when)}' : ''}',
-                            style: TextStyle(
-                                color: Theme.of(context).colorScheme.outline,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        for (final e in values.entries)
-                          if ('${e.value}'.trim().isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('${_byId[e.key]?['label'] ?? e.key}',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .outline,
-                                          fontSize: 12)),
-                                  const SizedBox(height: 2),
-                                  '${e.value}'.startsWith('data:image')
-                                      ? _attachment('${e.value}')
-                                      : SelectableText('${e.value}'),
-                                ],
-                              ),
-                            ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+      appBar: OkayAppBar(
+        title: Text(widget.title),
+        actions: [
+          if (_e2e && _passphrase == null)
+            IconButton(
+              tooltip: 'Unlock responses',
+              icon: _decrypting
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.lock_open_outlined),
+              onPressed: _decrypting ? null : _unlock,
             ),
-          ),
+        ],
+      ),
+      body: MaxWidth(
+        child: Column(
+          children: [
+            if (_e2e)
+              Container(
+                width: double.infinity,
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.10),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline,
+                        size: 18, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _passphrase == null
+                            ? 'These responses are end-to-end encrypted. Unlock to read them.'
+                            : 'End-to-end encrypted — decrypted on this device only.',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    if (_passphrase == null)
+                      TextButton(
+                          onPressed: _decrypting ? null : _unlock,
+                          child: const Text('Unlock')),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _reload,
+                child: AsyncList<Map<String, dynamic>>(
+                  future: _submissions,
+                  emptyMessage: 'No responses yet.',
+                  emptyIcon: Icons.inbox_outlined,
+                  builder: (context, items) => ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: items.length,
+                    itemBuilder: (context, i) {
+                      final s = items[i];
+                      final values = _resolveValues(s);
+                      final when =
+                          DateTime.tryParse('${s['created_at'] ?? ''}');
+                      final locked = values == null;
+                      final failed = values != null &&
+                          _e2eBlob(s) != null &&
+                          values.isEmpty;
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Response ${items.length - i}'
+                                  '${when != null ? ' · ${shortAgo(when)}' : ''}',
+                                  style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outline,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              if (locked)
+                                Row(
+                                  children: [
+                                    Icon(Icons.lock_outline,
+                                        size: 16,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outline),
+                                    const SizedBox(width: 6),
+                                    Text('Encrypted — unlock to read',
+                                        style: TextStyle(
+                                            fontStyle: FontStyle.italic,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .outline)),
+                                  ],
+                                )
+                              else if (failed)
+                                Text('Couldn’t decrypt with this passphrase.',
+                                    style: TextStyle(
+                                        fontStyle: FontStyle.italic,
+                                        color:
+                                            Theme.of(context).colorScheme.error))
+                              else
+                                for (final e in values.entries)
+                                  if ('${e.value}'.trim().isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                              '${_byId[e.key]?['label'] ?? e.key}',
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .outline,
+                                                  fontSize: 12)),
+                                          const SizedBox(height: 2),
+                                          '${e.value}'.startsWith('data:image')
+                                              ? _attachment('${e.value}')
+                                              : SelectableText('${e.value}'),
+                                        ],
+                                      ),
+                                    ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

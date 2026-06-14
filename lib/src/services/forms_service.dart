@@ -46,6 +46,9 @@ class FormsService {
     String? successMessage,
     bool aiValidate = false,
     String? accent,
+    bool e2e = false,
+    String? e2ePublicKey,
+    String? e2eSalt,
     required List<Map<String, dynamic>> fields,
   }) async =>
       asMapOrNull(await _client.postJson('/forms', body: {
@@ -56,6 +59,9 @@ class FormsService {
         if (successMessage != null) 'success_message': successMessage,
         'ai_validate': aiValidate,
         if (accent != null) 'accent': accent,
+        'e2e': e2e,
+        if (e2ePublicKey != null) 'e2e_public_key': e2ePublicKey,
+        if (e2eSalt != null) 'e2e_salt': e2eSalt,
         'fields': fields,
       })) ??
       const {};
