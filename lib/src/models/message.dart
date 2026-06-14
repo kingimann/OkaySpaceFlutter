@@ -225,6 +225,146 @@ class GameView {
       );
 }
 
+/// A snapshot of a blackjack hand (player vs dealer).
+class BlackjackView {
+  const BlackjackView({
+    required this.gameId,
+    required this.player,
+    required this.dealer,
+    required this.playerTotal,
+    required this.dealerTotal,
+    this.status = 'active',
+  });
+
+  final String gameId;
+  final List<Map<String, dynamic>> player; // [{'r':'A','s':'♠'}, ...]
+  final List<Map<String, dynamic>> dealer;
+  final int playerTotal;
+  final int dealerTotal;
+  final String status; // active | blackjack | win | lose | push
+
+  bool get isOver => status != 'active';
+
+  static List<Map<String, dynamic>> _cards(Object? v) => v is List
+      ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+      : const [];
+
+  factory BlackjackView.fromJson(Map<String, dynamic> json) => BlackjackView(
+        gameId: asString(json['game_id']),
+        player: _cards(json['player']),
+        dealer: _cards(json['dealer']),
+        playerTotal: asInt(json['player_total']),
+        dealerTotal: asInt(json['dealer_total']),
+        status: asString(json['status'], 'active'),
+      );
+}
+
+/// A snapshot of a chess game.
+class ChessView {
+  const ChessView({
+    required this.gameId,
+    required this.board,
+    required this.whitePlayer,
+    required this.blackPlayer,
+    required this.turn,
+    this.inCheck = false,
+    this.status = 'active',
+    this.winner,
+  });
+
+  final String gameId;
+  final String board; // 64 chars, a8..h1; uppercase white, lowercase black, '.' empty
+  final String whitePlayer;
+  final String blackPlayer;
+  final String turn; // user id whose move it is
+  final bool inCheck;
+  final String status; // active | checkmate | stalemate | draw
+  final String? winner;
+
+  bool get isOver => status != 'active';
+
+  factory ChessView.fromJson(Map<String, dynamic> json) => ChessView(
+        gameId: asString(json['game_id']),
+        board: asString(json['board']),
+        whitePlayer: asString(json['white_player']),
+        blackPlayer: asString(json['black_player']),
+        turn: asString(json['turn']),
+        inCheck: asBool(json['in_check']),
+        status: asString(json['status'], 'active'),
+        winner: asStringOrNull(json['winner']),
+      );
+}
+
+/// A snapshot of a checkers game.
+class CheckersView {
+  const CheckersView({
+    required this.gameId,
+    required this.board,
+    required this.whitePlayer,
+    required this.blackPlayer,
+    required this.turn,
+    this.chain,
+    this.status = 'active',
+    this.winner,
+  });
+
+  final String gameId;
+  final String board; // 64 chars; w/W white, b/B black, '.' empty
+  final String whitePlayer;
+  final String blackPlayer;
+  final String turn;
+  final int? chain; // square mid multi-jump that must continue
+  final String status; // active | white_won | black_won
+  final String? winner;
+
+  bool get isOver => status != 'active';
+
+  factory CheckersView.fromJson(Map<String, dynamic> json) => CheckersView(
+        gameId: asString(json['game_id']),
+        board: asString(json['board']),
+        whitePlayer: asString(json['white_player']),
+        blackPlayer: asString(json['black_player']),
+        turn: asString(json['turn']),
+        chain: asIntOrNull(json['chain']),
+        status: asString(json['status'], 'active'),
+        winner: asStringOrNull(json['winner']),
+      );
+}
+
+/// A snapshot of a five-card draw poker hand (player vs dealer).
+class PokerView {
+  const PokerView({
+    required this.gameId,
+    required this.you,
+    required this.opponent,
+    required this.yourHand,
+    this.opponentHand,
+    this.status = 'active',
+  });
+
+  final String gameId;
+  final List<Map<String, dynamic>> you;
+  final List<Map<String, dynamic>> opponent; // hidden until showdown
+  final String yourHand;
+  final String? opponentHand;
+  final String status; // active | revealing | win | lose | push
+
+  bool get isOver => status == 'win' || status == 'lose' || status == 'push';
+
+  static List<Map<String, dynamic>> _cards(Object? v) => v is List
+      ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+      : const [];
+
+  factory PokerView.fromJson(Map<String, dynamic> json) => PokerView(
+        gameId: asString(json['game_id']),
+        you: _cards(json['you']),
+        opponent: _cards(json['opponent']),
+        yourHand: asString(json['your_hand']),
+        opponentHand: asStringOrNull(json['opponent_hand']),
+        status: asString(json['status'], 'active'),
+      );
+}
+
 /// Request body for sending a message. Defaults to a plain text message.
 class MessageCreate {
   const MessageCreate({

@@ -584,7 +584,7 @@ class _ConversationTile extends StatelessWidget {
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
       'live_location' => '📍 Live location',
-      'game' => '🎮 Tic-tac-toe',
+      'game' => '🎮 ${_gameMeta('${m.raw['game_type'] ?? 'tictactoe'}').$1}',
       'money' || 'tip' => '💸 Payment',
       'poll' => '📊 Poll',
       'file' => '📎 File',
@@ -2706,7 +2706,16 @@ class _ChatScreenState extends State<ChatScreen> {
                 _attachSectionLabel('Play'),
                 Wrap(
                   children: [
-                    _attachTile(Icons.grid_3x3, 'Tic-tac-toe', _attachGame),
+                    _attachTile(Icons.grid_3x3, 'Tic-tac-toe',
+                        () => _startGame('tictactoe')),
+                    _attachTile(Icons.style_outlined, 'Blackjack',
+                        () => _startGame('blackjack')),
+                    _attachTile(Icons.casino_outlined, 'Poker',
+                        () => _startGame('poker')),
+                    _attachTile(Icons.shield_outlined, 'Chess',
+                        () => _startGame('chess')),
+                    _attachTile(Icons.circle_outlined, 'Checkers',
+                        () => _startGame('checkers')),
                   ],
                 ),
               ],
@@ -2784,11 +2793,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Starts an in-chat tic-tac-toe game (one-on-one chats only).
-  Future<void> _attachGame() async {
+  /// Starts an in-chat game of [type] and drops its playable card.
+  Future<void> _startGame(String type) async {
     setState(() => _sending = true);
     try {
-      await api.messaging.createGame(_convId);
+      await api.messaging.createGame(_convId, type: type);
       await _fetch(silent: true);
       _scrollToBottom();
     } catch (e) {
@@ -4253,6 +4262,7 @@ class _MessageBubble extends StatelessWidget {
         !message.deleted &&
         liveShareId.isNotEmpty;
     final gameId = '${message.raw['game_id'] ?? ''}';
+    final gameType = '${message.raw['game_type'] ?? 'tictactoe'}';
     final isGame =
         message.type == 'game' && !message.deleted && gameId.isNotEmpty;
     final isPoll = message.type == 'poll' && !message.deleted;
@@ -4263,7 +4273,7 @@ class _MessageBubble extends StatelessWidget {
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
       'live_location' => '📍 Live location',
-      'game' => '🎮 Tic-tac-toe',
+      'game' => '🎮 ${_gameMeta(gameType).$1}',
       'money' || 'tip' => '💸 Payment',
       'gif' => 'GIF',
       'voice' => '🎤 Voice message',
@@ -4407,7 +4417,8 @@ class _MessageBubble extends StatelessWidget {
                     Padding(
                       padding:
                           EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
-                      child: _TicTacToeCard(gameId: gameId),
+                      child: _GameChip(
+                          gameId: gameId, gameType: gameType, mine: mine),
                     ),
                   if (isTip)
                     Row(mainAxisSize: MainAxisSize.min, children: [
@@ -5193,22 +5204,158 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
 }
 
 /// Full-screen map to drop a pin and return the chosen [LatLng].
-/// In-bubble tic-tac-toe board (iMessage-style). Polls the shared game state,
-/// renders the 3×3 board, and lets whoever's turn it is tap an empty cell.
-class _TicTacToeCard extends StatefulWidget {
-  const _TicTacToeCard({required this.gameId});
-
-  final String gameId;
-
-  @override
-  State<_TicTacToeCard> createState() => _TicTacToeCardState();
+/// (label, icon, accent) for an in-chat game type.
+(String, IconData, Color) _gameMeta(String type) {
+  switch (type) {
+    case 'blackjack':
+      return ('Blackjack', Icons.style_outlined, const Color(0xFF16A34A));
+    case 'chess':
+      return ('Chess', Icons.shield_outlined, const Color(0xFF6B7280));
+    case 'checkers':
+      return ('Checkers', Icons.circle_outlined, const Color(0xFFDC2626));
+    case 'poker':
+      return ('Poker', Icons.casino_outlined, const Color(0xFF7C3AED));
+    default:
+      return ('Tic-tac-toe', Icons.grid_3x3, const Color(0xFF2563EB));
+  }
 }
 
-class _TicTacToeCardState extends State<_TicTacToeCard> {
-  GameView? _game;
+/// Opens the game in a popup dialog (the board lives here, not in the bubble).
+void _openGameDialog(
+    BuildContext context, String gameId, String gameType, bool mine) {
+  final (label, icon, color) = _gameMeta(gameType);
+  showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      final Widget board = switch (gameType) {
+        'blackjack' => _BlackjackBoard(gameId: gameId, mine: mine),
+        'chess' => _ChessBoard(gameId: gameId),
+        'checkers' => _CheckersBoard(gameId: gameId),
+        'poker' => _PokerBoard(gameId: gameId, mine: mine),
+        _ => _TicTacToeBoard(gameId: gameId),
+      };
+      return Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(children: [
+                  Icon(icon, color: color),
+                  const SizedBox(width: 8),
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ]),
+                Flexible(child: SingleChildScrollView(child: board)),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// Compact game card shown in the chat bubble; tap to open the popup.
+class _GameChip extends StatelessWidget {
+  const _GameChip(
+      {required this.gameId, required this.gameType, required this.mine});
+
+  final String gameId;
+  final String gameType;
+  final bool mine;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, icon, color) = _gameMeta(gameType);
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _openGameDialog(context, gameId, gameType, mine),
+      child: Container(
+        width: 220,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Row(children: [
+          CircleAvatar(
+              radius: 18,
+              backgroundColor: color,
+              child: Icon(icon, color: Colors.white, size: 20)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text('Tap to play',
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right, color: scheme.outline),
+        ]),
+      ),
+    );
+  }
+}
+
+/// A small playing-card face (or back when [hidden]).
+Widget _playingCard(Map<String, dynamic> c, {bool selected = false}) {
+  final r = '${c['r'] ?? '?'}';
+  final s = '${c['s'] ?? ''}';
+  final hidden = r == '?';
+  final red = s == '♥' || s == '♦';
+  final ink = red ? const Color(0xFFDC2626) : Colors.black;
+  return Container(
+    width: 38,
+    height: 54,
+    margin: const EdgeInsets.symmetric(horizontal: 2),
+    decoration: BoxDecoration(
+      color: hidden ? const Color(0xFF334155) : Colors.white,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(
+          color: selected ? const Color(0xFF22C55E) : Colors.black26,
+          width: selected ? 2.5 : 1),
+    ),
+    alignment: Alignment.center,
+    child: hidden
+        ? const Icon(Icons.help_outline, color: Colors.white70, size: 18)
+        : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text(r,
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13, color: ink)),
+            Text(s, style: TextStyle(fontSize: 14, color: ink)),
+          ]),
+  );
+}
+
+// ===== Tic-tac-toe board (popup), with a non-instant CPU =====
+class _TicTacToeBoard extends StatefulWidget {
+  const _TicTacToeBoard({required this.gameId});
+  final String gameId;
+  @override
+  State<_TicTacToeBoard> createState() => _TicTacToeBoardState();
+}
+
+class _TicTacToeBoardState extends State<_TicTacToeBoard> {
+  GameView? _g;
   Timer? _poll;
-  bool _loading = true;
-  bool _moving = false;
+  bool _busy = false;
+  bool _thinking = false;
 
   @override
   void initState() {
@@ -5224,42 +5371,48 @@ class _TicTacToeCardState extends State<_TicTacToeCard> {
   }
 
   Future<void> _refresh() async {
-    if (_moving) return; // don't clobber an in-flight move
+    if (_busy) return;
     try {
       final g = await api.messaging.game(widget.gameId);
       if (!mounted) return;
-      setState(() {
-        _game = g;
-        _loading = false;
-      });
+      setState(() => _g = g);
       if (g.isOver) _poll?.cancel();
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+    } catch (_) {}
   }
 
   Future<void> _tap(int cell) async {
-    final g = _game;
-    if (g == null || g.isOver || _moving) return;
-    if (g.turn != currentUserId) return; // not your turn
-    if (cell < 0 || cell > 8 || g.board[cell].isNotEmpty) return;
-    setState(() => _moving = true);
+    final g = _g;
+    if (g == null || g.isOver || _busy) return;
+    if (g.turn != currentUserId || g.board[cell].isNotEmpty) return;
+    setState(() => _busy = true);
     try {
-      final updated = await api.messaging.gameMove(widget.gameId, cell);
-      if (mounted) setState(() => _game = updated);
-      if (updated.isOver) _poll?.cancel();
+      var v = await api.messaging.gameMove(widget.gameId, cell);
+      if (mounted) setState(() => _g = v);
+      // The computer pauses before replying so it doesn't move instantly.
+      if (!v.isOver && v.turn == 'cpu') {
+        setState(() => _thinking = true);
+        await Future.delayed(const Duration(milliseconds: 800));
+        v = await api.messaging.cpuMove(widget.gameId);
+        if (mounted) setState(() => _g = v);
+      }
+      if (v.isOver) _poll?.cancel();
     } catch (e) {
       if (mounted) showError(context, e);
       await _refresh();
     } finally {
-      if (mounted) setState(() => _moving = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _thinking = false;
+        });
+      }
     }
   }
 
-  String _statusText(GameView g) {
-    final myMark = g.xPlayer == currentUserId
-        ? 'X'
-        : (g.oPlayer == currentUserId ? 'O' : '');
+  String _status(GameView g) {
+    if (_thinking) return 'Thinking…';
+    final myMark =
+        g.xPlayer == currentUserId ? 'X' : (g.oPlayer == currentUserId ? 'O' : '');
     if (g.status == 'draw') return "It's a draw";
     if (g.status == 'won') {
       return g.winner == currentUserId ? 'You won! 🎉' : 'You lost';
@@ -5271,79 +5424,531 @@ class _TicTacToeCardState extends State<_TicTacToeCard> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final g = _game;
+    final g = _g;
     if (g == null) {
-      return SizedBox(
-        width: 200,
-        height: 200,
-        child: Center(
-            child: _loading
-                ? const CircularProgressIndicator()
-                : const Text('Game unavailable')),
-      );
+      return const SizedBox(
+          height: 200, child: Center(child: CircularProgressIndicator()));
     }
-    final myTurn = !g.isOver && g.turn == currentUserId;
-    return SizedBox(
-      width: 210,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('🎮 Tic-tac-toe',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-          const SizedBox(height: 6),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 4,
-            crossAxisSpacing: 4,
-            children: [
-              for (int i = 0; i < 9; i++)
-                GestureDetector(
-                  onTap: () => _tap(i),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: scheme.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: scheme.outlineVariant),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(g.board[i],
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(
+        width: 300,
+        height: 300,
+        child: GridView.count(
+          crossAxisCount: 3,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
+          children: [
+            for (int i = 0; i < 9; i++)
+              GestureDetector(
+                onTap: () => _tap(i),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(g.board[i],
+                      style: TextStyle(
+                          fontSize: 44,
+                          fontWeight: FontWeight.bold,
+                          color: g.board[i] == 'X'
+                              ? const Color(0xFF2563EB)
+                              : const Color(0xFFEF4444))),
+                ),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 10),
+      Text(_status(g),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+    ]);
+  }
+}
+
+// ===== Blackjack board (popup) =====
+class _BlackjackBoard extends StatefulWidget {
+  const _BlackjackBoard({required this.gameId, required this.mine});
+  final String gameId;
+  final bool mine;
+  @override
+  State<_BlackjackBoard> createState() => _BlackjackBoardState();
+}
+
+class _BlackjackBoardState extends State<_BlackjackBoard> {
+  BlackjackView? _v;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final v = await api.messaging.blackjack(widget.gameId);
+      if (mounted) setState(() => _v = v);
+    } catch (_) {}
+  }
+
+  Future<void> _act(Future<BlackjackView> Function() call) async {
+    setState(() => _busy = true);
+    try {
+      final v = await call();
+      if (mounted) setState(() => _v = v);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _result(String s) => switch (s) {
+        'blackjack' => 'Blackjack! You win 🎉',
+        'win' => 'You win 🎉',
+        'lose' => 'Dealer wins',
+        'push' => 'Push — a tie',
+        _ => '',
+      };
+
+  Widget _row(List<Map<String, dynamic>> cards) => Wrap(
+      children: [for (final c in cards) _playingCard(c)]);
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _v;
+    if (v == null) {
+      return const SizedBox(
+          height: 160, child: Center(child: CircularProgressIndicator()));
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Align(
+          alignment: Alignment.centerLeft,
+          child: Text('Dealer  ${v.isOver ? v.dealerTotal : ''}',
+              style: TextStyle(color: scheme.onSurfaceVariant))),
+      const SizedBox(height: 4),
+      _row(v.dealer),
+      const SizedBox(height: 14),
+      Align(
+          alignment: Alignment.centerLeft,
+          child: Text('You  ${v.playerTotal}',
+              style: TextStyle(color: scheme.onSurfaceVariant))),
+      const SizedBox(height: 4),
+      _row(v.player),
+      const SizedBox(height: 14),
+      if (v.isOver)
+        Text(_result(v.status),
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold))
+      else if (widget.mine)
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          FilledButton(
+              onPressed: _busy ? null : () => _act(() => api.messaging.blackjackHit(widget.gameId)),
+              child: const Text('Hit')),
+          const SizedBox(width: 12),
+          OutlinedButton(
+              onPressed: _busy ? null : () => _act(() => api.messaging.blackjackStand(widget.gameId)),
+              child: const Text('Stand')),
+        ])
+      else
+        Text('Watching', style: TextStyle(color: scheme.onSurfaceVariant)),
+    ]);
+  }
+}
+
+// ===== Chess board (popup) =====
+const _chessGlyph = {
+  'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟',
+};
+
+String _sqName(int i) =>
+    '${String.fromCharCode(97 + i % 8)}${8 - i ~/ 8}';
+
+class _ChessBoard extends StatefulWidget {
+  const _ChessBoard({required this.gameId});
+  final String gameId;
+  @override
+  State<_ChessBoard> createState() => _ChessBoardState();
+}
+
+class _ChessBoardState extends State<_ChessBoard> {
+  ChessView? _v;
+  Timer? _poll;
+  int? _sel;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _poll = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (_busy) return;
+    try {
+      final v = await api.messaging.chess(widget.gameId);
+      if (mounted) setState(() => _v = v);
+      if (v.isOver) _poll?.cancel();
+    } catch (_) {}
+  }
+
+  Future<void> _tap(int sq) async {
+    final v = _v;
+    if (v == null || v.isOver || _busy || v.turn != currentUserId) return;
+    final amWhite = v.whitePlayer == currentUserId;
+    final p = v.board[sq];
+    final mineHere = p != '.' &&
+        (amWhite ? p == p.toUpperCase() : p == p.toLowerCase());
+    if (_sel == null) {
+      if (mineHere) setState(() => _sel = sq);
+      return;
+    }
+    if (sq == _sel || mineHere) {
+      setState(() => _sel = mineHere ? sq : null);
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final nv = await api.messaging
+          .chessMove(widget.gameId, _sqName(_sel!), _sqName(sq));
+      if (mounted) {
+        setState(() {
+          _v = nv;
+          _sel = null;
+        });
+      }
+      if (nv.isOver) _poll?.cancel();
+    } catch (e) {
+      if (mounted) {
+        showError(context, e);
+        setState(() => _sel = null);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _status(ChessView v) {
+    if (v.status == 'checkmate') {
+      return v.winner == currentUserId ? 'Checkmate — you win 🎉' : 'Checkmate — you lost';
+    }
+    if (v.status == 'stalemate') return 'Stalemate — draw';
+    if (v.status == 'draw') return 'Draw';
+    final mine = v.turn == currentUserId;
+    return '${mine ? 'Your move' : 'Their move'}${v.inCheck ? ' · check!' : ''}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _v;
+    if (v == null) {
+      return const SizedBox(
+          height: 300, child: Center(child: CircularProgressIndicator()));
+    }
+    final amWhite = v.whitePlayer == currentUserId;
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(
+        width: 320,
+        height: 320,
+        child: GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 8),
+          itemCount: 64,
+          itemBuilder: (_, k) {
+            final sq = amWhite ? k : 63 - k;
+            final p = v.board[sq];
+            final light = ((sq % 8) + (sq ~/ 8)) % 2 == 0;
+            final sel = _sel == sq;
+            return GestureDetector(
+              onTap: () => _tap(sq),
+              child: Container(
+                color: sel
+                    ? const Color(0xFF86EFAC)
+                    : (light
+                        ? const Color(0xFFEDD9B5)
+                        : const Color(0xFFB48761)),
+                alignment: Alignment.center,
+                child: p == '.'
+                    ? null
+                    : Text(_chessGlyph[p.toLowerCase()] ?? '',
                         style: TextStyle(
                             fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: g.board[i] == 'X'
-                                ? const Color(0xFF2563EB)
-                                : const Color(0xFFEF4444))),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              if (myTurn)
-                Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.only(right: 6),
-                  decoration: const BoxDecoration(
-                      shape: BoxShape.circle, color: Color(0xFF22C55E)),
-                ),
-              Flexible(
-                child: Text(_statusText(g),
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight:
-                            myTurn ? FontWeight.w600 : FontWeight.normal,
-                        color: scheme.onSurfaceVariant)),
+                            color: p == p.toUpperCase()
+                                ? Colors.white
+                                : Colors.black,
+                            shadows: const [
+                              Shadow(blurRadius: 1, color: Colors.black54),
+                            ])),
               ),
-            ],
-          ),
+            );
+          },
+        ),
+      ),
+      const SizedBox(height: 10),
+      Text(_status(v),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+    ]);
+  }
+}
+
+// ===== Checkers board (popup) =====
+class _CheckersBoard extends StatefulWidget {
+  const _CheckersBoard({required this.gameId});
+  final String gameId;
+  @override
+  State<_CheckersBoard> createState() => _CheckersBoardState();
+}
+
+class _CheckersBoardState extends State<_CheckersBoard> {
+  CheckersView? _v;
+  Timer? _poll;
+  int? _sel;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _poll = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (_busy || _sel != null) return;
+    try {
+      final v = await api.messaging.checkers(widget.gameId);
+      if (mounted) setState(() => _v = v);
+      if (v.isOver) _poll?.cancel();
+    } catch (_) {}
+  }
+
+  Future<void> _tap(int sq) async {
+    final v = _v;
+    if (v == null || v.isOver || _busy || v.turn != currentUserId) return;
+    final amWhite = v.whitePlayer == currentUserId;
+    final p = v.board[sq];
+    final mineHere = amWhite ? (p == 'w' || p == 'W') : (p == 'b' || p == 'B');
+    if (_sel == null) {
+      if (mineHere) setState(() => _sel = sq);
+      return;
+    }
+    if (sq == _sel || mineHere) {
+      setState(() => _sel = mineHere ? sq : null);
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final nv = await api.messaging.checkersMove(widget.gameId, _sel!, sq);
+      if (mounted) {
+        setState(() {
+          _v = nv;
+          // A multi-jump keeps the turn: stay selected on the chaining square.
+          _sel =
+              (nv.turn == currentUserId && nv.chain != null) ? nv.chain : null;
+        });
+      }
+      if (nv.isOver) _poll?.cancel();
+    } catch (e) {
+      if (mounted) {
+        showError(context, e);
+        setState(() => _sel = null);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _status(CheckersView v) {
+    if (v.isOver) {
+      return v.winner == currentUserId ? 'You win 🎉' : 'You lost';
+    }
+    return v.turn == currentUserId ? 'Your move' : 'Their move';
+  }
+
+  Widget _piece(String p) {
+    final white = p == 'w' || p == 'W';
+    final king = p == 'W' || p == 'B';
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: white ? const Color(0xFFF1F5F9) : const Color(0xFF1F2937),
+        border: Border.all(color: Colors.black54, width: 1.5),
+      ),
+      alignment: Alignment.center,
+      child: king
+          ? Icon(Icons.star,
+              size: 14, color: white ? Colors.amber[800] : Colors.amber)
+          : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _v;
+    if (v == null) {
+      return const SizedBox(
+          height: 300, child: Center(child: CircularProgressIndicator()));
+    }
+    final amWhite = v.whitePlayer == currentUserId;
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(
+        width: 320,
+        height: 320,
+        child: GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 8),
+          itemCount: 64,
+          itemBuilder: (_, k) {
+            final sq = amWhite ? k : 63 - k;
+            final p = v.board[sq];
+            final dark = ((sq % 8) + (sq ~/ 8)) % 2 == 1;
+            final sel = _sel == sq;
+            return GestureDetector(
+              onTap: () => _tap(sq),
+              child: Container(
+                color: sel
+                    ? const Color(0xFF86EFAC)
+                    : (dark
+                        ? const Color(0xFF8D6748)
+                        : const Color(0xFFEAD9BD)),
+                alignment: Alignment.center,
+                child: p == '.' ? null : _piece(p),
+              ),
+            );
+          },
+        ),
+      ),
+      const SizedBox(height: 10),
+      Text(_status(v),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+    ]);
+  }
+}
+
+// ===== Poker board (popup): five-card draw vs the dealer =====
+class _PokerBoard extends StatefulWidget {
+  const _PokerBoard({required this.gameId, required this.mine});
+  final String gameId;
+  final bool mine;
+  @override
+  State<_PokerBoard> createState() => _PokerBoardState();
+}
+
+class _PokerBoardState extends State<_PokerBoard> {
+  PokerView? _v;
+  final Set<int> _holds = {};
+  bool _busy = false;
+  bool _revealing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final v = await api.messaging.poker(widget.gameId);
+      if (mounted) setState(() => _v = v);
+    } catch (_) {}
+  }
+
+  Future<void> _draw() async {
+    setState(() => _busy = true);
+    try {
+      var v = await api.messaging.pokerDraw(widget.gameId, _holds.toList());
+      if (mounted) setState(() => _v = v);
+      // The dealer pauses before revealing — not instant.
+      setState(() => _revealing = true);
+      await Future.delayed(const Duration(milliseconds: 900));
+      v = await api.messaging.pokerReveal(widget.gameId);
+      if (mounted) setState(() => _v = v);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _revealing = false;
+        });
+      }
+    }
+  }
+
+  String _result(String s) => switch (s) {
+        'win' => 'You win 🎉',
+        'lose' => 'Dealer wins',
+        'push' => 'Split pot — tie',
+        _ => '',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _v;
+    if (v == null) {
+      return const SizedBox(
+          height: 200, child: Center(child: CircularProgressIndicator()));
+    }
+    final scheme = Theme.of(context).colorScheme;
+    final canDraw = widget.mine && v.status == 'active' && !_busy;
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Align(
+          alignment: Alignment.centerLeft,
+          child: Text('Dealer${v.opponentHand != null ? ' · ${v.opponentHand}' : ''}',
+              style: TextStyle(color: scheme.onSurfaceVariant))),
+      const SizedBox(height: 4),
+      Wrap(children: [for (final c in v.opponent) _playingCard(c)]),
+      const SizedBox(height: 14),
+      Align(
+          alignment: Alignment.centerLeft,
+          child: Text('You · ${v.yourHand}',
+              style: TextStyle(color: scheme.onSurfaceVariant))),
+      const SizedBox(height: 4),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (int i = 0; i < v.you.length; i++)
+            GestureDetector(
+              onTap: canDraw
+                  ? () => setState(() =>
+                      _holds.contains(i) ? _holds.remove(i) : _holds.add(i))
+                  : null,
+              child: _playingCard(v.you[i], selected: _holds.contains(i)),
+            ),
         ],
       ),
-    );
+      const SizedBox(height: 12),
+      if (v.isOver)
+        Text(_result(v.status),
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold))
+      else if (_revealing)
+        const Text('Dealer drawing…')
+      else if (canDraw) ...[
+        Text('Tap cards to keep, then draw',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        const SizedBox(height: 6),
+        FilledButton(onPressed: _draw, child: const Text('Draw')),
+      ] else
+        Text('Watching', style: TextStyle(color: scheme.onSurfaceVariant)),
+    ]);
   }
 }
 
