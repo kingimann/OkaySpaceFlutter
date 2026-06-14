@@ -69,6 +69,23 @@ class AdminService {
           String userId, Map<String, dynamic> body) async =>
       _map(await _client.postJson('/admin/users/$userId/wallet', body: body));
 
+  // --- Stripe reconciliation ----------------------------------------------
+
+  /// Looks up an email's real Stripe payments: each charge, per-currency
+  /// gross/refunded/net, and the matching app user's current wallet.
+  Future<Map<String, dynamic>> stripeLookup(String email) async =>
+      _map(await _client.getJson('/admin/stripe/lookup',
+          query: {'email': email}));
+
+  /// Sets a user's wallet balance to a verified amount (from the lookup).
+  Future<Map<String, dynamic>> stripeReconcile(
+          {String? userId, String? email, required double amount}) async =>
+      _map(await _client.postJson('/admin/stripe/reconcile', body: {
+        'amount': amount,
+        if (userId != null) 'user_id': userId,
+        if (email != null) 'email': email,
+      }));
+
   // --- Platform finance ---------------------------------------------------
 
   Future<dynamic> revenue() => _client.getJson('/admin/revenue');

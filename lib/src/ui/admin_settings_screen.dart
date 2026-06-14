@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import 'admin_money_screen.dart';
 import 'admin_staff_screen.dart';
+import 'admin_stripe_reconcile_screen.dart';
 import 'admin_system_screen.dart';
 import 'admin_users_screen.dart';
 import 'common.dart';
@@ -216,6 +217,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   'Ad revenue',
                   'Spend, CTR, top earners & advertisers',
                   const AdminRevenueScreen()
+                ),
+                (
+                  Icons.account_balance_outlined,
+                  'Stripe reconcile',
+                  'Look up real Stripe payments, set a wallet balance',
+                  const AdminStripeReconcileScreen()
                 ),
                 (
                   Icons.military_tech_outlined,
