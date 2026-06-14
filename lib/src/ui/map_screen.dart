@@ -903,12 +903,6 @@ class _MapScreenState extends State<MapScreen> {
               }
             }
 
-            Widget chip(String label, IconData icon, bool on, VoidCallback t) =>
-                _layerChip(label, icon, on, () {
-                  t();
-                  setSheet(() {});
-                });
-
             return SafeArea(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -949,28 +943,6 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ),
                   ),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Row(
-                      children: [
-                        chip('Listings', Icons.storefront, _showListings,
-                            () => _toggle(() => _showListings = !_showListings)),
-                        const SizedBox(width: 8),
-                        chip('Roadside', Icons.car_repair, _showRoadside,
-                            () => _toggle(() => _showRoadside = !_showRoadside)),
-                        const SizedBox(width: 8),
-                        chip('Transit', Icons.directions_transit, _showTransit,
-                            () => _toggle(() => _showTransit = !_showTransit)),
-                        const SizedBox(width: 8),
-                        chip('Saved', Icons.bookmark, _showSaved,
-                            () => _toggle(() => _showSaved = !_showSaved)),
-                        const SizedBox(width: 8),
-                        chip('Rated', Icons.star, _showRated,
-                            () => _toggle(() => _showRated = !_showRated)),
-                      ],
-                    ),
-                  ),
                   Flexible(
                     child: ListView(
                       shrinkWrap: true,
@@ -1003,36 +975,6 @@ class _MapScreenState extends State<MapScreen> {
                               );
                             })
                         else ...[
-                          // Apple-Maps-style "Find nearby" category shortcuts.
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                for (final (label, icon, q)
-                                    in const <(String, IconData, String)>[
-                                  ('Restaurants', Icons.restaurant, 'restaurant'),
-                                  ('Coffee', Icons.local_cafe, 'coffee'),
-                                  ('Gas', Icons.local_gas_station, 'gas station'),
-                                  ('Groceries', Icons.local_grocery_store,
-                                      'grocery store'),
-                                  ('Pharmacy', Icons.local_pharmacy, 'pharmacy'),
-                                  ('Hotels', Icons.hotel, 'hotel'),
-                                  ('ATMs', Icons.local_atm, 'atm'),
-                                  ('Parks', Icons.park, 'park'),
-                                ])
-                                  ActionChip(
-                                    avatar: Icon(icon, size: 16),
-                                    label: Text(label),
-                                    onPressed: () {
-                                      ctrl.text = q;
-                                      run();
-                                    },
-                                  ),
-                              ],
-                            ),
-                          ),
                           if (_recent.isNotEmpty)
                             ListTile(
                               dense: true,
@@ -1115,6 +1057,7 @@ class _MapScreenState extends State<MapScreen> {
             item(Icons.crop_square, 'Measure area', _toggleArea,
                 active: _areaMode),
             const Divider(height: 1),
+            item(Icons.layers_outlined, 'Map layers', _layersSheet),
             item(Icons.refresh, 'Search this area', _loadAll),
             item(Icons.tune, 'Search radius', _radiusSheet),
             item(Icons.filter_alt_outlined, 'Filters', _filtersSheet),
@@ -3077,6 +3020,61 @@ class _MapScreenState extends State<MapScreen> {
                     style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Toggle which marker layers show on the map (moved here from the search
+  /// panel).
+  void _layersSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setS) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 10),
+                  child: Text('Map layers',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _layerChip('Listings', Icons.storefront, _showListings, () {
+                      _toggle(() => _showListings = !_showListings);
+                      setS(() {});
+                    }),
+                    _layerChip('Roadside', Icons.car_repair, _showRoadside, () {
+                      _toggle(() => _showRoadside = !_showRoadside);
+                      setS(() {});
+                    }),
+                    _layerChip(
+                        'Transit', Icons.directions_transit, _showTransit, () {
+                      _toggle(() => _showTransit = !_showTransit);
+                      setS(() {});
+                    }),
+                    _layerChip('Saved', Icons.bookmark, _showSaved, () {
+                      _toggle(() => _showSaved = !_showSaved);
+                      setS(() {});
+                    }),
+                    _layerChip('Rated', Icons.star, _showRated, () {
+                      _toggle(() => _showRated = !_showRated);
+                      setS(() {});
+                    }),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

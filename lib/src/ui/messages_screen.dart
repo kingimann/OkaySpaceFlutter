@@ -12,6 +12,7 @@ import 'package:latlong2/latlong.dart';
 import '../../okayspace_api.dart';
 import '../core/mapbox_api.dart';
 import 'call_screen.dart';
+import '../core/update_checker.dart';
 import 'common.dart';
 import 'linked_text.dart';
 
@@ -2132,6 +2133,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (idx == firstUnread) rows.add(_unreadMarker);
       rows.add(m);
     }
+    // Encryption notice at the very top of the thread (reverse list → last row).
+    if (messagesEncrypted.value) rows.add(_encBanner);
 
     return RefreshIndicator(
       onRefresh: _reload,
@@ -2146,6 +2149,7 @@ class _ChatScreenState extends State<ChatScreen> {
           if (identical(row, _unreadMarker)) {
             return KeyedSubtree(key: _unreadKey, child: const _UnreadDivider());
           }
+          if (identical(row, _encBanner)) return const _EncryptionNotice();
           final msg = row as Message;
           final mine = _isMine(msg);
           final key = _msgKeys.putIfAbsent(msg.id, GlobalKey.new);
@@ -3515,6 +3519,18 @@ class _ChatScreenState extends State<ChatScreen> {
                           padding: EdgeInsets.only(left: 6),
                           child: Icon(Icons.notifications_off, size: 14),
                         ),
+                      // Encrypted-chat indicator (when the server encrypts
+                      // message content at rest).
+                      ValueListenableBuilder<bool>(
+                        valueListenable: messagesEncrypted,
+                        builder: (context, on, _) => on
+                            ? const Padding(
+                                padding: EdgeInsets.only(left: 6),
+                                child: Icon(Icons.lock,
+                                    size: 13, color: Color(0xFF22C55E)),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                     ],
                   ),
                   if (_otherTyping)
@@ -4373,6 +4389,49 @@ const Object _unreadMarker = _UnreadMarker();
 
 class _UnreadMarker {
   const _UnreadMarker();
+}
+
+/// Sentinel row for the "messages are encrypted" notice at the top of history.
+const Object _encBanner = _EncBanner();
+
+class _EncBanner {
+  const _EncBanner();
+}
+
+/// A subtle, centered "messages are encrypted" notice (WhatsApp-style).
+class _EncryptionNotice extends StatelessWidget {
+  const _EncryptionNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF22C55E).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock, size: 14, color: Color(0xFF16A34A)),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'Messages in this chat are encrypted.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// A "Unread messages" divider shown above the first unread message.
