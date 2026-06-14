@@ -93,22 +93,28 @@ GAMES.tictactoe=function(){
 // the colour. The fill/stroke below is a fallback for text-presentation fonts.
 var CG_W={k:"♔",q:"♕",r:"♖",b:"♗",n:"♘",p:"♙"};
 var CG_B={k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
+var CT={light:"#eeeed2",dark:"#769656",last:"rgba(245,222,82,0.55)",sel:"rgba(245,222,82,0.85)"};
 GAMES.chess=function(){
-  var st=null,amWhite=true,sel=null;
+  var st=null,amWhite=true,sel=null,prev=null,lastFrom=-1,lastTo=-1;
   function status(){if(st.status==="checkmate")return st.winner===you?"Checkmate — you win!":"Checkmate — you lost";if(st.status==="stalemate")return "Stalemate — draw";if(st.status==="draw")return "Draw";return (st.turn===you?"Your move":"Their move")+(st.inCheck?" · check!":"");}
+  // Spot the last move by diffing the previous board (square emptied -> filled).
+  function diffLast(nb){if(prev&&nb&&nb!==prev){var gone=-1,got=-1;for(var i=0;i<64;i++){if(prev[i]!==nb[i]){if(nb[i]===".")gone=i;else got=i;}}if(gone>=0&&got>=0){lastFrom=gone;lastTo=got;}}prev=nb;}
+  function checkSq(){if(!st.inCheck)return -1;var k=(st.turn===st.white)?"K":"k";for(var i=0;i<64;i++)if(st.board[i]===k)return i;return -1;}
+  function piece(p,c,g){var wht=(c===c.toUpperCase()),ch=(wht?CG_W:CG_B)[c.toLowerCase()];var x=p.x+g.cs/2,y=p.y+g.cs/2+g.cs*0.04;ctx.font="700 "+Math.round(g.cs*0.82)+"px 'Segoe UI Symbol','Noto Sans Symbols2','DejaVu Sans',sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";ctx.shadowColor="rgba(0,0,0,0.45)";ctx.shadowBlur=g.cs*0.05;ctx.shadowOffsetY=g.cs*0.025;ctx.lineWidth=Math.max(1.4,g.cs*0.04);ctx.strokeStyle=wht?"#0f172a":"#cbd5e1";ctx.strokeText(ch,x,y);ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;ctx.fillStyle=wht?"#ffffff":"#0d1117";ctx.fillText(ch,x,y);}
   return {
-    build:function(s){st=s;amWhite=(st.white===you);},onState:function(s){st=s;sel=null;},
-    draw:function(){hud(status());var g=boardGeom();
+    build:function(s){st=s;amWhite=(st.white===you);prev=s.board;lastFrom=lastTo=-1;},
+    onState:function(s){diffLast(s.board);st=s;sel=null;},
+    draw:function(){hud(status());var g=boardGeom();var chk=checkSq();
+      ctx.save();ctx.shadowColor="rgba(0,0,0,0.4)";ctx.shadowBlur=16;ctx.shadowOffsetY=5;ctx.fillStyle="#3f3527";rr(g.ox-5,g.oy-5,g.bs+10,g.bs+10,9);ctx.fill();ctx.restore();
       for(var sq=0;sq<64;sq++){var p=sqXY(sq,amWhite,g);var f=sq%8,r=Math.floor(sq/8);var light=((f+r)%2===0);
-        ctx.fillStyle=(sel===sq)?"#86efac":(light?"#edd9b5":"#b48761");ctx.fillRect(p.x,p.y,g.cs,g.cs);
-        var c=st.board[sq];if(c!=="."){var wht=(c===c.toUpperCase()),ch=(wht?CG_W:CG_B)[c.toLowerCase()];var px2=p.x+g.cs/2,py2=p.y+g.cs/2+g.cs*0.04;ctx.font="700 "+Math.round(g.cs*0.84)+"px 'Segoe UI Symbol','Noto Sans Symbols2','DejaVu Sans',sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";
-          // A soft shadow lifts the piece off the square. On emoji platforms
-          // (iOS) the glyph series carries the colour; on text fonts the fill
-          // does — white pieces white, black pieces near-black, each edged.
-          ctx.shadowColor="rgba(0,0,0,0.5)";ctx.shadowBlur=g.cs*0.06;ctx.shadowOffsetY=g.cs*0.03;
-          ctx.lineWidth=Math.max(1.4,g.cs*0.04);ctx.strokeStyle=wht?"#0f172a":"#cbd5e1";ctx.strokeText(ch,px2,py2);
-          ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
-          ctx.fillStyle=wht?"#ffffff":"#0d1117";ctx.fillText(ch,px2,py2);}}
+        ctx.fillStyle=light?CT.light:CT.dark;ctx.fillRect(p.x,p.y,g.cs,g.cs);
+        if(sq===lastFrom||sq===lastTo){ctx.fillStyle=CT.last;ctx.fillRect(p.x,p.y,g.cs,g.cs);}
+        if(sq===sel){ctx.fillStyle=CT.sel;ctx.fillRect(p.x,p.y,g.cs,g.cs);}
+        if(sq===chk){var rg=ctx.createRadialGradient(p.x+g.cs/2,p.y+g.cs/2,g.cs*0.1,p.x+g.cs/2,p.y+g.cs/2,g.cs*0.62);rg.addColorStop(0,"rgba(231,76,60,0.95)");rg.addColorStop(1,"rgba(231,76,60,0)");ctx.fillStyle=rg;ctx.fillRect(p.x,p.y,g.cs,g.cs);}
+        var dk=amWhite?sq:63-sq,dcol=dk%8,drow=Math.floor(dk/8);ctx.font="700 "+Math.round(g.cs*0.2)+"px sans-serif";ctx.fillStyle=light?CT.dark:CT.light;
+        if(dcol===0){ctx.textAlign="left";ctx.textBaseline="top";ctx.fillText(String(8-r),p.x+3,p.y+3);}
+        if(drow===7){ctx.textAlign="right";ctx.textBaseline="bottom";ctx.fillText(String.fromCharCode(97+f),p.x+g.cs-3,p.y+g.cs-2);}
+        var c=st.board[sq];if(c!==".")piece(p,c,g);}
       if(st.status==="checkmate"||st.status==="stalemate"||st.status==="draw")overWith(status());else hideOver();},
     pick:function(cx,cy){if(st.turn!==you||st.status!=="active")return;var g=boardGeom();var sq=sqAt(cx,cy,amWhite,g);if(sq<0)return;var pc=st.board[sq],mine=pc!=="."&&(amWhite?pc===pc.toUpperCase():pc===pc.toLowerCase());if(sel===null){if(mine)sel=sq;return;}if(sq===sel){sel=null;return;}if(mine){sel=sq;return;}var from=sqName(sel),to=sqName(sq);sel=null;sendAction({from:from,to:to});}
   };
