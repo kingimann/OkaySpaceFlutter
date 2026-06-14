@@ -6294,6 +6294,11 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
       }
     } catch (e) {
       if (mounted) showError(context, e);
+      // Recover by re-rendering the true state, so an illegal/failed move
+      // doesn't leave the board stuck on a "..." placeholder.
+      try {
+        return await _fetchState();
+      } catch (_) {}
     }
     return null;
   }

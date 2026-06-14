@@ -50,7 +50,7 @@ function start(gameType,state){you=state.you;if(current&&current.dispose)current
 // ----- shared drawing helpers -----
 function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 function sqName(sq){return String.fromCharCode(97+(sq%8))+(8-Math.floor(sq/8));}
-function boardGeom(){var bs=Math.min(W-16,H-150);var cs=bs/8;return {bs:bs,cs:cs,ox:(W-bs)/2,oy:80};}
+function boardGeom(){var bs=Math.max(140,Math.min(W-16,H-150));var cs=bs/8;return {bs:bs,cs:cs,ox:(W-bs)/2,oy:Math.max(70,(H-bs)/2-10)};}
 function sqAt(cx,cy,amWhite,g){var f=Math.floor((cx-g.ox)/g.cs),r=Math.floor((cy-g.oy)/g.cs);if(f<0||f>7||r<0||r>7)return -1;var dk=r*8+f;return amWhite?dk:63-dk;}
 function sqXY(sq,amWhite,g){var dk=amWhite?sq:63-sq;return {x:g.ox+(dk%8)*g.cs,y:g.oy+Math.floor(dk/8)*g.cs};}
 function drawCard(x,y,w,h,card,sel){
@@ -69,7 +69,7 @@ var GAMES={};
 GAMES.tictactoe=function(){
   var st=null;
   function status(){var m=st.x===you?"X":(st.o===you?"O":"");if(st.status==="draw")return "It is a draw";if(st.status==="won")return st.winner===you?"You won!":"You lost";if(st.turn==="cpu")return "Thinking...";if(m==="")return st.turn===st.x?"X to move":"O to move";return st.turn===you?("Your move ("+m+")"):"Their move";}
-  function geom(){var bs=Math.min(W-30,H-180);return {bs:bs,cs:bs/3,ox:(W-bs)/2,oy:90};}
+  function geom(){var bs=Math.max(150,Math.min(W-40,H-200));return {bs:bs,cs:bs/3,ox:(W-bs)/2,oy:Math.max(80,(H-bs)/2-10)};}
   return {
     build:function(s){st=s;},onState:function(s){st=s;},
     draw:function(){hud(status());var g=geom();ctx.fillStyle="#1e2d49";rr(g.ox,g.oy,g.bs,g.bs,10);ctx.fill();
@@ -167,7 +167,7 @@ GAMES.pong=function(){
 // ===== Snake (arcade, self-contained) =====
 GAMES.snake=function(){
   var N=17,snake,dir,nd,food,score,dead,acc;
-  function geom(){var s=Math.min(W-16,H-150);return {cs:s/N,ox:(W-s)/2,oy:80};}
+  function geom(){var s=Math.max(150,Math.min(W-16,H-150));return {cs:s/N,ox:(W-s)/2,oy:Math.max(70,(H-s)/2-10)};}
   function spawn(){while(true){var p={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N)};var on=false;for(var i=0;i<snake.length;i++)if(snake[i].x===p.x&&snake[i].y===p.y)on=true;if(!on){food=p;return;}}}
   function steer(x,y){if(x===-dir.x&&y===-dir.y)return;nd={x:x,y:y};}
   function step(){dir=nd;var h={x:snake[0].x+dir.x,y:snake[0].y+dir.y};if(h.x<0||h.y<0||h.x>=N||h.y>=N){return die();}for(var i=0;i<snake.length;i++)if(snake[i].x===h.x&&snake[i].y===h.y)return die();snake.unshift(h);if(h.x===food.x&&h.y===food.y){score++;hud("Score: "+score);spawn();}else snake.pop();}
