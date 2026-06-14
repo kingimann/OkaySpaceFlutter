@@ -37,6 +37,9 @@ dependencies:
   image: ^4.3.0
   pdf: ^3.11.1
   printing: ^5.13.3
+  # Real PDF text find/replace (pure Dart, works on web).
+  # Free under Syncfusion's Community License (eligibility limits apply).
+  syncfusion_flutter_pdf: ^28.1.33
 
 dev_dependencies:
   flutter_test:
