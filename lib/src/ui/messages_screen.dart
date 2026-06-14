@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2188,6 +2189,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onStopLive: msg.type == 'live_location' && mine
                 ? () => _stopLiveShare('${msg.raw['live_share_id'] ?? ''}')
                 : null,
+            otherUserId: widget.conversation.otherUser?.userId,
             senderName:
                 (isGroup && !mine && !msg.deleted) ? _senderName(msg.senderId) : null,
             receipt: (!isGroup &&
@@ -2716,6 +2718,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         () => _startGame('chess')),
                     _attachTile(Icons.circle_outlined, 'Checkers',
                         () => _startGame('checkers')),
+                    _attachTile(Icons.sports_tennis, 'Pong',
+                        () => _startGame('pong')),
+                    _attachTile(Icons.linear_scale, 'Snake',
+                        () => _startGame('snake')),
                   ],
                 ),
               ],
@@ -3942,6 +3948,7 @@ class _MessageBubble extends StatelessWidget {
       this.onTapReactions,
       this.onVotePoll,
       this.onStopLive,
+      this.otherUserId,
       this.replyTo,
       this.senderName,
       this.receipt});
@@ -3994,6 +4001,9 @@ class _MessageBubble extends StatelessWidget {
 
   /// Sharer-only: stop an in-progress live-location share.
   final VoidCallback? onStopLive;
+
+  /// The DM partner's id (for arcade high-score comparison); null in groups.
+  final String? otherUserId;
 
   /// The message this one is replying to (resolved), if any.
   final Message? replyTo;
@@ -4418,7 +4428,10 @@ class _MessageBubble extends StatelessWidget {
                       padding:
                           EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
                       child: _GameChip(
-                          gameId: gameId, gameType: gameType, mine: mine),
+                          gameId: gameId,
+                          gameType: gameType,
+                          mine: mine,
+                          otherUserId: otherUserId),
                     ),
                   if (isTip)
                     Row(mainAxisSize: MainAxisSize.min, children: [
@@ -5215,15 +5228,20 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
       return ('Checkers', Icons.circle_outlined, const Color(0xFFDC2626));
     case 'poker':
       return ('Poker', Icons.casino_outlined, const Color(0xFF7C3AED));
+    case 'pong':
+      return ('Pong', Icons.sports_tennis, const Color(0xFF0EA5E9));
+    case 'snake':
+      return ('Snake', Icons.linear_scale, const Color(0xFF22C55E));
     default:
       return ('Tic-tac-toe', Icons.grid_3x3, const Color(0xFF2563EB));
   }
 }
 
 /// Opens the game in a popup dialog (the board lives here, not in the bubble).
-void _openGameDialog(
-    BuildContext context, String gameId, String gameType, bool mine) {
+void _openGameDialog(BuildContext context, String gameId, String gameType,
+    bool mine, String? otherUserId) {
   final (label, icon, color) = _gameMeta(gameType);
+  final isArcade = gameType == 'pong' || gameType == 'snake';
   showDialog<void>(
     context: context,
     builder: (ctx) {
@@ -5232,6 +5250,8 @@ void _openGameDialog(
         'chess' => _ChessBoard(gameId: gameId),
         'checkers' => _CheckersBoard(gameId: gameId),
         'poker' => _PokerBoard(gameId: gameId, mine: mine),
+        'pong' => _PongBoard(gameId: gameId, otherUserId: otherUserId),
+        'snake' => _SnakeBoard(gameId: gameId, otherUserId: otherUserId),
         _ => _TicTacToeBoard(gameId: gameId),
       };
       return Dialog(
@@ -5255,8 +5275,11 @@ void _openGameDialog(
                   ),
                 ]),
                 Flexible(child: SingleChildScrollView(child: board)),
-                const SizedBox(height: 8),
-                const _GameStatsFooter(),
+                // Arcade boards show their own high-score comparison.
+                if (!isArcade) ...[
+                  const SizedBox(height: 8),
+                  const _GameStatsFooter(),
+                ],
               ],
             ),
           ),
@@ -5315,11 +5338,15 @@ class _GameStatsFooterState extends State<_GameStatsFooter> {
 /// Compact game card shown in the chat bubble; tap to open the popup.
 class _GameChip extends StatelessWidget {
   const _GameChip(
-      {required this.gameId, required this.gameType, required this.mine});
+      {required this.gameId,
+      required this.gameType,
+      required this.mine,
+      this.otherUserId});
 
   final String gameId;
   final String gameType;
   final bool mine;
+  final String? otherUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -5327,7 +5354,8 @@ class _GameChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () => _openGameDialog(context, gameId, gameType, mine),
+      onTap: () =>
+          _openGameDialog(context, gameId, gameType, mine, otherUserId),
       child: Container(
         width: 220,
         padding: const EdgeInsets.all(10),
@@ -5998,6 +6026,364 @@ class _PokerBoardState extends State<_PokerBoard> {
         Text('Watching', style: TextStyle(color: scheme.onSurfaceVariant)),
     ]);
   }
+}
+
+/// Shows the player's best arcade score and (in a DM) the partner's, so two
+/// people can see who's ahead.
+class _ArcadeScores extends StatelessWidget {
+  const _ArcadeScores({required this.mine, this.theirs});
+  final int mine;
+  final int? theirs;
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cmp = theirs == null
+        ? ''
+        : (mine > theirs! ? "  · You're ahead 🏆" : (mine < theirs! ? '  · Behind' : '  · Tied'));
+    return Text(
+      'Your best: $mine${theirs != null ? '  ·  Their best: $theirs' : ''}$cmp',
+      style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+    );
+  }
+}
+
+// ===== Pong (real-time, vs a CPU paddle) =====
+class _PongBoard extends StatefulWidget {
+  const _PongBoard({required this.gameId, this.otherUserId});
+  final String gameId;
+  final String? otherUserId;
+  @override
+  State<_PongBoard> createState() => _PongBoardState();
+}
+
+class _PongBoardState extends State<_PongBoard> {
+  static const _w = 300.0, _h = 340.0;
+  static const _pw = 64.0, _ph = 10.0, _ballR = 7.0, _target = 7;
+  Timer? _loop;
+  // Positions in pixels.
+  double _px = _w / 2; // player paddle centre x (bottom)
+  double _cx = _w / 2; // cpu paddle centre x (top)
+  double _bx = _w / 2, _by = _h / 2; // ball
+  double _vx = 2.4, _vy = -3.2;
+  int _pScore = 0, _cScore = 0;
+  bool _over = false;
+  int _myBest = 0;
+  int? _theirBest;
+
+  @override
+  void initState() {
+    super.initState();
+    _loop = Timer.periodic(const Duration(milliseconds: 16), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _loop?.cancel();
+    super.dispose();
+  }
+
+  void _reset(bool toPlayer) {
+    _bx = _w / 2;
+    _by = _h / 2;
+    _vx = (math.Random().nextBool() ? 2.4 : -2.4);
+    _vy = toPlayer ? 3.2 : -3.2;
+  }
+
+  void _tick() {
+    if (_over) return;
+    setState(() {
+      // CPU tracks the ball with a capped speed (beatable).
+      final target = _bx.clamp(_pw / 2, _w - _pw / 2);
+      _cx += (target - _cx).clamp(-2.6, 2.6);
+      _bx += _vx;
+      _by += _vy;
+      if (_bx < _ballR || _bx > _w - _ballR) _vx = -_vx;
+      // Top paddle (CPU).
+      if (_by < _ph + _ballR) {
+        if ((_bx - _cx).abs() < _pw / 2) {
+          _vy = _vy.abs();
+        } else {
+          _pScore++;
+          if (_pScore >= _target) {
+            _finish();
+            return;
+          }
+          _reset(false);
+        }
+      }
+      // Bottom paddle (player).
+      if (_by > _h - _ph - _ballR) {
+        if ((_bx - _px).abs() < _pw / 2) {
+          _vy = -_vy.abs();
+        } else {
+          _cScore++;
+          if (_cScore >= _target) {
+            _finish();
+            return;
+          }
+          _reset(true);
+        }
+      }
+    });
+  }
+
+  Future<void> _finish() async {
+    _loop?.cancel();
+    setState(() => _over = true);
+    try {
+      final mine = await api.messaging.reportScore(widget.gameId, _pScore);
+      int? other;
+      if (widget.otherUserId != null) {
+        other = (await api.messaging.gameScores(widget.otherUserId!)).best('pong');
+      }
+      if (mounted) {
+        setState(() {
+          _myBest = mine.best('pong');
+          _theirBest = other;
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Text('You $_pScore  —  CPU $_cScore',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      const SizedBox(height: 6),
+      GestureDetector(
+        onPanUpdate: (d) => setState(() => _px =
+            (_px + d.delta.dx).clamp(_pw / 2, _w - _pw / 2)),
+        onTapDown: (d) =>
+            setState(() => _px = d.localPosition.dx.clamp(_pw / 2, _w - _pw / 2)),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: CustomPaint(
+            size: const Size(_w, _h),
+            painter: _PongPainter(
+                px: _px, cx: _cx, bx: _bx, by: _by, pw: _pw, ph: _ph, r: _ballR),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      if (_over)
+        Column(children: [
+          Text(_pScore > _cScore ? 'You win 🎉' : 'CPU wins',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const SizedBox(height: 4),
+          _ArcadeScores(mine: _myBest, theirs: _theirBest),
+        ])
+      else
+        Text('Drag to move your paddle',
+            style: TextStyle(
+                fontSize: 12, color: Theme.of(context).colorScheme.outline)),
+    ]);
+  }
+}
+
+class _PongPainter extends CustomPainter {
+  _PongPainter(
+      {required this.px,
+      required this.cx,
+      required this.bx,
+      required this.by,
+      required this.pw,
+      required this.ph,
+      required this.r});
+  final double px, cx, bx, by, pw, ph, r;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Paint()..color = const Color(0xFF0F172A);
+    canvas.drawRect(Offset.zero & size, bg);
+    final line = Paint()
+      ..color = Colors.white24
+      ..strokeWidth = 2;
+    canvas.drawLine(Offset(0, size.height / 2),
+        Offset(size.width, size.height / 2), line);
+    final white = Paint()..color = Colors.white;
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(cx, ph / 2 + 2), width: pw, height: ph),
+            const Radius.circular(4)),
+        white);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(px, size.height - ph / 2 - 2),
+                width: pw,
+                height: ph),
+            const Radius.circular(4)),
+        white);
+    canvas.drawCircle(Offset(bx, by), r, white);
+  }
+
+  @override
+  bool shouldRepaint(_PongPainter old) =>
+      old.px != px || old.cx != cx || old.bx != bx || old.by != by;
+}
+
+// ===== Snake (real-time, solo) =====
+class _SnakeBoard extends StatefulWidget {
+  const _SnakeBoard({required this.gameId, this.otherUserId});
+  final String gameId;
+  final String? otherUserId;
+  @override
+  State<_SnakeBoard> createState() => _SnakeBoardState();
+}
+
+class _SnakeBoardState extends State<_SnakeBoard> {
+  static const _n = 15; // grid size
+  static const _px = 300.0;
+  final _rng = math.Random();
+  Timer? _loop;
+  List<math.Point<int>> _snake = [];
+  math.Point<int> _dir = const math.Point(1, 0);
+  math.Point<int> _pendingDir = const math.Point(1, 0);
+  late math.Point<int> _food;
+  int _score = 0;
+  bool _over = false;
+  int _myBest = 0;
+  int? _theirBest;
+
+  @override
+  void initState() {
+    super.initState();
+    _snake = [const math.Point(7, 7), const math.Point(6, 7), const math.Point(5, 7)];
+    _food = _spawnFood();
+    _loop = Timer.periodic(const Duration(milliseconds: 170), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _loop?.cancel();
+    super.dispose();
+  }
+
+  math.Point<int> _spawnFood() {
+    while (true) {
+      final p = math.Point(_rng.nextInt(_n), _rng.nextInt(_n));
+      if (!_snake.contains(p)) return p;
+    }
+  }
+
+  void _steer(int dx, int dy) {
+    // No reversing onto yourself.
+    if (dx == -_dir.x && dy == -_dir.y) return;
+    _pendingDir = math.Point(dx, dy);
+  }
+
+  void _tick() {
+    if (_over) return;
+    _dir = _pendingDir;
+    final head = _snake.first;
+    final nh = math.Point(head.x + _dir.x, head.y + _dir.y);
+    if (nh.x < 0 || nh.y < 0 || nh.x >= _n || nh.y >= _n || _snake.contains(nh)) {
+      _finish();
+      return;
+    }
+    setState(() {
+      _snake.insert(0, nh);
+      if (nh == _food) {
+        _score++;
+        _food = _spawnFood();
+      } else {
+        _snake.removeLast();
+      }
+    });
+  }
+
+  Future<void> _finish() async {
+    _loop?.cancel();
+    setState(() => _over = true);
+    try {
+      final mine = await api.messaging.reportScore(widget.gameId, _score);
+      int? other;
+      if (widget.otherUserId != null) {
+        other = (await api.messaging.gameScores(widget.otherUserId!)).best('snake');
+      }
+      if (mounted) {
+        setState(() {
+          _myBest = mine.best('snake');
+          _theirBest = other;
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _onPan(DragUpdateDetails d) {
+    if (d.delta.dx.abs() > d.delta.dy.abs()) {
+      _steer(d.delta.dx > 0 ? 1 : -1, 0);
+    } else {
+      _steer(0, d.delta.dy > 0 ? 1 : -1);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      Text('Score: $_score',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      const SizedBox(height: 6),
+      GestureDetector(
+        onPanUpdate: _over ? null : _onPan,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: CustomPaint(
+            size: const Size(_px, _px),
+            painter: _SnakePainter(snake: _snake, food: _food, n: _n),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      if (_over)
+        Column(children: [
+          const Text('Game over',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const SizedBox(height: 4),
+          _ArcadeScores(mine: _myBest, theirs: _theirBest),
+        ])
+      else
+        Text('Swipe to steer',
+            style: TextStyle(
+                fontSize: 12, color: Theme.of(context).colorScheme.outline)),
+    ]);
+  }
+}
+
+class _SnakePainter extends CustomPainter {
+  _SnakePainter({required this.snake, required this.food, required this.n});
+  final List<math.Point<int>> snake;
+  final math.Point<int> food;
+  final int n;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cell = size.width / n;
+    canvas.drawRect(
+        Offset.zero & size, Paint()..color = const Color(0xFF0B1220));
+    final foodP = Paint()..color = const Color(0xFFEF4444);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(food.x * cell + 1, food.y * cell + 1, cell - 2,
+                cell - 2),
+            const Radius.circular(3)),
+        foodP);
+    for (var i = 0; i < snake.length; i++) {
+      final p = Paint()
+        ..color = i == 0 ? const Color(0xFF4ADE80) : const Color(0xFF22C55E);
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              Rect.fromLTWH(snake[i].x * cell + 1, snake[i].y * cell + 1,
+                  cell - 2, cell - 2),
+              const Radius.circular(3)),
+          p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SnakePainter old) => true;
 }
 
 /// In-bubble live-location view: a small map that polls the share and tracks

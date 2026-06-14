@@ -249,6 +249,16 @@ class MessagingService {
   Future<GameStats> gameStats(String userId) async => GameStats.fromJson(
       asMapOrNull(await _client.getJson('/game-stats/$userId')) ?? const {});
 
+  /// Reports an arcade score (Pong/Snake); keeps the player's best.
+  Future<GameScores> reportScore(String gameId, int score) async =>
+      GameScores.fromJson(asMapOrNull(await _client
+              .postJson('/chat-games/$gameId/score', body: {'score': score})) ??
+          const {});
+
+  /// A player's best arcade scores per game type.
+  Future<GameScores> gameScores(String userId) async => GameScores.fromJson(
+      asMapOrNull(await _client.getJson('/game-scores/$userId')) ?? const {});
+
   Future<Message> editMessage(String convId, String msgId, String text) async =>
       _msg(await _client.patchJson('/conversations/$convId/messages/$msgId',
           body: {'text': text}));

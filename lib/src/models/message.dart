@@ -383,6 +383,24 @@ class GameStats {
       );
 }
 
+/// A player's best score per arcade game type (Pong/Snake).
+class GameScores {
+  const GameScores({this.scores = const {}});
+
+  final Map<String, int> scores; // game_type -> best score
+
+  int best(String gameType) => scores[gameType] ?? 0;
+
+  factory GameScores.fromJson(Map<String, dynamic> json) {
+    final out = <String, int>{};
+    final s = json['scores'];
+    if (s is Map) {
+      s.forEach((k, v) => out['$k'] = v is num ? v.toInt() : 0);
+    }
+    return GameScores(scores: out);
+  }
+}
+
 /// Request body for sending a message. Defaults to a plain text message.
 class MessageCreate {
   const MessageCreate({
