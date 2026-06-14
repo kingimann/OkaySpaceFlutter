@@ -6114,17 +6114,52 @@ class _ThreeBridged extends StatefulWidget {
 
 class _ThreeBridgedState extends State<_ThreeBridged> {
   Map<String, dynamic>? _initial;
+  bool _failed = false;
+  bool _busy = false;
+  String? _lastEncoded;
+  Timer? _poll;
+  final _updates = StreamController<Map<String, dynamic>>.broadcast();
+
+  static const _twoPlayer = {'tictactoe', 'chess', 'checkers'};
 
   @override
   void initState() {
     super.initState();
     _load();
+    // Two-player games poll so the opponent's moves show up.
+    if (_twoPlayer.contains(widget.gameType)) {
+      _poll = Timer.periodic(
+          const Duration(seconds: 3), (_) => _pollState());
+    }
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _updates.close();
+    super.dispose();
   }
 
   Future<void> _load() async {
     try {
       final s = await _fetchState();
+      _lastEncoded = jsonEncode(s);
       if (mounted) setState(() => _initial = s);
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  /// Re-fetch and push the state to the WebView when it changed (opponent move).
+  Future<void> _pollState() async {
+    if (_busy || !mounted) return;
+    try {
+      final s = await _fetchState();
+      final enc = jsonEncode(s);
+      if (enc != _lastEncoded) {
+        _lastEncoded = enc;
+        _updates.add(s);
+      }
     } catch (_) {}
   }
 
@@ -6199,6 +6234,18 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
 
   /// Applies a move from the WebView and returns the resulting state.
   Future<Map<String, dynamic>?> _onAction(Map<String, dynamic> action) async {
+    _busy = true;
+    try {
+      final next = await _resolveAction(action);
+      if (next != null) _lastEncoded = jsonEncode(next);
+      return next;
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _resolveAction(
+      Map<String, dynamic> action) async {
     final api2 = api.messaging;
     try {
       // Play again: reset the game, then hand back the fresh state.
@@ -6253,6 +6300,9 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
 
   @override
   Widget build(BuildContext context) {
+    if (_failed) {
+      return const Center(child: Text("Couldn't load this game"));
+    }
     final init = _initial;
     if (init == null) {
       return const Center(child: CircularProgressIndicator());
@@ -6261,6 +6311,7 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
       gameType: widget.gameType,
       initialState: init,
       onAction: _onAction,
+      stateStream: _updates.stream,
     );
   }
 }

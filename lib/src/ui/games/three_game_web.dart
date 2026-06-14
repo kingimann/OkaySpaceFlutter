@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:ui_web' as ui_web;
@@ -25,6 +26,7 @@ class ThreeGameView extends StatefulWidget {
     this.initialState,
     this.onAction,
     this.onScore,
+    this.stateStream,
   });
 
   final String gameType;
@@ -32,6 +34,9 @@ class ThreeGameView extends StatefulWidget {
   final Future<Map<String, dynamic>?> Function(Map<String, dynamic> action)?
       onAction;
   final void Function(int score)? onScore;
+
+  /// Out-of-band state pushes (e.g. an opponent's move picked up by polling).
+  final Stream<Map<String, dynamic>>? stateStream;
 
   @override
   State<ThreeGameView> createState() => _ThreeGameViewState();
@@ -42,6 +47,9 @@ class _ThreeGameViewState extends State<ThreeGameView> {
   late final String _nonce;
   web.HTMLIFrameElement? _iframe;
   JSFunction? _listener;
+  StreamSubscription<Map<String, dynamic>>? _stateSub;
+  bool _ready = false;
+  Map<String, dynamic>? _pending;
 
   @override
   void initState() {
@@ -65,6 +73,13 @@ class _ThreeGameViewState extends State<ThreeGameView> {
       _onMessage(e);
     }).toJS;
     web.window.addEventListener('message', _listener);
+    _stateSub = widget.stateStream?.listen((s) {
+      if (_ready) {
+        _sendToFrame({'type': 'state', 'state': s});
+      } else {
+        _pending = s; // buffer until the iframe says it's ready
+      }
+    });
   }
 
   void _sendToFrame(Map<String, dynamic> payload) {
@@ -79,11 +94,17 @@ class _ThreeGameViewState extends State<ThreeGameView> {
     if (data is! Map || data['nonce'] != _nonce) return;
     switch (data['type']) {
       case 'ready':
+        _ready = true;
         _sendToFrame({
           'type': 'init',
           'gameType': widget.gameType,
           'state': widget.initialState ?? const {},
         });
+        final pending = _pending;
+        if (pending != null) {
+          _sendToFrame({'type': 'state', 'state': pending});
+          _pending = null;
+        }
         break;
       case 'score':
         final s = data['score'];
@@ -106,6 +127,7 @@ class _ThreeGameViewState extends State<ThreeGameView> {
   void dispose() {
     final l = _listener;
     if (l != null) web.window.removeEventListener('message', l);
+    _stateSub?.cancel();
     super.dispose();
   }
 
