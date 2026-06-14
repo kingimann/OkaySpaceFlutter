@@ -25,6 +25,10 @@ final ValueNotifier<bool> mobileWebGate = ValueNotifier<bool>(false);
 final ValueNotifier<String> registrationMode =
     ValueNotifier<String>('open');
 
+/// Whether the backend encrypts message content at rest (MESSAGE_ENC_KEY set).
+/// Drives the "encrypted" indicator in chats. Read from /public/app-config.
+final ValueNotifier<bool> messagesEncrypted = ValueNotifier<bool>(false);
+
 Timer? _timer;
 String? _killToken;
 
@@ -70,6 +74,7 @@ Future<void> _checkServerConfig() async {
       }
     }
     mobileWebGate.value = data['mobile_web_gate'] == true;
+    messagesEncrypted.value = data['messages_encrypted'] == true;
     final mode = '${data['registration_mode'] ?? 'open'}'.toLowerCase();
     if (const ['open', 'invite', 'closed'].contains(mode)) {
       registrationMode.value = mode;
