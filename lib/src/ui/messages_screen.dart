@@ -2655,80 +2655,90 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Attachment chooser: photo or location.
+  /// Attachment chooser: a compact icon grid so every option is visible at
+  /// once (no scrolling), grouped into what you send vs. how you compose.
   void _attachMenu() {
     showModalBottomSheet<void>(
       context: context,
+      showDragHandle: true,
       builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_outlined),
-              title: const Text('Photo'),
-              onTap: () {
-                Navigator.pop(context);
-                _attachImage();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.attach_file),
-              title: const Text('File'),
-              onTap: () {
-                Navigator.pop(context);
-                _attachFile();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.place_outlined),
-              title: const Text('Location'),
-              onTap: () {
-                Navigator.pop(context);
-                _attachLocation();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.poll_outlined),
-              title: const Text('Poll'),
-              onTap: () {
-                Navigator.pop(context);
-                _attachPoll();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.attach_money),
-              title: const Text('Send a tip'),
-              onTap: () {
-                Navigator.pop(context);
-                _attachTip();
-              },
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.emoji_emotions_outlined),
-              title: const Text('Emoji'),
-              onTap: () {
-                Navigator.pop(context);
-                _emojiPicker();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.text_format),
-              title: const Text('Formatting'),
-              onTap: () {
-                Navigator.pop(context);
-                _formatMenu();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.schedule_send_outlined),
-              title: const Text('Schedule send'),
-              onTap: () {
-                Navigator.pop(context);
-                _scheduleMessage();
-              },
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _attachSectionLabel('Attach'),
+              Wrap(
+                children: [
+                  _attachTile(Icons.photo_outlined, 'Photo', _attachImage),
+                  _attachTile(Icons.attach_file, 'File', _attachFile),
+                  _attachTile(
+                      Icons.place_outlined, 'Location', _attachLocation),
+                  _attachTile(Icons.poll_outlined, 'Poll', _attachPoll),
+                  _attachTile(Icons.attach_money, 'Tip', _attachTip),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _attachSectionLabel('Compose'),
+              Wrap(
+                children: [
+                  _attachTile(
+                      Icons.emoji_emotions_outlined, 'Emoji', _emojiPicker),
+                  _attachTile(Icons.text_format, 'Format', _formatMenu),
+                  _attachTile(Icons.schedule_send_outlined, 'Schedule',
+                      _scheduleMessage),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _attachSectionLabel(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        child: Text(text.toUpperCase(),
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.6,
+                color: Theme.of(context).colorScheme.outline)),
+      );
+
+  /// One option in the attachment grid: a circular icon over a label. Closes
+  /// the sheet, then runs [action].
+  Widget _attachTile(IconData icon, String label, VoidCallback action) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 80,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          Navigator.pop(context);
+          action();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: scheme.primary),
+              ),
+              const SizedBox(height: 6),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12)),
+            ],
+          ),
         ),
       ),
     );
