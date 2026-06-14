@@ -171,6 +171,24 @@ class MessagingService {
           asMapOrNull(await _client.getJson('/live-location/$shareId')) ??
               const {});
 
+  // --- In-chat games ------------------------------------------------------
+
+  /// Starts a game in a DM (creator goes first). Returns the `game` message.
+  Future<Message> createGame(String convId,
+          {String type = 'tictactoe'}) async =>
+      _msg(await _client.postJson('/conversations/$convId/chat-games',
+          body: {'game_type': type}));
+
+  /// Plays a move (tic-tac-toe cell 0..8). Returns the updated game.
+  Future<GameView> gameMove(String gameId, int cell) async =>
+      GameView.fromJson(asMapOrNull(await _client
+              .postJson('/chat-games/$gameId/move', body: {'cell': cell})) ??
+          const {});
+
+  /// Reads the current game state (any participant).
+  Future<GameView> game(String gameId) async => GameView.fromJson(
+      asMapOrNull(await _client.getJson('/chat-games/$gameId')) ?? const {});
+
   Future<Message> editMessage(String convId, String msgId, String text) async =>
       _msg(await _client.patchJson('/conversations/$convId/messages/$msgId',
           body: {'text': text}));

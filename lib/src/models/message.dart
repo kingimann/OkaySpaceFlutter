@@ -186,6 +186,45 @@ class LiveLocationView {
       );
 }
 
+/// A snapshot of an in-chat game (e.g. tic-tac-toe).
+class GameView {
+  const GameView({
+    required this.gameId,
+    required this.conversationId,
+    required this.gameType,
+    required this.board,
+    required this.xPlayer,
+    required this.oPlayer,
+    required this.turn,
+    this.status = 'active',
+    this.winner,
+  });
+
+  final String gameId;
+  final String conversationId;
+  final String gameType;
+  final List<String> board; // 9 cells: '', 'X' or 'O'
+  final String xPlayer;
+  final String oPlayer;
+  final String turn; // user id whose move it is
+  final String status; // active | won | draw
+  final String? winner; // user id of the winner
+
+  bool get isOver => status != 'active';
+
+  factory GameView.fromJson(Map<String, dynamic> json) => GameView(
+        gameId: asString(json['game_id']),
+        conversationId: asString(json['conversation_id']),
+        gameType: asString(json['game_type'], 'tictactoe'),
+        board: asStringList(json['board']),
+        xPlayer: asString(json['x_player']),
+        oPlayer: asString(json['o_player']),
+        turn: asString(json['turn']),
+        status: asString(json['status'], 'active'),
+        winner: asStringOrNull(json['winner']),
+      );
+}
+
 /// Request body for sending a message. Defaults to a plain text message.
 class MessageCreate {
   const MessageCreate({

@@ -584,6 +584,7 @@ class _ConversationTile extends StatelessWidget {
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
       'live_location' => '📍 Live location',
+      'game' => '🎮 Tic-tac-toe',
       'money' || 'tip' => '💸 Payment',
       'poll' => '📊 Poll',
       'file' => '📎 File',
@@ -2699,6 +2700,16 @@ class _ChatScreenState extends State<ChatScreen> {
                       _scheduleMessage),
                 ],
               ),
+              // Games are one-on-one only.
+              if (!widget.conversation.isGroup) ...[
+                const SizedBox(height: 8),
+                _attachSectionLabel('Play'),
+                Wrap(
+                  children: [
+                    _attachTile(Icons.grid_3x3, 'Tic-tac-toe', _attachGame),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -2770,6 +2781,20 @@ class _ChatScreenState extends State<ChatScreen> {
       _scrollToBottom();
     } catch (e) {
       if (mounted) showError(context, e);
+    }
+  }
+
+  /// Starts an in-chat tic-tac-toe game (one-on-one chats only).
+  Future<void> _attachGame() async {
+    setState(() => _sending = true);
+    try {
+      await api.messaging.createGame(_convId);
+      await _fetch(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -4227,6 +4252,9 @@ class _MessageBubble extends StatelessWidget {
     final isLive = message.type == 'live_location' &&
         !message.deleted &&
         liveShareId.isNotEmpty;
+    final gameId = '${message.raw['game_id'] ?? ''}';
+    final isGame =
+        message.type == 'game' && !message.deleted && gameId.isNotEmpty;
     final isPoll = message.type == 'poll' && !message.deleted;
     final isTip = (message.type == 'tip' || message.type == 'money') &&
         !message.deleted;
@@ -4235,6 +4263,7 @@ class _MessageBubble extends StatelessWidget {
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
       'live_location' => '📍 Live location',
+      'game' => '🎮 Tic-tac-toe',
       'money' || 'tip' => '💸 Payment',
       'gif' => 'GIF',
       'voice' => '🎤 Voice message',
@@ -4246,7 +4275,7 @@ class _MessageBubble extends StatelessWidget {
     final bodyText = message.deleted
         ? 'Message deleted'
         : (message.text ??
-            (hasMedia || hasPlace || isLive || isPoll || isTip
+            (hasMedia || hasPlace || isLive || isGame || isPoll || isTip
                 ? ''
                 : typeLabel));
     // A short, all-emoji message renders large with no bubble (like WhatsApp).
@@ -4255,6 +4284,7 @@ class _MessageBubble extends StatelessWidget {
         !hasMedia &&
         !hasPlace &&
         !isLive &&
+        !isGame &&
         message.replyToId == null &&
         t.isNotEmpty &&
         t.runes.length <= 8 &&
@@ -4372,6 +4402,12 @@ class _MessageBubble extends StatelessWidget {
                         initialActive: message.raw['live_active'] != false,
                         onStop: onStopLive,
                       ),
+                    ),
+                  if (isGame)
+                    Padding(
+                      padding:
+                          EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
+                      child: _TicTacToeCard(gameId: gameId),
                     ),
                   if (isTip)
                     Row(mainAxisSize: MainAxisSize.min, children: [
@@ -5157,6 +5193,160 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
 }
 
 /// Full-screen map to drop a pin and return the chosen [LatLng].
+/// In-bubble tic-tac-toe board (iMessage-style). Polls the shared game state,
+/// renders the 3×3 board, and lets whoever's turn it is tap an empty cell.
+class _TicTacToeCard extends StatefulWidget {
+  const _TicTacToeCard({required this.gameId});
+
+  final String gameId;
+
+  @override
+  State<_TicTacToeCard> createState() => _TicTacToeCardState();
+}
+
+class _TicTacToeCardState extends State<_TicTacToeCard> {
+  GameView? _game;
+  Timer? _poll;
+  bool _loading = true;
+  bool _moving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _poll = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (_moving) return; // don't clobber an in-flight move
+    try {
+      final g = await api.messaging.game(widget.gameId);
+      if (!mounted) return;
+      setState(() {
+        _game = g;
+        _loading = false;
+      });
+      if (g.isOver) _poll?.cancel();
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _tap(int cell) async {
+    final g = _game;
+    if (g == null || g.isOver || _moving) return;
+    if (g.turn != currentUserId) return; // not your turn
+    if (cell < 0 || cell > 8 || g.board[cell].isNotEmpty) return;
+    setState(() => _moving = true);
+    try {
+      final updated = await api.messaging.gameMove(widget.gameId, cell);
+      if (mounted) setState(() => _game = updated);
+      if (updated.isOver) _poll?.cancel();
+    } catch (e) {
+      if (mounted) showError(context, e);
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _moving = false);
+    }
+  }
+
+  String _statusText(GameView g) {
+    final myMark = g.xPlayer == currentUserId
+        ? 'X'
+        : (g.oPlayer == currentUserId ? 'O' : '');
+    if (g.status == 'draw') return "It's a draw";
+    if (g.status == 'won') {
+      return g.winner == currentUserId ? 'You won! 🎉' : 'You lost';
+    }
+    if (myMark.isEmpty) return g.turn == g.xPlayer ? "X's turn" : "O's turn";
+    return g.turn == currentUserId ? 'Your turn ($myMark)' : 'Their turn';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final g = _game;
+    if (g == null) {
+      return SizedBox(
+        width: 200,
+        height: 200,
+        child: Center(
+            child: _loading
+                ? const CircularProgressIndicator()
+                : const Text('Game unavailable')),
+      );
+    }
+    final myTurn = !g.isOver && g.turn == currentUserId;
+    return SizedBox(
+      width: 210,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('🎮 Tic-tac-toe',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(height: 6),
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            children: [
+              for (int i = 0; i < 9; i++)
+                GestureDetector(
+                  onTap: () => _tap(i),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(g.board[i],
+                        style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: g.board[i] == 'X'
+                                ? const Color(0xFF2563EB)
+                                : const Color(0xFFEF4444))),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              if (myTurn)
+                Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: const BoxDecoration(
+                      shape: BoxShape.circle, color: Color(0xFF22C55E)),
+                ),
+              Flexible(
+                child: Text(_statusText(g),
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight:
+                            myTurn ? FontWeight.w600 : FontWeight.normal,
+                        color: scheme.onSurfaceVariant)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// In-bubble live-location view: a small map that polls the share and tracks
 /// the sharer's moving dot, with a status line and (for the sharer) a Stop
 /// button. Stops polling once the share ends or expires.
