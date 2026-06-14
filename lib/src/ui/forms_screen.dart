@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -1113,11 +1115,40 @@ class FormSubmissionsScreen extends StatefulWidget {
 
 class _FormSubmissionsScreenState extends State<FormSubmissionsScreen> {
   late Future<List<Map<String, dynamic>>> _submissions;
+  Map<String, Map<String, dynamic>> _byId = {};
 
   @override
   void initState() {
     super.initState();
     _submissions = api.forms.submissions(widget.formId);
+    _loadFields();
+  }
+
+  Future<void> _loadFields() async {
+    try {
+      final f = await api.forms.form(widget.formId);
+      final fields = (f['fields'] as List?) ?? const [];
+      if (mounted) {
+        setState(() => _byId = {
+              for (final fl in fields)
+                if (fl is Map) '${fl['id']}': Map<String, dynamic>.from(fl)
+            });
+      }
+    } catch (_) {/* labels just fall back to ids */}
+  }
+
+  /// Renders a base64 image data URL (signature / photo) as an image.
+  Widget _attachment(String dataUrl) {
+    try {
+      final bytes = base64Decode(dataUrl.substring(dataUrl.indexOf(',') + 1));
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.memory(bytes,
+            height: 90, fit: BoxFit.contain, alignment: Alignment.centerLeft),
+      );
+    } catch (_) {
+      return const Text('[attachment]');
+    }
   }
 
   Future<void> _reload() async {
@@ -1160,16 +1191,26 @@ class _FormSubmissionsScreenState extends State<FormSubmissionsScreen> {
                                 fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         for (final e in values.entries)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text.rich(TextSpan(children: [
-                              TextSpan(
-                                  text: '${e.key}: ',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600)),
-                              TextSpan(text: '${e.value}'),
-                            ])),
-                          ),
+                          if ('${e.value}'.trim().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${_byId[e.key]?['label'] ?? e.key}',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .outline,
+                                          fontSize: 12)),
+                                  const SizedBox(height: 2),
+                                  '${e.value}'.startsWith('data:image')
+                                      ? _attachment('${e.value}')
+                                      : SelectableText('${e.value}'),
+                                ],
+                              ),
+                            ),
                       ],
                     ),
                   ),
