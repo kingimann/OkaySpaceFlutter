@@ -28,19 +28,26 @@ function send(type,extra){var m={type:type,nonce:NONCE};if(extra)for(var k in ex
 function hud(t){D.getElementById("hud").textContent=t||"";}
 function showOver(t){D.getElementById("overmsg").textContent=t;D.getElementById("over").style.display="flex";}
 function hideOver(){D.getElementById("over").style.display="none";}
+function overWith(msg){showOver(msg);D.getElementById("again").onclick=function(){hideOver();send("action",{action:{move:"rematch"}});};}
 
 var renderer,scene,camera,raycaster,pointer,current=null,you=null,pickables=[];
+// 2D look: a top-down orthographic camera (no perspective). Games lay their
+// content flat on the y=0 plane; frame(w,h) fits a w×h area to the screen.
+var frameW=12,frameH=12;
 function setup3D(bg){
   var canvas=D.getElementById("c");
   if(!renderer){renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true});}
   scene=new THREE.Scene(); scene.background=new THREE.Color(bg||0x0b1220);
-  camera=new THREE.PerspectiveCamera(50,1,0.1,200);
+  camera=new THREE.OrthographicCamera(-1,1,1,-1,0.1,1000);
+  camera.position.set(0,50,0); camera.up.set(0,0,-1); camera.lookAt(0,0,0);
   raycaster=new THREE.Raycaster(); pointer=new THREE.Vector2();
-  scene.add(new THREE.AmbientLight(0xffffff,0.7));
-  var dl=new THREE.DirectionalLight(0xffffff,0.8); dl.position.set(6,14,8); scene.add(dl);
-  resize();
+  scene.add(new THREE.AmbientLight(0xffffff,0.95));
+  var dl=new THREE.DirectionalLight(0xffffff,0.5); dl.position.set(4,20,2); scene.add(dl);
+  applyFrustum();
 }
-function resize(){if(!renderer)return;var w=Wd.innerWidth,h=Wd.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+function applyFrustum(){if(!camera)return;var a=Wd.innerWidth/Wd.innerHeight;var ex=Math.max(frameH/2,(frameW/2)/a)*1.08;camera.left=-ex*a;camera.right=ex*a;camera.top=ex;camera.bottom=-ex;camera.updateProjectionMatrix();}
+function frame(w,h){frameW=w;frameH=h;applyFrustum();}
+function resize(){if(!renderer)return;renderer.setSize(Wd.innerWidth,Wd.innerHeight,false);applyFrustum();}
 Wd.addEventListener("resize",resize);
 
 function onPointerDown(e){
@@ -97,7 +104,7 @@ GAMES.pong=function(){
   return {
     bg:0x0b1220,
     build:function(){
-      camera.position.set(0,12,12);camera.lookAt(0,0,0);
+      frame(11,15);
       var table=new THREE.Mesh(new THREE.BoxGeometry(Wp,0.5,Dp),new THREE.MeshStandardMaterial({color:0x14223b}));table.position.y=-0.35;scene.add(table);
       var line=new THREE.Mesh(new THREE.BoxGeometry(Wp,0.07,0.12),new THREE.MeshBasicMaterial({color:0x335577}));line.position.y=0.02;scene.add(line);
       ball=new THREE.Mesh(new THREE.SphereGeometry(0.35,18,18),new THREE.MeshStandardMaterial({color:0xffffff}));scene.add(ball);
@@ -154,7 +161,7 @@ GAMES.snake=function(){
   D.getElementById("again").onclick=function(){snake=[{x:7,y:7},{x:6,y:7},{x:5,y:7}];dir={x:1,y:0};nextDir={x:1,y:0};score=0;dead=false;spawnFood();hideOver();hud("Score: 0");render();};
   return {
     bg:0x0b1220,
-    build:function(){camera.position.set(0,16,13);camera.lookAt(0,0,0);hud("Score: 0");spawnFood();render();},
+    build:function(){frame(16,16);hud("Score: 0");spawnFood();render();},
     tick:function(){if(dead)return;acc++;if(acc>=11){acc=0;step();}},
     dispose:function(){Wd.removeEventListener("keydown",key);}
   };
@@ -186,7 +193,7 @@ GAMES.tictactoe=function(){
   return {
     bg:0x0b1220,
     build:function(state){
-      st=state;camera.position.set(0,8,7);camera.lookAt(0,0,0);
+      st=state;frame(7,7);
       var base=new THREE.Mesh(new THREE.BoxGeometry(6.6,0.2,6.6),new THREE.MeshStandardMaterial({color:0x14223b}));scene.add(base);
       for(var i=0;i<9;i++){
         var gx=(i%3-1)*2.1, gz=(Math.floor(i/3)-1)*2.1;
@@ -195,7 +202,7 @@ GAMES.tictactoe=function(){
       }
       drawMarks();hud(status());
     },
-    onState:function(state){st=state;drawMarks();hud(status());},
+    onState:function(state){st=state;drawMarks();hud(status());if(st.status==="won"||st.status==="draw")overWith(status());else hideOver();},
     pick:function(ud){if(ud.cell===undefined||!st)return;if(st.board[ud.cell])return;if(st.turn!==you)return;send("action",{action:{cell:ud.cell}});hud("...");}
   };
 };
@@ -254,10 +261,11 @@ GAMES.chess=function(){
     if(grp)scene.remove(grp);grp=new THREE.Group();
     for(var sq=0;sq<64;sq++){var c=st.board[sq];if(c===".")continue;var sp=glyphSprite(CG[c.toLowerCase()],(c===c.toUpperCase())?"#f8fafc":"#0f172a");var p=dispPos(sq,amWhite);sp.position.set(p.x,0.7,p.z);grp.add(sp);}
     scene.add(grp);hud(status());
+    if(st.status==="checkmate"||st.status==="stalemate"||st.status==="draw")overWith(status());else hideOver();
   }
   return {
     bg:0x0b1220,
-    build:function(state){st=state;amWhite=(st.white===you);camera.position.set(0,9,8);camera.lookAt(0,0,0);buildBoard(amWhite,0xedd9b5,0xb48761);draw();},
+    build:function(state){st=state;amWhite=(st.white===you);frame(8.4,8.4);buildBoard(amWhite,0xedd9b5,0xb48761);draw();},
     onState:function(state){st=state;sel=null;highlight();draw();},
     pick:function(ud){
       if(st.turn!==you||st.status!=="active")return;
@@ -276,10 +284,10 @@ GAMES.checkers=function(){
   function status(){if(st.status!=="active")return st.winner===you?"You win!":"You lost";return st.turn===you?"Your move":"Their move";}
   function highlight(){if(hl){scene.remove(hl);hl=null;}if(sel===null)return;var p=dispPos(sel,amWhite);hl=new THREE.Mesh(new THREE.BoxGeometry(0.98,0.24,0.98),new THREE.MeshBasicMaterial({color:0x86efac,transparent:true,opacity:0.6}));hl.position.set(p.x,0.12,p.z);scene.add(hl);}
   function disc(white,king){var m=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.36,0.22,24),new THREE.MeshStandardMaterial({color:white?0xf1f5f9:0x1f2937}));if(king){var c=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.26,24),new THREE.MeshStandardMaterial({color:0xf6c455}));c.position.y=0.12;m.add(c);}return m;}
-  function draw(){if(grp)scene.remove(grp);grp=new THREE.Group();for(var sq=0;sq<64;sq++){var c=st.board[sq];if(c===".")continue;var white=(c==="w"||c==="W"),king=(c==="W"||c==="B");var d=disc(white,king);var p=dispPos(sq,amWhite);d.position.set(p.x,0.22,p.z);grp.add(d);}scene.add(grp);hud(status());}
+  function draw(){if(grp)scene.remove(grp);grp=new THREE.Group();for(var sq=0;sq<64;sq++){var c=st.board[sq];if(c===".")continue;var white=(c==="w"||c==="W"),king=(c==="W"||c==="B");var d=disc(white,king);var p=dispPos(sq,amWhite);d.position.set(p.x,0.22,p.z);grp.add(d);}scene.add(grp);hud(status());if(st.status!=="active")overWith(status());else hideOver();}
   return {
     bg:0x0b1220,
-    build:function(state){st=state;amWhite=(st.white===you);camera.position.set(0,9,8);camera.lookAt(0,0,0);buildBoard(amWhite,0xead9bd,0x8d6748);draw();},
+    build:function(state){st=state;amWhite=(st.white===you);frame(8.4,8.4);buildBoard(amWhite,0xead9bd,0x8d6748);draw();},
     onState:function(state){st=state;sel=(st.turn===you&&st.chain!==null&&st.chain!==undefined)?st.chain:null;highlight();draw();},
     pick:function(ud){
       if(st.turn!==you||st.status!=="active")return;
@@ -306,7 +314,7 @@ GAMES.blackjack=function(){
     else{hideOver();if(st.mine)setButtons([{label:"Hit",cb:function(){hud("...");send("action",{action:{move:"hit"}});}},{label:"Stand",cb:function(){hud("...");send("action",{action:{move:"stand"}});}}]);else setButtons(null);}
   }
   D.getElementById("again").onclick=function(){send("action",{action:{move:"rematch"}});};
-  return {bg:0x0b3b24,build:function(state){st=state;camera.position.set(0,7,6.5);camera.lookAt(0,0,0);draw();},onState:function(state){st=state;draw();}};
+  return {bg:0x0b3b24,build:function(state){st=state;frame(8.5,6.5);draw();},onState:function(state){st=state;draw();}};
 };
 
 // ===== Poker (3D cards, backend-bridged) =====
@@ -327,7 +335,7 @@ GAMES.poker=function(){
   D.getElementById("again").onclick=function(){holds={};send("action",{action:{move:"rematch"}});};
   return {
     bg:0x0b3b24,
-    build:function(state){st=state;camera.position.set(0,7,6.5);camera.lookAt(0,0,0);draw();},
+    build:function(state){st=state;frame(8.5,6.5);draw();},
     onState:function(state){st=state;draw();},
     pick:function(ud){if(ud.hold===undefined||st.status!=="active")return;holds[ud.hold]=!holds[ud.hold];draw();}
   };
