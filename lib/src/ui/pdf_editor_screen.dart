@@ -11,6 +11,8 @@ import 'package:printing/printing.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 
 import 'common.dart';
+import 'pdf/pdf_webviewer.dart' show apryseSupported;
+import 'pdf/pdf_webviewer_screen.dart';
 
 class _Anno {
   _Anno(this.rel, this.text, this.size);
@@ -644,6 +646,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     });
   }
 
+  /// Opens the Acrobat-grade WebViewer editor; applies its edited bytes back.
+  Future<void> _openAdvanced() async {
+    final src = _originalPdf;
+    if (src == null) return;
+    final bytes = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(builder: (_) => ApryseEditorScreen(pdfBytes: src)));
+    if (bytes != null && mounted) await _applyEditedPdf(bytes);
+  }
+
   /// Inserts a copy of [page] right after it in the working list.
   void _duplicatePage(_Page page) {
     final i = _pages.indexOf(page);
@@ -894,6 +905,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             icon: const Icon(Icons.add_photo_alternate_outlined),
             onPressed: _busy ? null : _addImage,
           ),
+          if (_pages.isNotEmpty && apryseSupported)
+            IconButton(
+              tooltip: 'Advanced editor (edit text in place)',
+              icon: const Icon(Icons.auto_fix_high),
+              onPressed: _busy ? null : _openAdvanced,
+            ),
           if (_pages.isNotEmpty)
             PopupMenuButton<String>(
               tooltip: 'Document tools',
