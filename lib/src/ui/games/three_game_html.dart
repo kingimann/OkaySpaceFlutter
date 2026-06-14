@@ -55,6 +55,7 @@ function onPointerDown(e){
 }
 D.getElementById("c").addEventListener("pointerdown",onPointerDown);
 
+var animating=false;
 function animate(){requestAnimationFrame(animate);if(current&&current.tick)current.tick();if(renderer&&scene&&camera)renderer.render(scene,camera);}
 
 Wd.addEventListener("message",function(e){
@@ -68,7 +69,7 @@ function start(gameType,state){
   if(current&&current.dispose)current.dispose();
   pickables=[];
   current=GAMES[gameType]?GAMES[gameType]():null;
-  if(current){ if(current.bg!==undefined)setup3D(current.bg); else setup3D(); current.build(state); }
+  if(current){ if(current.bg!==undefined)setup3D(current.bg); else setup3D(); current.build(state); if(!animating){animating=true;animate();} }
 }
 
 // ===== shared helpers =====
@@ -231,7 +232,7 @@ function cardMesh(card){
     x.font="bold 40px sans-serif";x.textAlign="left";x.fillText(card.r,12,50);
     x.font="62px sans-serif";x.textAlign="center";x.fillText(card.s,64,118);
   }else{x.fillStyle="#1e293b";x.fillRect(0,0,128,180);x.strokeStyle="#475569";x.lineWidth=4;x.strokeRect(2,2,124,176);}
-  return new THREE.Mesh(new THREE.PlaneGeometry(1.35,1.9),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(cv)}));
+  return new THREE.Mesh(new THREE.PlaneGeometry(1.35,1.9),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(cv),side:THREE.DoubleSide}));
 }
 
 // ===== Chess (3D, backend-bridged) =====
