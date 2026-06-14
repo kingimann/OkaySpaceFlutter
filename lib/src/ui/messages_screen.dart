@@ -14,6 +14,7 @@ import '../../okayspace_api.dart';
 import '../core/device_location.dart';
 import '../core/foursquare_api.dart';
 import '../core/mapbox_api.dart';
+import 'games/three_game.dart';
 import 'call_screen.dart';
 import '../core/update_checker.dart';
 import 'common.dart';
@@ -5250,7 +5251,11 @@ void _openGameDialog(BuildContext context, String gameId, String gameType,
         'chess' => _ChessBoard(gameId: gameId),
         'checkers' => _CheckersBoard(gameId: gameId),
         'poker' => _PokerBoard(gameId: gameId, mine: mine),
-        'pong' => _PongBoard(gameId: gameId, otherUserId: otherUserId),
+        // Pong is the Three.js (WebGL) example on the web; native elsewhere.
+        'pong' => threeGamesSupported
+            ? _ThreeArcade(
+                gameId: gameId, gameType: 'pong', otherUserId: otherUserId)
+            : _PongBoard(gameId: gameId, otherUserId: otherUserId),
         'snake' => _SnakeBoard(gameId: gameId, otherUserId: otherUserId),
         _ => _TicTacToeBoard(gameId: gameId),
       };
@@ -6044,6 +6049,56 @@ class _ArcadeScores extends StatelessWidget {
       'Your best: $mine${theirs != null ? '  ·  Their best: $theirs' : ''}$cmp',
       style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
     );
+  }
+}
+
+/// Hosts a WebGL (Three.js) arcade game and, when it ends, reports the score
+/// and shows the high-score comparison.
+class _ThreeArcade extends StatefulWidget {
+  const _ThreeArcade(
+      {required this.gameId, required this.gameType, this.otherUserId});
+  final String gameId;
+  final String gameType;
+  final String? otherUserId;
+  @override
+  State<_ThreeArcade> createState() => _ThreeArcadeState();
+}
+
+class _ThreeArcadeState extends State<_ThreeArcade> {
+  int? _myBest;
+  int? _theirBest;
+
+  Future<void> _onScore(int score) async {
+    try {
+      final mine = await api.messaging.reportScore(widget.gameId, score);
+      int? other;
+      if (widget.otherUserId != null) {
+        other = (await api.messaging.gameScores(widget.otherUserId!))
+            .best(widget.gameType);
+      }
+      if (mounted) {
+        setState(() {
+          _myBest = mine.best(widget.gameType);
+          _theirBest = other;
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(
+        width: 320,
+        height: 360,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: ThreeGameView(gameType: widget.gameType, onScore: _onScore),
+        ),
+      ),
+      const SizedBox(height: 8),
+      if (_myBest != null) _ArcadeScores(mine: _myBest!, theirs: _theirBest),
+    ]);
   }
 }
 
