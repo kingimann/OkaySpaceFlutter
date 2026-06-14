@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
+import 'form_viewer_screen.dart';
 
 /// Field types supported by the form builder, grouped by category
 /// (label, api value matching the backend, icon).
@@ -258,6 +259,18 @@ class _FormsScreenState extends State<FormsScreen> {
     if (changed == true && mounted) _reload();
   }
 
+  void _preview(Map<String, dynamic> f) {
+    final key = '${f['form_key'] ?? ''}';
+    if (key.isEmpty) {
+      showInfo(context, 'Save the form first to preview it.');
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => FormViewerScreen(
+          url: api.forms.publicLink(key), title: '${f['title'] ?? 'Form'}'),
+    ));
+  }
+
   Future<void> _copyLink(Map<String, dynamic> f) async {
     final key = '${f['form_key'] ?? ''}';
     if (key.isEmpty) {
@@ -361,6 +374,8 @@ class _FormsScreenState extends State<FormsScreen> {
                                   builder: (_) =>
                                       FormBuilderScreen(existing: f)));
                           if (changed == true && mounted) _reload();
+                        } else if (v == 'preview') {
+                          _preview(f);
                         } else if (v == 'link') {
                           _copyLink(f);
                         } else if (v == 'send') {
@@ -371,6 +386,7 @@ class _FormsScreenState extends State<FormsScreen> {
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(value: 'preview', child: Text('Preview')),
                         PopupMenuItem(
                             value: 'link', child: Text('Copy share link')),
                         PopupMenuItem(

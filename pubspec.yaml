@@ -43,6 +43,8 @@ dependencies:
   # Voice messages: record (mic) + audioplayers (playback). Both support web.
   record: ^5.1.2
   audioplayers: ^6.1.0
+  # In-app form viewer on mobile (web uses an iframe platform view instead).
+  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:

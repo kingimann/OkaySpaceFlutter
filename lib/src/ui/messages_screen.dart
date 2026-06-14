@@ -17,9 +17,8 @@ import '../core/mapbox_api.dart';
 import 'games/three_game.dart';
 import 'call_screen.dart';
 import '../core/update_checker.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import 'common.dart';
+import 'form_viewer_screen.dart';
 import 'linked_text.dart';
 import 'voice_message.dart';
 
@@ -7952,12 +7951,9 @@ class _FormCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = dark ? Colors.white : Theme.of(context).colorScheme.onSurface;
     return InkWell(
-      onTap: () async {
-        final uri = Uri.tryParse(url);
-        if (uri != null) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      },
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => FormViewerScreen(url: url, title: title),
+      )),
       borderRadius: BorderRadius.circular(10),
       child: Container(
         constraints: const BoxConstraints(maxWidth: 240),
