@@ -33,6 +33,10 @@ dependencies:
   geolocator: ^13.0.0
   # Native Stripe PaymentSheet for in-app card payments (iOS/Android).
   flutter_stripe: ^11.1.0
+  # Document scanner: image processing (scan filter), PDF build + share/print.
+  image: ^4.3.0
+  pdf: ^3.11.1
+  printing: ^5.13.3
 
 dev_dependencies:
   flutter_test:

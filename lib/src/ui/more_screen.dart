@@ -10,6 +10,7 @@ import 'circles_screen.dart';
 import 'common.dart';
 import 'communities_screen.dart';
 import 'connections_screen.dart';
+import 'document_scanner_screen.dart';
 import 'forms_screen.dart';
 import 'friends_screen.dart';
 import 'groups_screen.dart';
@@ -57,6 +58,8 @@ class MoreScreen extends StatelessWidget {
               () => const RemindersScreen()),
           _Item('Camera', Icons.photo_camera_outlined, const Color(0xFF6366F1),
               () => const CameraScreen()),
+          _Item('Scan document', Icons.document_scanner_outlined,
+              const Color(0xFF64748B), () => const DocumentScannerScreen()),
           _Item('Calculator', Icons.calculate_outlined,
               const Color(0xFF0EA5E9), () => const CalculatorScreen()),
           _Item('Converter', Icons.swap_horiz, const Color(0xFF14B8A6),
