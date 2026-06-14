@@ -4,11 +4,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../okayspace_api.dart';
 import '../core/points_ledger.dart';
-import 'activity_screen.dart';
 import 'app_drawer.dart';
-import 'bookmarks_screen.dart';
 import 'business_screen.dart';
-import 'circles_screen.dart';
 import 'common.dart';
 import 'badges_screen.dart';
 import 'compose_screen.dart';
@@ -1303,44 +1300,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   }
 
   /// A compact privacy summary card linking to Settings (§4 privacy card).
-  Widget _privacyCard(User u) {
-    final scheme = Theme.of(context).colorScheme;
-    final private = u.isPrivate;
-    return Material(
-      color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(20),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => _openSettings(u),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(private ? Icons.lock_outline : Icons.public,
-                  color: scheme.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(private ? 'Private account' : 'Public account',
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    Text(
-                        private
-                            ? 'Only approved followers can see your posts'
-                            : 'Anyone can see your posts and profile',
-                        style: TextStyle(color: scheme.outline, fontSize: 12.5)),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: scheme.outline),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   /// Opens the post composer from the profile (§4 PostComposer).
   Future<void> _compose() async {
     final posted = await Navigator.of(context)
@@ -1426,10 +1385,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           animation: profileDecor,
                           builder: (_, __) => MaxWidth(child: _profileCard(u)),
                         ),
-                        const SizedBox(height: 12),
-                        MaxWidth(child: _privacyCard(u)),
-                        const SizedBox(height: 12),
-                        MaxWidth(child: _quickLinks()),
                         if (_completeness(u).$1 < 1.0) ...[
                           const SizedBox(height: 12),
                           MaxWidth(child: _completenessCard(u)),
@@ -1502,45 +1457,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             ),
         ],
       ),
-    );
-  }
-
-  /// Quick-access tiles to the user's saved posts, the leaderboard and
-  /// close-friends circles.
-  Widget _quickLinks() {
-    final scheme = Theme.of(context).colorScheme;
-    Widget tile(IconData icon, String label, Widget screen) => Expanded(
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => screen)),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  Icon(icon, color: scheme.primary),
-                  const SizedBox(height: 6),
-                  Text(label,
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ),
-          ),
-        );
-    return Row(
-      children: [
-        tile(Icons.bookmark_outline, 'Saved', const BookmarksScreen()),
-        tile(Icons.bolt_outlined, 'Activity', const ActivityScreen()),
-        tile(Icons.leaderboard_outlined, 'Leaderboard',
-            const LeaderboardScreen()),
-        tile(Icons.group_outlined, 'Circles', const CirclesScreen()),
-      ],
     );
   }
 
