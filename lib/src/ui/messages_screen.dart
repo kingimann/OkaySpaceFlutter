@@ -2880,7 +2880,62 @@ class _ChatScreenState extends State<ChatScreen> {
       if (d == null) return;
       difficulty = d;
     }
-    await _startGame(type, difficulty: difficulty, vsCpu: vsCpu);
+    if (!mounted) return;
+    // Wager points (arcade games can't be bet on).
+    var bet = 0;
+    if (!arcade.contains(type)) {
+      final b = await _betPick();
+      if (b == null) return;       // cancelled
+      bet = b;
+    }
+    await _startGame(type, difficulty: difficulty, vsCpu: vsCpu, bet: bet);
+  }
+
+  /// Lets the player wager points on the game. Returns the stake (0 = no bet)
+  /// or null if cancelled. Only offers amounts the player can afford.
+  Future<int?> _betPick() async {
+    int points = 0;
+    try {
+      points = (await api.auth.me()).points;
+    } catch (_) {/* fall back to no betting */}
+    if (!mounted) return 0;
+    if (points < 10) return 0;     // nothing meaningful to bet
+    final amounts = [10, 25, 50, 100, 250].where((a) => a <= points).toList();
+    return showModalBottomSheet<int>(
+      context: context,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 14, 16, 2),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Wager points',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Winner takes the pot · you have $points pts',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(sheetCtx).colorScheme.outline)),
+            ),
+          ),
+          ListTile(
+              leading: const Icon(Icons.block),
+              title: const Text('No bet'),
+              onTap: () => Navigator.pop(sheetCtx, 0)),
+          for (final a in amounts)
+            ListTile(
+                leading: const Icon(Icons.toll_outlined),
+                title: Text('$a pts'),
+                onTap: () => Navigator.pop(sheetCtx, a)),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
   }
 
   Future<String?> _gamePick(
@@ -2908,11 +2963,11 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
   Future<void> _startGame(String type,
-      {String difficulty = 'medium', bool vsCpu = false}) async {
+      {String difficulty = 'medium', bool vsCpu = false, int bet = 0}) async {
     setState(() => _sending = true);
     try {
-      await api.messaging
-          .createGame(_convId, type: type, difficulty: difficulty, vsCpu: vsCpu);
+      await api.messaging.createGame(_convId,
+          type: type, difficulty: difficulty, vsCpu: vsCpu, bet: bet);
       await _fetch(silent: true);
       _scrollToBottom();
     } catch (e) {
@@ -4542,7 +4597,8 @@ class _MessageBubble extends StatelessWidget {
                           mine: mine,
                           otherUserId: otherUserId,
                           difficulty:
-                              '${message.raw['difficulty'] ?? 'medium'}'),
+                              '${message.raw['difficulty'] ?? 'medium'}',
+                          bet: (message.raw['bet'] as num?)?.toInt() ?? 0),
                     ),
                   if (isTip)
                     Row(mainAxisSize: MainAxisSize.min, children: [
@@ -5464,13 +5520,15 @@ class _GameChip extends StatelessWidget {
       required this.gameType,
       required this.mine,
       this.otherUserId,
-      this.difficulty = 'medium'});
+      this.difficulty = 'medium',
+      this.bet = 0});
 
   final String gameId;
   final String gameType;
   final bool mine;
   final String? otherUserId;
   final String difficulty;
+  final int bet;
 
   @override
   Widget build(BuildContext context) {
@@ -5500,9 +5558,12 @@ class _GameChip extends StatelessWidget {
               children: [
                 Text(label,
                     style: const TextStyle(fontWeight: FontWeight.w700)),
-                Text('Tap to play',
+                Text(bet > 0 ? 'Tap to play · $bet pts' : 'Tap to play',
                     style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant)),
+                        fontSize: 12,
+                        color: bet > 0 ? color : scheme.onSurfaceVariant,
+                        fontWeight:
+                            bet > 0 ? FontWeight.w600 : FontWeight.normal)),
               ],
             ),
           ),
