@@ -10,6 +10,7 @@ class ThreeGameView extends StatelessWidget {
     this.initialState,
     this.onAction,
     this.onScore,
+    this.stateStream,
   });
 
   final String gameType;
@@ -17,10 +18,11 @@ class ThreeGameView extends StatelessWidget {
   final Future<Map<String, dynamic>?> Function(Map<String, dynamic> action)?
       onAction;
   final void Function(int score)? onScore;
+  final Stream<Map<String, dynamic>>? stateStream;
 
   @override
   Widget build(BuildContext context) => const SizedBox(
         height: 200,
-        child: Center(child: Text('Open on the web to play the 3D version')),
+        child: Center(child: Text('Open on the web to play the 2D version')),
       );
 }
