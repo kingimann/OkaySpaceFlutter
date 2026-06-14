@@ -377,7 +377,14 @@ class _BarsNavObserver extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     showBars();
-    if (route is PopupRoute) _modals++;
+    if (route is PopupRoute) {
+      _modals++;
+    } else {
+      // A new full-screen page means no modal/dialog is on top. Reset the
+      // counter so a single leaked decrement can't keep the global bottom nav
+      // hidden forever on every pushed screen.
+      _modals = 0;
+    }
     _sync();
   }
 
