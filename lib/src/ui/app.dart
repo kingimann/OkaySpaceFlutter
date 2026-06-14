@@ -350,7 +350,10 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
               }
               return false;
             },
-            child: child!,
+            // The global bottom nav floats above every route while signed in.
+            child: Stack(
+              children: [child!, const _GlobalBottomNav()],
+            ),
           ),
           home: const RootGate(),
         ),
@@ -362,13 +365,76 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
 /// Re-shows the top/bottom bars whenever a route is pushed or popped, so a new
 /// screen never opens with its bars hidden from the previous screen's scroll.
 class _BarsNavObserver extends NavigatorObserver {
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      showBars();
+  // Modal routes (dialogs, menus, bottom sheets) are PopupRoutes; track when
+  // one is on top so the global bottom nav can hide behind it.
+  int _modals = 0;
+
+  void _sync() {
+    navModalOpen.value = _modals > 0;
+    navCanPop.value = navigator?.canPop() ?? false;
+  }
 
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      showBars();
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    showBars();
+    if (route is PopupRoute) _modals++;
+    _sync();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    showBars();
+    if (route is PopupRoute && _modals > 0) _modals--;
+    _sync();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      _sync();
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute && _modals > 0) _modals--;
+    _sync();
+  }
+}
+
+/// A floating bottom nav shown on *every* screen while signed in — it overlays
+/// pushed feature screens too, not just the home tabs. Hidden when signed out,
+/// when the keyboard is open, or when a dialog/sheet is on top.
+class _GlobalBottomNav extends StatelessWidget {
+  const _GlobalBottomNav();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: appSignedIn,
+      builder: (context, signedIn, _) {
+        if (!signedIn) return const SizedBox.shrink();
+        return ValueListenableBuilder<bool>(
+          valueListenable: navCanPop,
+          builder: (context, pushed, _) {
+            // Home tabs render their own nav; only overlay on pushed screens.
+            if (!pushed) return const SizedBox.shrink();
+            return ValueListenableBuilder<bool>(
+              valueListenable: navModalOpen,
+              builder: (context, modal, _) {
+                final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
+                if (modal || keyboard) return const SizedBox.shrink();
+                return ValueListenableBuilder<String>(
+                  valueListenable: homeTabSignal,
+                  builder: (context, tab, _) => Align(
+                    alignment: Alignment.bottomCenter,
+                    child: OkayBottomNav(currentId: tab),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
 }
 
 /// Shows the app shell when signed in, otherwise the login screen.

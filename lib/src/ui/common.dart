@@ -52,6 +52,19 @@ String conditionLabel(String? c) {
 /// body reclaims the room as they slide away.
 final ValueNotifier<double> barsT = ValueNotifier<double>(1.0);
 
+/// Whether the signed-in app shell is active. Drives the global bottom nav so
+/// it shows on every screen (not just the home tabs) while signed in.
+final ValueNotifier<bool> appSignedIn = ValueNotifier<bool>(false);
+
+/// Whether a modal route (dialog, menu or bottom sheet) is on top — the global
+/// bottom nav hides so it never floats over a dialog or sheet.
+final ValueNotifier<bool> navModalOpen = ValueNotifier<bool>(false);
+
+/// Whether a route is pushed above the home shell. The global bottom nav shows
+/// only then (on the home tabs the shell renders its own nav), so it appears on
+/// pushed feature screens without doubling up on the home tabs.
+final ValueNotifier<bool> navCanPop = ValueNotifier<bool>(false);
+
 /// Target visibility of the bars. Scrolling down requests hide; scrolling up,
 /// reaching the top, or navigating requests show.
 final ValueNotifier<bool> barsVisible = ValueNotifier<bool>(true);
