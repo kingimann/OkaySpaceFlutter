@@ -14,4 +14,31 @@ Future<String?> fetchRemoteBuild() async {
   return null;
 }
 
-void reloadApp() => html.window.location.reload();
+/// Forces a truly fresh load: clears the Cache Storage and unregisters any
+/// service worker (a stale one can otherwise answer the reload from cache and
+/// serve the old bundle again), then reloads.
+void reloadApp() {
+  _purgeCachesAndReload();
+}
+
+Future<void> _purgeCachesAndReload() async {
+  try {
+    final caches = html.window.caches;
+    if (caches != null) {
+      final keys = await caches.keys();
+      for (final k in keys) {
+        await caches.delete(k);
+      }
+    }
+  } catch (_) {/* best effort */}
+  try {
+    final sw = html.window.navigator.serviceWorker;
+    if (sw != null) {
+      final regs = await sw.getRegistrations();
+      for (final r in regs) {
+        await r.unregister();
+      }
+    }
+  } catch (_) {/* best effort */}
+  html.window.location.reload();
+}
