@@ -663,10 +663,156 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return v != null ? Color(v) : Theme.of(context).colorScheme.primary;
   }
 
+  /// The user's status text (same as the owner view shows).
+  Widget _publicStatusLine(PublicUser u) {
+    final status = '${u.raw['status'] ?? ''}'.trim();
+    if (status.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(20)),
+        child: Text(status, style: const TextStyle(fontSize: 12.5)),
+      ),
+    );
+  }
+
+  Widget _metaChip(IconData icon, String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+        ]),
+      );
+
+  /// Verification chips + "member since", mirroring the owner view.
+  Widget _publicVerification(PublicUser u) {
+    final scheme = Theme.of(context).colorScheme;
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final created = DateTime.tryParse('${u.raw['created_at'] ?? ''}')?.toLocal();
+    final chips = <Widget>[
+      if (u.raw['email_verified'] == true)
+        _metaChip(Icons.mark_email_read_outlined, 'Email', scheme.primary),
+      if (u.raw['phone_verified'] == true)
+        _metaChip(Icons.phone_android, 'Phone', const Color(0xFF22C55E)),
+      if (u.raw['id_verified'] == true)
+        _metaChip(Icons.badge_outlined, 'ID', const Color(0xFF6366F1)),
+      if (created != null)
+        _metaChip(Icons.cake_outlined,
+            'Since ${months[created.month - 1]} ${created.year}', scheme.outline),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 6,
+          runSpacing: 6,
+          children: chips),
+    );
+  }
+
+  /// Tappable social links from the public payload, same as the owner view.
+  Widget _publicSocialLinks(PublicUser u) {
+    final raw = u.raw['socials'] ?? u.raw['links'] ?? u.raw['social_links'];
+    if (raw is! Map || raw.isEmpty) return const SizedBox.shrink();
+    const platforms = <String, (IconData, String)>{
+      'website': (Icons.language, ''),
+      'twitter': (Icons.alternate_email, 'https://x.com/'),
+      'x': (Icons.alternate_email, 'https://x.com/'),
+      'instagram': (Icons.camera_alt_outlined, 'https://instagram.com/'),
+      'tiktok': (Icons.music_note, 'https://tiktok.com/@'),
+      'youtube': (Icons.play_circle_outline, 'https://youtube.com/@'),
+      'github': (Icons.code, 'https://github.com/'),
+      'linkedin': (Icons.business_center_outlined, 'https://linkedin.com/in/'),
+      'facebook': (Icons.facebook, 'https://facebook.com/'),
+      'twitch': (Icons.videogame_asset_outlined, 'https://twitch.tv/'),
+    };
+    String urlFor(String key, String value) {
+      if (value.startsWith('http')) return value;
+      final base = platforms[key.toLowerCase()]?.$2 ?? '';
+      return base.isEmpty ? value : '$base${value.replaceFirst('@', '')}';
+    }
+
+    final entries = <(IconData, String)>[];
+    raw.forEach((k, v) {
+      final value = '$v'.trim();
+      if (value.isEmpty) return;
+      final p = platforms['$k'.toLowerCase()];
+      entries.add(((p?.$1 ?? Icons.link), urlFor('$k', value)));
+    });
+    if (entries.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final (icon, url) in entries)
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: url));
+                showInfo(context, 'Link copied: $url');
+              },
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh, shape: BoxShape.circle),
+                child: Icon(icon, size: 18, color: scheme.primary),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Location · pronouns · birthday, mirroring the owner view's info row.
+  Widget _publicInfoRow(PublicUser u) {
+    final scheme = Theme.of(context).colorScheme;
+    final location = '${u.raw['location'] ?? ''}'.trim();
+    final pronouns = '${u.raw['pronouns'] ?? ''}'.trim();
+    final birthday = '${u.raw['birthday'] ?? ''}'.trim();
+    Widget item(IconData icon, String text) =>
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 16, color: scheme.outline),
+          const SizedBox(width: 4),
+          Text(text),
+        ]);
+    final items = <Widget>[
+      if (location.isNotEmpty) item(Icons.place_outlined, location),
+      if (pronouns.isNotEmpty) item(Icons.badge_outlined, pronouns),
+      if (birthday.isNotEmpty) item(Icons.cake_outlined, birthday.split('T').first),
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 16,
+          runSpacing: 4,
+          children: items),
+    );
+  }
+
   Widget _profileCard(PublicUser u) {
     final scheme = Theme.of(context).colorScheme;
     final levelTitle = '${u.raw['level_title'] ?? ''}';
-    final location = '${u.raw['location'] ?? ''}';
     final cover = '${u.raw['cover_photo'] ?? ''}';
     final accent = _publicAccent(u);
     return Container(
@@ -739,9 +885,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           if (u.username != null)
             Text(u.handle, style: TextStyle(color: scheme.primary)),
+          _publicStatusLine(u),
           const SizedBox(height: 6),
           _publicMeta(u),
+          _publicVerification(u),
           _publicBadges(u),
+          _publicSocialLinks(u),
           const SizedBox(height: 12),
           if (u.points > 0 || u.level > 0)
             Padding(
@@ -792,14 +941,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontWeight: FontWeight.w600)),
           ],
-          if (location.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.place_outlined, size: 16, color: scheme.outline),
-              const SizedBox(width: 4),
-              Text(location),
-            ]),
-          ],
+          _publicInfoRow(u),
           if (_publicInterests(u).isNotEmpty) ...[
             const SizedBox(height: 10),
             Padding(
