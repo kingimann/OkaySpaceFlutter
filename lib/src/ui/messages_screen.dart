@@ -583,6 +583,8 @@ class _ConversationTile extends StatelessWidget {
       'gif' => 'GIF',
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
+      'live_location' => '📍 Live location',
+      'game' => '🎮 Tic-tac-toe',
       'money' || 'tip' => '💸 Payment',
       'poll' => '📊 Poll',
       'file' => '📎 File',
@@ -877,6 +879,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _typingTimer?.cancel();
     _highlightTimer?.cancel();
     _draftTimer?.cancel();
+    for (final t in _liveUpdaters.values) {
+      t.cancel();
+    }
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -2180,6 +2185,9 @@ class _ChatScreenState extends State<ChatScreen> {
             onVotePoll: msg.type == 'poll' && !msg.deleted
                 ? (i) => _run(() => api.messaging.votePoll(_convId, msg.id, i))
                 : null,
+            onStopLive: msg.type == 'live_location' && mine
+                ? () => _stopLiveShare('${msg.raw['live_share_id'] ?? ''}')
+                : null,
             senderName:
                 (isGroup && !mine && !msg.deleted) ? _senderName(msg.senderId) : null,
             receipt: (!isGroup &&
@@ -2692,6 +2700,16 @@ class _ChatScreenState extends State<ChatScreen> {
                       _scheduleMessage),
                 ],
               ),
+              // Games are one-on-one only.
+              if (!widget.conversation.isGroup) ...[
+                const SizedBox(height: 8),
+                _attachSectionLabel('Play'),
+                Wrap(
+                  children: [
+                    _attachTile(Icons.grid_3x3, 'Tic-tac-toe', _attachGame),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -2766,6 +2784,20 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Starts an in-chat tic-tac-toe game (one-on-one chats only).
+  Future<void> _attachGame() async {
+    setState(() => _sending = true);
+    try {
+      await api.messaging.createGame(_convId);
+      await _fetch(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   /// Sends a tip (money) inside the conversation.
   Future<void> _attachTip() async {
     final amountText = await promptText(context,
@@ -2783,22 +2815,26 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Picks a point on a map and sends it as a location message.
+  /// Picks a point on a map and sends it as a location message, or starts a
+  /// live-location share.
   Future<void> _attachLocation() async {
-    final picked = await Navigator.of(context).push<(LatLng, String)>(
+    final picked = await Navigator.of(context).push<_LocationResult>(
       MaterialPageRoute(builder: (_) => const _LocationPickerScreen()),
     );
     if (picked == null || !mounted) return;
-    final (point, name) = picked;
+    if (picked.isLive) {
+      await _startLiveShare(picked.liveMinutes!, picked.point);
+      return;
+    }
     setState(() => _sending = true);
     try {
       await api.messaging.send(
         _convId,
         MessageCreate(
           type: 'place',
-          placeName: name,
-          placeLatitude: point.latitude,
-          placeLongitude: point.longitude,
+          placeName: picked.name,
+          placeLatitude: picked.point.latitude,
+          placeLongitude: picked.point.longitude,
         ),
       );
       await _fetch(silent: true);
@@ -2807,6 +2843,60 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Active live-location updaters, keyed by share id, so they can be cancelled
+  /// on stop or when the screen is disposed.
+  final Map<String, Timer> _liveUpdaters = {};
+
+  /// Begins a live-location share and pumps the device's position to the
+  /// backend until it expires or is stopped.
+  Future<void> _startLiveShare(int minutes, LatLng initial) async {
+    setState(() => _sending = true);
+    try {
+      final msg = await api.messaging
+          .startLiveLocation(_convId, minutes, initial.latitude, initial.longitude);
+      final shareId = '${msg.raw['live_share_id'] ?? ''}';
+      if (shareId.isNotEmpty) {
+        final expiry = DateTime.now().add(Duration(minutes: minutes));
+        // Push a fresh fix every 15s until the share's time is up.
+        _liveUpdaters[shareId] = Timer.periodic(
+            const Duration(seconds: 15), (t) async {
+          if (!mounted || DateTime.now().isAfter(expiry)) {
+            t.cancel();
+            _liveUpdaters.remove(shareId);
+            return;
+          }
+          final fix = await currentFix();
+          if (fix == null) return;
+          try {
+            await api.messaging
+                .updateLiveLocation(shareId, fix.point.latitude, fix.point.longitude);
+          } catch (_) {
+            // 410 (ended/expired) or transient — stop pushing on a hard stop.
+            t.cancel();
+            _liveUpdaters.remove(shareId);
+          }
+        });
+      }
+      await _fetch(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Stops a live-location share (the sharer tapped "Stop").
+  Future<void> _stopLiveShare(String shareId) async {
+    _liveUpdaters.remove(shareId)?.cancel();
+    try {
+      await api.messaging.stopLiveLocation(shareId);
+      await _fetch(silent: true);
+    } catch (e) {
+      if (mounted) showError(context, e);
     }
   }
 
@@ -3842,6 +3932,7 @@ class _MessageBubble extends StatelessWidget {
       this.onTapReply,
       this.onTapReactions,
       this.onVotePoll,
+      this.onStopLive,
       this.replyTo,
       this.senderName,
       this.receipt});
@@ -3891,6 +3982,9 @@ class _MessageBubble extends StatelessWidget {
 
   /// Casts a vote on this poll message (option index).
   final void Function(int optionIndex)? onVotePoll;
+
+  /// Sharer-only: stop an in-progress live-location share.
+  final VoidCallback? onStopLive;
 
   /// The message this one is replying to (resolved), if any.
   final Message? replyTo;
@@ -4154,6 +4248,13 @@ class _MessageBubble extends StatelessWidget {
         !message.deleted &&
         placeLat != null &&
         placeLng != null;
+    final liveShareId = '${message.raw['live_share_id'] ?? ''}';
+    final isLive = message.type == 'live_location' &&
+        !message.deleted &&
+        liveShareId.isNotEmpty;
+    final gameId = '${message.raw['game_id'] ?? ''}';
+    final isGame =
+        message.type == 'game' && !message.deleted && gameId.isNotEmpty;
     final isPoll = message.type == 'poll' && !message.deleted;
     final isTip = (message.type == 'tip' || message.type == 'money') &&
         !message.deleted;
@@ -4161,6 +4262,8 @@ class _MessageBubble extends StatelessWidget {
     final typeLabel = switch (message.type) {
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
+      'live_location' => '📍 Live location',
+      'game' => '🎮 Tic-tac-toe',
       'money' || 'tip' => '💸 Payment',
       'gif' => 'GIF',
       'voice' => '🎤 Voice message',
@@ -4172,12 +4275,16 @@ class _MessageBubble extends StatelessWidget {
     final bodyText = message.deleted
         ? 'Message deleted'
         : (message.text ??
-            (hasMedia || hasPlace || isPoll || isTip ? '' : typeLabel));
+            (hasMedia || hasPlace || isLive || isGame || isPoll || isTip
+                ? ''
+                : typeLabel));
     // A short, all-emoji message renders large with no bubble (like WhatsApp).
     final t = (message.text ?? '').trim();
     final emojiOnly = !message.deleted &&
         !hasMedia &&
         !hasPlace &&
+        !isLive &&
+        !isGame &&
         message.replyToId == null &&
         t.isNotEmpty &&
         t.runes.length <= 8 &&
@@ -4282,6 +4389,25 @@ class _MessageBubble extends StatelessWidget {
                       padding:
                           EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
                       child: _placeCard(placeLat, placeLng),
+                    ),
+                  if (isLive)
+                    Padding(
+                      padding:
+                          EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
+                      child: _LiveLocationCard(
+                        shareId: liveShareId,
+                        mine: mine,
+                        fallbackLat: placeLat,
+                        fallbackLng: placeLng,
+                        initialActive: message.raw['live_active'] != false,
+                        onStop: onStopLive,
+                      ),
+                    ),
+                  if (isGame)
+                    Padding(
+                      padding:
+                          EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
+                      child: _TicTacToeCard(gameId: gameId),
                     ),
                   if (isTip)
                     Row(mainAxisSize: MainAxisSize.min, children: [
@@ -5067,9 +5193,367 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
 }
 
 /// Full-screen map to drop a pin and return the chosen [LatLng].
-/// WhatsApp-style location picker: a map on top, then "Send your current
-/// location" with its accuracy, a place search, and a list of nearby places to
-/// tap. Pops `(LatLng, name)` for the chosen spot.
+/// In-bubble tic-tac-toe board (iMessage-style). Polls the shared game state,
+/// renders the 3×3 board, and lets whoever's turn it is tap an empty cell.
+class _TicTacToeCard extends StatefulWidget {
+  const _TicTacToeCard({required this.gameId});
+
+  final String gameId;
+
+  @override
+  State<_TicTacToeCard> createState() => _TicTacToeCardState();
+}
+
+class _TicTacToeCardState extends State<_TicTacToeCard> {
+  GameView? _game;
+  Timer? _poll;
+  bool _loading = true;
+  bool _moving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _poll = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (_moving) return; // don't clobber an in-flight move
+    try {
+      final g = await api.messaging.game(widget.gameId);
+      if (!mounted) return;
+      setState(() {
+        _game = g;
+        _loading = false;
+      });
+      if (g.isOver) _poll?.cancel();
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _tap(int cell) async {
+    final g = _game;
+    if (g == null || g.isOver || _moving) return;
+    if (g.turn != currentUserId) return; // not your turn
+    if (cell < 0 || cell > 8 || g.board[cell].isNotEmpty) return;
+    setState(() => _moving = true);
+    try {
+      final updated = await api.messaging.gameMove(widget.gameId, cell);
+      if (mounted) setState(() => _game = updated);
+      if (updated.isOver) _poll?.cancel();
+    } catch (e) {
+      if (mounted) showError(context, e);
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _moving = false);
+    }
+  }
+
+  String _statusText(GameView g) {
+    final myMark = g.xPlayer == currentUserId
+        ? 'X'
+        : (g.oPlayer == currentUserId ? 'O' : '');
+    if (g.status == 'draw') return "It's a draw";
+    if (g.status == 'won') {
+      return g.winner == currentUserId ? 'You won! 🎉' : 'You lost';
+    }
+    if (myMark.isEmpty) return g.turn == g.xPlayer ? "X's turn" : "O's turn";
+    return g.turn == currentUserId ? 'Your turn ($myMark)' : 'Their turn';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final g = _game;
+    if (g == null) {
+      return SizedBox(
+        width: 200,
+        height: 200,
+        child: Center(
+            child: _loading
+                ? const CircularProgressIndicator()
+                : const Text('Game unavailable')),
+      );
+    }
+    final myTurn = !g.isOver && g.turn == currentUserId;
+    return SizedBox(
+      width: 210,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('🎮 Tic-tac-toe',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(height: 6),
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            children: [
+              for (int i = 0; i < 9; i++)
+                GestureDetector(
+                  onTap: () => _tap(i),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(g.board[i],
+                        style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: g.board[i] == 'X'
+                                ? const Color(0xFF2563EB)
+                                : const Color(0xFFEF4444))),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              if (myTurn)
+                Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: const BoxDecoration(
+                      shape: BoxShape.circle, color: Color(0xFF22C55E)),
+                ),
+              Flexible(
+                child: Text(_statusText(g),
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight:
+                            myTurn ? FontWeight.w600 : FontWeight.normal,
+                        color: scheme.onSurfaceVariant)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// In-bubble live-location view: a small map that polls the share and tracks
+/// the sharer's moving dot, with a status line and (for the sharer) a Stop
+/// button. Stops polling once the share ends or expires.
+class _LiveLocationCard extends StatefulWidget {
+  const _LiveLocationCard({
+    required this.shareId,
+    required this.mine,
+    this.fallbackLat,
+    this.fallbackLng,
+    this.initialActive = true,
+    this.onStop,
+  });
+
+  final String shareId;
+  final bool mine;
+  final double? fallbackLat;
+  final double? fallbackLng;
+  final bool initialActive;
+  final VoidCallback? onStop;
+
+  @override
+  State<_LiveLocationCard> createState() => _LiveLocationCardState();
+}
+
+class _LiveLocationCardState extends State<_LiveLocationCard> {
+  final _map = MapController();
+  LiveLocationView? _live;
+  Timer? _poll;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _poll = Timer.periodic(const Duration(seconds: 10), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _map.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final v = await api.messaging.liveLocation(widget.shareId);
+      if (!mounted) return;
+      setState(() {
+        _live = v;
+        _loading = false;
+      });
+      // Keep the dot centred as it moves.
+      try {
+        _map.move(LatLng(v.latitude, v.longitude), _map.camera.zoom);
+      } catch (_) {/* map not ready yet */}
+      if (!v.active) _poll?.cancel(); // ended/expired — stop polling
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _hhmm(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final live = _live;
+    final lat = live?.latitude ?? widget.fallbackLat;
+    final lng = live?.longitude ?? widget.fallbackLng;
+    final active = live?.active ?? widget.initialActive;
+    final point = (lat != null && lng != null) ? LatLng(lat, lng) : null;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 230,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 140,
+              child: Stack(
+                children: [
+                  if (point != null)
+                    IgnorePointer(
+                      child: FlutterMap(
+                        mapController: _map,
+                        options: MapOptions(
+                          initialCenter: point,
+                          initialZoom: 15,
+                          interactionOptions: const InteractionOptions(
+                              flags: InteractiveFlag.none),
+                        ),
+                        children: [
+                          mapboxTileLayer(),
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: point,
+                              width: 34,
+                              height: 34,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: active
+                                      ? const Color(0xFF2563EB)
+                                      : scheme.outline,
+                                  border: Border.all(
+                                      color: Colors.white, width: 3),
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      color: scheme.surfaceContainerHighest,
+                      alignment: Alignment.center,
+                      child: _loading
+                          ? const CircularProgressIndicator()
+                          : const Icon(Icons.location_off),
+                    ),
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: active
+                            ? const Color(0xFF2563EB)
+                            : Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(
+                            active
+                                ? Icons.share_location
+                                : Icons.location_off,
+                            size: 13,
+                            color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(active ? 'LIVE' : 'Ended',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold)),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      active
+                          ? (live?.expiresAt != null
+                              ? 'Live until ${_hhmm(live!.expiresAt!.toLocal())}'
+                              : 'Sharing live location')
+                          : 'Live location ended',
+                      style: TextStyle(
+                          fontSize: 12.5, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                  if (widget.mine && active && widget.onStop != null)
+                    TextButton(
+                      onPressed: widget.onStop,
+                      style: TextButton.styleFrom(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 30)),
+                      child: const Text('Stop'),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What the location picker returns: either a one-off place to send, or a
+/// request to start sharing live location for [liveMinutes].
+class _LocationResult {
+  const _LocationResult.place(this.point, this.name) : liveMinutes = null;
+  const _LocationResult.live(this.liveMinutes, this.point) : name = null;
+
+  final LatLng point;
+  final String? name;
+  final int? liveMinutes;
+
+  bool get isLive => liveMinutes != null;
+}
+
+/// WhatsApp-style location picker: a map on top, then "Share live location",
+/// "Send your current location" with its accuracy, a place search, and a list
+/// of nearby places to tap. Pops a [_LocationResult].
 class _LocationPickerScreen extends StatefulWidget {
   const _LocationPickerScreen();
 
@@ -5167,7 +5651,43 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
   }
 
   void _send(LatLng point, String name) =>
-      Navigator.pop(context, (point, name));
+      Navigator.pop(context, _LocationResult.place(point, name));
+
+  /// Lets the sharer pick how long to broadcast their live location, then pops
+  /// a live result. This is the "how long to share" setting.
+  Future<void> _chooseLiveDuration() async {
+    final minutes = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Share live location for',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+            for (final opt in const [
+              ('15 minutes', 15),
+              ('1 hour', 60),
+              ('8 hours', 480),
+            ])
+              ListTile(
+                leading: const Icon(Icons.schedule),
+                title: Text(opt.$1),
+                onTap: () => Navigator.pop(sheetCtx, opt.$2),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (minutes == null || !mounted) return;
+    Navigator.pop(context, _LocationResult.live(minutes, _me ?? _pin));
+  }
 
   Widget _placeTile(Map<String, dynamic> p) {
     final lat = (p['lat'] as num?)?.toDouble();
@@ -5254,6 +5774,19 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
+                  // Live location: share a moving position for a set time.
+                  ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFF2563EB),
+                      child: Icon(Icons.share_location, color: Colors.white),
+                    ),
+                    title: const Text('Share live location'),
+                    subtitle: Text(_me == null
+                        ? 'Waiting for your location…'
+                        : 'Updates in real time for a set time'),
+                    onTap: _me == null ? null : _chooseLiveDuration,
+                  ),
+                  const Divider(height: 1),
                   if (_me != null)
                     ListTile(
                       leading: const CircleAvatar(

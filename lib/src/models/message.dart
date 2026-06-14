@@ -150,6 +150,81 @@ class ConversationView {
   }
 }
 
+/// A snapshot of a live-location share: where the sharer is now, and whether
+/// the share is still running.
+class LiveLocationView {
+  const LiveLocationView({
+    required this.shareId,
+    required this.userId,
+    this.name,
+    required this.latitude,
+    required this.longitude,
+    this.active = true,
+    this.expiresAt,
+    this.updatedAt,
+  });
+
+  final String shareId;
+  final String userId;
+  final String? name;
+  final double latitude;
+  final double longitude;
+  final bool active;
+  final DateTime? expiresAt;
+  final DateTime? updatedAt;
+
+  factory LiveLocationView.fromJson(Map<String, dynamic> json) =>
+      LiveLocationView(
+        shareId: asString(json['share_id']),
+        userId: asString(json['user_id']),
+        name: asStringOrNull(json['name']),
+        latitude: asDoubleOrNull(json['latitude']) ?? 0,
+        longitude: asDoubleOrNull(json['longitude']) ?? 0,
+        active: asBool(json['active'], true),
+        expiresAt: asDateOrNull(json['expires_at']),
+        updatedAt: asDateOrNull(json['updated_at']),
+      );
+}
+
+/// A snapshot of an in-chat game (e.g. tic-tac-toe).
+class GameView {
+  const GameView({
+    required this.gameId,
+    required this.conversationId,
+    required this.gameType,
+    required this.board,
+    required this.xPlayer,
+    required this.oPlayer,
+    required this.turn,
+    this.status = 'active',
+    this.winner,
+  });
+
+  final String gameId;
+  final String conversationId;
+  final String gameType;
+  final List<String> board; // 9 cells: '', 'X' or 'O'
+  final String xPlayer;
+  final String oPlayer;
+  final String turn; // user id whose move it is
+  final String status; // active | won | draw
+  final String? winner; // user id of the winner
+
+  bool get isOver => status != 'active';
+
+  factory GameView.fromJson(Map<String, dynamic> json) => GameView(
+        gameId: asString(json['game_id']),
+        conversationId: asString(json['conversation_id']),
+        gameType: asString(json['game_type'], 'tictactoe'),
+        board: asStringList(json['board']),
+        xPlayer: asString(json['x_player']),
+        oPlayer: asString(json['o_player']),
+        turn: asString(json['turn']),
+        status: asString(json['status'], 'active'),
+        winner: asStringOrNull(json['winner']),
+      );
+}
+
 /// Request body for sending a message. Defaults to a plain text message.
 class MessageCreate {
   const MessageCreate({

@@ -5,9 +5,11 @@ import '../../okayspace_api.dart';
 import 'business_screen.dart';
 import 'common.dart';
 import 'create_listing_screen.dart';
+import 'linked_text.dart';
+import 'post_tile.dart';
 import 'profile_screen.dart';
 
-String _price(Listing l) => '${l.currency} ${l.price.toStringAsFixed(2)}';
+String _price(Listing l) => formatMoney(l.price, l.currency);
 
 /// Marketplace browse grid with a search field.
 class MarketplaceScreen extends StatefulWidget {
@@ -725,10 +727,29 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     if (text == null) return;
     try {
       await api.marketplace.addComment(widget.listingId, text);
-      if (mounted) {
-        setState(
-            () => _comments = api.marketplace.comments(widget.listingId));
-      }
+      _reloadComments();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  void _reloadComments() {
+    if (mounted) {
+      setState(() => _comments = api.marketplace.comments(widget.listingId));
+    }
+  }
+
+  /// Reply to a comment (threaded under it), mirroring the newsfeed.
+  Future<void> _replyTo(ListingComment parent) async {
+    final text = await promptText(context,
+        title: 'Reply to ${parent.author.name}',
+        hint: 'Reply',
+        action: 'Send');
+    if (text == null || text.trim().isEmpty) return;
+    try {
+      await api.marketplace
+          .addComment(widget.listingId, text.trim(), parentId: parent.id);
+      _reloadComments();
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -780,7 +801,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
               controller: amountCtl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
-                  prefixText: '${l.currency} ', labelText: 'Your offer'),
+                  prefixText: currencySymbol(l.currency), labelText: 'Your offer'),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -1195,21 +1216,35 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                                         Theme.of(context).colorScheme.outline)),
                           );
                         }
+                        // Thread the replies under their parent, newsfeed-style.
+                        final repliesByParent =
+                            <String, List<ListingComment>>{};
+                        for (final cm in comments) {
+                          if (cm.parentId != null) {
+                            (repliesByParent[cm.parentId!] ??= []).add(cm);
+                          }
+                        }
+                        final top =
+                            comments.where((c) => c.parentId == null).toList();
                         return Column(
                           children: [
-                            for (final cm in comments)
-                              ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: Avatar(
-                                    url: cm.author.picture,
-                                    name: cm.author.name,
-                                    radius: 16),
-                                title: Text(cm.author.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14)),
-                                subtitle: Text(cm.text),
+                            for (final cm in top) ...[
+                              _ListingCommentTile(
+                                listingId: widget.listingId,
+                                comment: cm,
+                                onReply: _replyTo,
+                                onChanged: _reloadComments,
                               ),
+                              for (final r in (repliesByParent[cm.id] ??
+                                  const <ListingComment>[]))
+                                _ListingCommentTile(
+                                  listingId: widget.listingId,
+                                  comment: r,
+                                  onReply: _replyTo,
+                                  onChanged: _reloadComments,
+                                  isReply: true,
+                                ),
+                            ],
                           ],
                         );
                       },
@@ -1221,6 +1256,148 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
           );
         },
       ),
+      ),
+    );
+  }
+}
+
+/// A listing comment rendered in the newsfeed style: tappable avatar, name +
+/// verified + @handle · time, linked body, and a like / reply action row.
+/// Replies sit indented under their parent.
+class _ListingCommentTile extends StatefulWidget {
+  const _ListingCommentTile({
+    required this.listingId,
+    required this.comment,
+    required this.onReply,
+    required this.onChanged,
+    this.isReply = false,
+  });
+
+  final String listingId;
+  final ListingComment comment;
+  final void Function(ListingComment parent) onReply;
+  final VoidCallback onChanged;
+  final bool isReply;
+
+  @override
+  State<_ListingCommentTile> createState() => _ListingCommentTileState();
+}
+
+class _ListingCommentTileState extends State<_ListingCommentTile> {
+  late bool _liked = widget.comment.likedByMe;
+  late int _likes = widget.comment.likesCount;
+
+  ListingComment get c => widget.comment;
+
+  Future<void> _like() async {
+    setState(() {
+      _liked = !_liked;
+      _likes += _liked ? 1 : -1;
+    });
+    try {
+      final updated =
+          await api.marketplace.likeComment(widget.listingId, c.id);
+      if (mounted) {
+        setState(() {
+          _liked = updated.likedByMe;
+          _likes = updated.likesCount;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _liked = c.likedByMe;
+          _likes = c.likesCount;
+        });
+        showError(context, e);
+      }
+    }
+  }
+
+  Future<void> _delete() async {
+    try {
+      await api.marketplace.deleteComment(widget.listingId, c.id);
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = c.author;
+    final meta = StringBuffer();
+    if (a.username != null) meta.write('@${a.username} · ');
+    meta.write(shortAgo(c.createdAt));
+    return Padding(
+      padding: EdgeInsets.fromLTRB(widget.isReply ? 38 : 0, 8, 0, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () => ProfileScreen.open(context, a.userId),
+            child: Avatar(
+                url: a.picture, name: a.name, radius: widget.isReply ? 14 : 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(a.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 14)),
+                    ),
+                    if (a.verified) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.verified,
+                          size: 14, color: Color(0xFF3B82F6)),
+                    ],
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(meta.toString(),
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                LinkedText(c.text),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    PostAction(
+                      icon: _liked ? Icons.favorite : Icons.favorite_border,
+                      count: _likes,
+                      color: _liked ? OkayColors.danger : null,
+                      onTap: _like,
+                    ),
+                    if (!widget.isReply) ...[
+                      const SizedBox(width: 8),
+                      PostAction(
+                        icon: Icons.mode_comment_outlined,
+                        count: c.repliesCount,
+                        onTap: () => widget.onReply(c),
+                      ),
+                    ],
+                    if (c.mine) ...[
+                      const SizedBox(width: 8),
+                      PostAction(
+                        icon: Icons.delete_outline,
+                        count: 0,
+                        onTap: _delete,
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1306,8 +1483,7 @@ class _MyListingsScreenState extends State<_MyListingsScreen> {
                       : const Icon(Icons.shopping_bag_outlined),
                   title:
                       Text(l.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle:
-                      Text('${l.currency} ${l.price.toStringAsFixed(2)}'),
+                  subtitle: Text(_price(l)),
                   trailing: IconButton(
                     icon: Icon(Icons.delete_outline,
                         color: Theme.of(context).colorScheme.error),
@@ -1363,7 +1539,7 @@ class _SavedListingsScreenState extends State<_SavedListingsScreen> {
                                 width: 52, height: 52)))
                     : const Icon(Icons.shopping_bag_outlined),
                 title: Text(l.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text('${l.currency} ${l.price.toStringAsFixed(2)}'),
+                subtitle: Text(_price(l)),
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => ListingDetailScreen(listingId: l.id))),
               );
@@ -1423,7 +1599,7 @@ class _ListingOffersSheetState extends State<_ListingOffersSheet> {
         content: TextField(
           controller: ctl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(prefixText: '${widget.currency} ', labelText: 'Your price'),
+          decoration: InputDecoration(prefixText: currencySymbol(widget.currency), labelText: 'Your price'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -1441,7 +1617,7 @@ class _ListingOffersSheetState extends State<_ListingOffersSheet> {
   }
 
   String _money(Object? v) =>
-      '${widget.currency} ${(num.tryParse('${v ?? 0}') ?? 0).toStringAsFixed(2)}';
+      formatMoney(num.tryParse('${v ?? 0}') ?? 0, widget.currency);
 
   @override
   Widget build(BuildContext context) {

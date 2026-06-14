@@ -142,6 +142,53 @@ class MessagingService {
   Future<Message> sendText(String convId, String text) =>
       send(convId, MessageCreate.text(text));
 
+  // --- Live location ------------------------------------------------------
+
+  /// Starts sharing live location in a conversation for [minutes]. Returns the
+  /// `live_location` message that lands in the chat.
+  Future<Message> startLiveLocation(
+          String convId, int minutes, double lat, double lng) async =>
+      _msg(await _client.postJson('/conversations/$convId/live-location',
+          body: {'minutes': minutes, 'latitude': lat, 'longitude': lng}));
+
+  /// The sharer pushes a new position for an active share.
+  Future<LiveLocationView> updateLiveLocation(
+          String shareId, double lat, double lng) async =>
+      LiveLocationView.fromJson(asMapOrNull(await _client.postJson(
+              '/live-location/$shareId/update',
+              body: {'latitude': lat, 'longitude': lng})) ??
+          const {});
+
+  /// Ends a live-location share early.
+  Future<LiveLocationView> stopLiveLocation(String shareId) async =>
+      LiveLocationView.fromJson(asMapOrNull(
+              await _client.postJson('/live-location/$shareId/stop')) ??
+          const {});
+
+  /// Reads the latest position of a share (any conversation member).
+  Future<LiveLocationView> liveLocation(String shareId) async =>
+      LiveLocationView.fromJson(
+          asMapOrNull(await _client.getJson('/live-location/$shareId')) ??
+              const {});
+
+  // --- In-chat games ------------------------------------------------------
+
+  /// Starts a game in a DM (creator goes first). Returns the `game` message.
+  Future<Message> createGame(String convId,
+          {String type = 'tictactoe'}) async =>
+      _msg(await _client.postJson('/conversations/$convId/chat-games',
+          body: {'game_type': type}));
+
+  /// Plays a move (tic-tac-toe cell 0..8). Returns the updated game.
+  Future<GameView> gameMove(String gameId, int cell) async =>
+      GameView.fromJson(asMapOrNull(await _client
+              .postJson('/chat-games/$gameId/move', body: {'cell': cell})) ??
+          const {});
+
+  /// Reads the current game state (any participant).
+  Future<GameView> game(String gameId) async => GameView.fromJson(
+      asMapOrNull(await _client.getJson('/chat-games/$gameId')) ?? const {});
+
   Future<Message> editMessage(String convId, String msgId, String text) async =>
       _msg(await _client.patchJson('/conversations/$convId/messages/$msgId',
           body: {'text': text}));
