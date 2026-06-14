@@ -1,7 +1,6 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:pdf/pdf.dart';
@@ -86,48 +85,124 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     if (mounted) setState(() => _pages.add(_Page(_seq++, bytes, aspect)));
   }
 
+  /// Adopt edited PDF bytes and re-render the page previews.
+  Future<void> _applyEditedPdf(Uint8List out) async {
+    _originalPdf = out;
+    final rebuilt = <_Page>[];
+    await for (final pg in Printing.raster(out, dpi: 150)) {
+      final aspect = pg.height == 0 ? 0.7071 : pg.width / pg.height;
+      rebuilt.add(_Page(_seq++, await pg.toPng(), aspect));
+    }
+    if (mounted) {
+      setState(() => _pages
+        ..clear()
+        ..addAll(rebuilt));
+    }
+  }
+
   Future<void> _promptFindReplace() async {
     final find = TextEditingController();
     final repl = TextEditingController();
+    var review = false;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit text'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text('Find text in the document and replace it.',
-                style: TextStyle(fontSize: 13)),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-              controller: find,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Find')),
-          TextField(
-              controller: repl,
-              decoration: const InputDecoration(labelText: 'Replace with')),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Replace')),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Edit text'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+                controller: find,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Find')),
+            TextField(
+                controller: repl,
+                decoration: const InputDecoration(labelText: 'Replace with')),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Review each match'),
+              subtitle: const Text('Otherwise replace all'),
+              value: review,
+              onChanged: (v) => setLocal(() => review = v),
+            ),
+          ]),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Continue')),
+          ],
+        ),
       ),
     );
     final f = find.text;
     final r = repl.text;
     find.dispose();
     repl.dispose();
-    if (ok == true && f.isNotEmpty) await _findReplace(f, r);
+    if (ok != true || f.isEmpty) return;
+    if (!review) {
+      await _findReplace(f, r);
+      return;
+    }
+    final matches = await _collectMatches(f);
+    if (!mounted) return;
+    if (matches.isEmpty) {
+      showInfo(context, 'No matches found');
+      return;
+    }
+    final selected = await Navigator.of(context).push<Set<int>>(
+        MaterialPageRoute(
+            builder: (_) => _ReviewScreen(
+                matches: matches, pageImage: (i) => _pages[i].png)));
+    if (selected != null && selected.isNotEmpty) {
+      await _findReplace(f, r, only: selected);
+    }
   }
 
-  /// Real text edit: find occurrences in the source PDF, cover them and draw
-  /// the replacement, then re-render the pages from the edited document.
-  Future<void> _findReplace(String find, String replace) async {
+  /// Locates matches and maps each to a page index + relative bounds, for the
+  /// review screen's highlight.
+  Future<List<_Match>> _collectMatches(String find) async {
+    final src = _originalPdf;
+    if (src == null) return [];
+    setState(() {
+      _busy = true;
+      _status = 'Searching…';
+    });
+    final out = <_Match>[];
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      final found = sf.PdfTextExtractor(doc).findText([find]);
+      for (final m in found) {
+        final size = doc.pages[m.pageIndex].size;
+        final b = m.bounds;
+        final aspect = (m.pageIndex < _pages.length)
+            ? _pages[m.pageIndex].aspect
+            : (size.height == 0 ? 0.7071 : size.width / size.height);
+        out.add(_Match(
+          m.pageIndex,
+          Rect.fromLTWH(b.left / size.width, b.top / size.height,
+              b.width / size.width, b.height / size.height),
+          aspect,
+        ));
+      }
+      doc.dispose();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
+      }
+    }
+    return out;
+  }
+
+  /// Real text edit: cover matched text and draw the replacement. [only] picks
+  /// specific match indices (from the review screen); null = replace all.
+  Future<void> _findReplace(String find, String replace, {Set<int>? only}) async {
     final src = _originalPdf;
     if (src == null) return;
     setState(() {
@@ -137,7 +212,10 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     try {
       final doc = sf.PdfDocument(inputBytes: src);
       final matches = sf.PdfTextExtractor(doc).findText([find]);
-      for (final m in matches) {
+      var applied = 0;
+      for (var i = 0; i < matches.length; i++) {
+        if (only != null && !only.contains(i)) continue;
+        final m = matches[i];
         final page = doc.pages[m.pageIndex];
         final b = m.bounds;
         page.graphics.drawRectangle(
@@ -151,25 +229,124 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             bounds: b,
           );
         }
+        applied++;
       }
       final out = Uint8List.fromList(await doc.save());
       doc.dispose();
-      _originalPdf = out;
-      final rebuilt = <_Page>[];
-      await for (final pg in Printing.raster(out, dpi: 150)) {
-        final aspect = pg.height == 0 ? 0.7071 : pg.width / pg.height;
-        rebuilt.add(_Page(_seq++, await pg.toPng(), aspect));
-      }
+      await _applyEditedPdf(out);
       if (mounted) {
-        setState(() => _pages
-          ..clear()
-          ..addAll(rebuilt));
-        showInfo(
-            context,
-            matches.isEmpty
-                ? 'No matches found'
-                : 'Replaced ${matches.length} occurrence(s)');
+        showInfo(context,
+            applied == 0 ? 'No matches found' : 'Replaced $applied occurrence(s)');
       }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
+      }
+    }
+  }
+
+  Future<void> _extractText() async {
+    final src = _originalPdf;
+    if (src == null) return;
+    setState(() {
+      _busy = true;
+      _status = 'Extracting…';
+    });
+    var text = '';
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      text = sf.PdfTextExtractor(doc).extractText();
+      doc.dispose();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
+      }
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Document text'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: SelectableText(
+                text.trim().isEmpty ? '(No extractable text)' : text),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: text));
+              Navigator.pop(ctx);
+              showInfo(context, 'Copied');
+            },
+            child: const Text('Copy'),
+          ),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _fillForm() async {
+    final src = _originalPdf;
+    if (src == null) return;
+    final fields = <_FormField>[];
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      final form = doc.form;
+      for (var i = 0; i < form.fields.count; i++) {
+        final f = form.fields[i];
+        if (f is sf.PdfTextBoxField) {
+          fields.add(_FormField(i, f.name ?? 'Field ${i + 1}', false, f.text, false));
+        } else if (f is sf.PdfCheckBoxField) {
+          fields.add(_FormField(i, f.name ?? 'Field ${i + 1}', true, '', f.isChecked));
+        }
+      }
+      doc.dispose();
+    } catch (e) {
+      if (mounted) showError(context, e);
+      return;
+    }
+    if (!mounted) return;
+    if (fields.isEmpty) {
+      showInfo(context, 'This PDF has no fillable fields');
+      return;
+    }
+    final result = await Navigator.of(context).push<List<_FormField>>(
+        MaterialPageRoute(builder: (_) => _FormFillScreen(fields: fields)));
+    if (result == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _status = 'Saving form…';
+    });
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      final form = doc.form;
+      for (final ff in result) {
+        final field = form.fields[ff.index];
+        if (field is sf.PdfTextBoxField) {
+          field.text = ff.value;
+        } else if (field is sf.PdfCheckBoxField) {
+          field.isChecked = ff.checked;
+        }
+      }
+      final out = Uint8List.fromList(await doc.save());
+      doc.dispose();
+      await _applyEditedPdf(out);
+      if (mounted) showInfo(context, 'Form updated');
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -242,10 +419,20 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         title: const Text('PDF editor'),
         actions: [
           if (_originalPdf != null)
-            TextButton.icon(
-              onPressed: _busy ? null : _promptFindReplace,
-              icon: const Icon(Icons.edit_note, size: 20),
-              label: const Text('Edit text'),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.edit_note),
+              tooltip: 'Edit document',
+              enabled: !_busy,
+              onSelected: (v) {
+                if (v == 'find') _promptFindReplace();
+                if (v == 'form') _fillForm();
+                if (v == 'text') _extractText();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'find', child: Text('Find & replace text')),
+                PopupMenuItem(value: 'form', child: Text('Fill form fields')),
+                PopupMenuItem(value: 'text', child: Text('Extract text')),
+              ],
             ),
           IconButton(
             tooltip: 'Add image page',
@@ -498,6 +685,179 @@ class _AnnotateScreenState extends State<_AnnotateScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A found text match: page index, relative bounds (fraction of page), aspect.
+class _Match {
+  _Match(this.pageIndex, this.rel, this.aspect);
+  final int pageIndex;
+  final Rect rel;
+  final double aspect;
+}
+
+/// Lets the user choose which matches to replace, with each highlighted on a
+/// thumbnail of its page. Returns the set of selected match indices.
+class _ReviewScreen extends StatefulWidget {
+  const _ReviewScreen({required this.matches, required this.pageImage});
+  final List<_Match> matches;
+  final Uint8List Function(int pageIndex) pageImage;
+
+  @override
+  State<_ReviewScreen> createState() => _ReviewScreenState();
+}
+
+class _ReviewScreenState extends State<_ReviewScreen> {
+  late final Set<int> _selected = {
+    for (var i = 0; i < widget.matches.length; i++) i
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: Text('${_selected.length} of ${widget.matches.length}'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, _selected),
+              child: const Text('Replace')),
+        ],
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+        itemCount: widget.matches.length,
+        itemBuilder: (_, i) {
+          final m = widget.matches[i];
+          final on = _selected.contains(i);
+          return Card(
+            color: scheme.surfaceContainerHighest,
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            child: Column(
+              children: [
+                CheckboxListTile(
+                  value: on,
+                  title: Text('Page ${m.pageIndex + 1}'),
+                  onChanged: (v) => setState(
+                      () => v == true ? _selected.add(i) : _selected.remove(i)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: SizedBox(
+                    height: 180,
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: m.aspect <= 0 ? 0.7071 : m.aspect,
+                        child: LayoutBuilder(
+                          builder: (context, c) => Stack(children: [
+                            Positioned.fill(
+                              child: Container(
+                                color: Colors.white,
+                                child: Image.memory(widget.pageImage(m.pageIndex),
+                                    fit: BoxFit.fill),
+                              ),
+                            ),
+                            Positioned(
+                              left: m.rel.left * c.maxWidth,
+                              top: m.rel.top * c.maxHeight,
+                              width: m.rel.width * c.maxWidth,
+                              height: m.rel.height * c.maxHeight,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.yellow.withValues(alpha: 0.4),
+                                  border: Border.all(
+                                      color: Colors.orange, width: 1.5),
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// One editable form field captured from the PDF's AcroForm.
+class _FormField {
+  _FormField(this.index, this.name, this.isCheck, this.value, this.checked);
+  final int index;
+  final String name;
+  final bool isCheck;
+  String value;
+  bool checked;
+}
+
+/// Edits the PDF's fillable form fields; returns the updated list on save.
+class _FormFillScreen extends StatefulWidget {
+  const _FormFillScreen({required this.fields});
+  final List<_FormField> fields;
+
+  @override
+  State<_FormFillScreen> createState() => _FormFillScreenState();
+}
+
+class _FormFillScreenState extends State<_FormFillScreen> {
+  late final List<TextEditingController> _controllers = [
+    for (final f in widget.fields) TextEditingController(text: f.value)
+  ];
+
+  @override
+  void dispose() {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: const Text('Fill form'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              for (var i = 0; i < widget.fields.length; i++) {
+                widget.fields[i].value = _controllers[i].text;
+              }
+              Navigator.pop(context, widget.fields);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        itemCount: widget.fields.length,
+        itemBuilder: (_, i) {
+          final f = widget.fields[i];
+          if (f.isCheck) {
+            return SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(f.name),
+              value: f.checked,
+              onChanged: (v) => setState(() => f.checked = v),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: TextField(
+              controller: _controllers[i],
+              decoration: InputDecoration(
+                  labelText: f.name, border: const OutlineInputBorder()),
+            ),
+          );
+        },
       ),
     );
   }
