@@ -10,6 +10,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../okayspace_api.dart';
+import '../core/device_location.dart';
+import '../core/foursquare_api.dart';
 import '../core/mapbox_api.dart';
 import 'call_screen.dart';
 import '../core/update_checker.dart';
@@ -2783,19 +2785,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Picks a point on a map and sends it as a location message.
   Future<void> _attachLocation() async {
-    final picked = await Navigator.of(context).push<LatLng>(
+    final picked = await Navigator.of(context).push<(LatLng, String)>(
       MaterialPageRoute(builder: (_) => const _LocationPickerScreen()),
     );
     if (picked == null || !mounted) return;
+    final (point, name) = picked;
     setState(() => _sending = true);
     try {
       await api.messaging.send(
         _convId,
         MessageCreate(
           type: 'place',
-          placeName: 'Shared location',
-          placeLatitude: picked.latitude,
-          placeLongitude: picked.longitude,
+          placeName: name,
+          placeLatitude: point.latitude,
+          placeLongitude: point.longitude,
         ),
       );
       await _fetch(silent: true);
@@ -3215,230 +3218,259 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Conversation overflow menu: disappearing messages, leave, delete.
+  /// Conversation options — a full page (not a sheet) since the list is long.
+  /// Actions close the page first, then run; the in-place toggles stay put.
   void _conversationMenu() {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.star_outline),
-              title: const Text('Starred messages'),
-              onTap: () {
-                Navigator.pop(context);
-                _showStarred();
-              },
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => Scaffold(
+        appBar: const OkayAppBar(title: Text('Chat options')),
+        body: SafeArea(
+          child: StatefulBuilder(
+            builder: (menuCtx, setLocal) => ListView(
+              children: [
+                _optionsHeader('Find'),
+                ListTile(
+                  leading: const Icon(Icons.star_outline),
+                  title: const Text('Starred messages'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _showStarred();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.schedule_send_outlined),
+                  title: const Text('Scheduled messages'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _showScheduled();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.event_outlined),
+                  title: const Text('Jump to date'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _jumpToDate();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.vertical_align_top),
+                  title: const Text('Jump to oldest'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    if (_scroll.hasClients) {
+                      _scroll.animateTo(_scroll.position.maxScrollExtent,
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeOut);
+                    }
+                  },
+                ),
+                if (widget.conversation.isGroup)
+                  ListTile(
+                    leading: const Icon(Icons.alternate_email),
+                    title: const Text('Jump to mentions'),
+                    onTap: () {
+                      Navigator.pop(menuCtx);
+                      _jumpToMentions();
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Shared media'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _sharedMedia();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('Chat info'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _chatInfo();
+                  },
+                ),
+                const Divider(height: 8),
+                _optionsHeader('Notifications & privacy'),
+                ListTile(
+                  leading: Icon(_muted
+                      ? Icons.notifications_off
+                      : Icons.notifications_none),
+                  title: Text(
+                      _muted ? 'Unmute notifications' : 'Mute notifications'),
+                  onTap: () {
+                    _toggleMute();
+                    setLocal(() {});
+                  },
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.done_all),
+                  title: const Text('Read receipts'),
+                  subtitle: const Text('Let others see when you’ve read'),
+                  value: _receiptsEnabled,
+                  onChanged: (v) {
+                    _toggleReadReceipts(v);
+                    setLocal(() {});
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.timer_outlined),
+                  title: const Text('Disappearing messages'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _disappearing();
+                  },
+                ),
+                const Divider(height: 8),
+                _optionsHeader('Appearance'),
+                ListTile(
+                  leading: const Icon(Icons.wallpaper_outlined),
+                  title: const Text('Chat wallpaper'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _chooseWallpaper();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.bubble_chart_outlined),
+                  title: const Text('Bubble colour'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _chooseBubbleColor();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.format_size),
+                  title: const Text('Text size'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _chooseTextSize();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('Chat theme'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _chooseChatTheme();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.tune),
+                  title: const Text('Appearance'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _appearanceSheet();
+                  },
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.schedule_outlined),
+                  title: const Text('Show timestamps'),
+                  value: _showTimestamps,
+                  onChanged: (_) {
+                    _toggleTimestamps();
+                    setLocal(() {});
+                  },
+                ),
+                const Divider(height: 8),
+                _optionsHeader('Composing'),
+                SwitchListTile(
+                  secondary: const Icon(Icons.keyboard_return),
+                  title: const Text('Send on Enter'),
+                  value: _sendOnEnter,
+                  onChanged: (_) {
+                    _toggleSendOnEnter();
+                    setLocal(() {});
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.quickreply_outlined),
+                  title: const Text('Quick replies'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _manageQuickReplies();
+                  },
+                ),
+                const Divider(height: 8),
+                _optionsHeader('More'),
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome),
+                  title: const Text('Summarize chat (AI)'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _summarizeChat();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.ios_share),
+                  title: const Text('Export conversation'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _exportChat();
+                  },
+                ),
+                if (widget.conversation.isGroup)
+                  ListTile(
+                    leading: const Icon(Icons.drive_file_rename_outline),
+                    title: const Text('Rename group'),
+                    onTap: () async {
+                      Navigator.pop(menuCtx);
+                      final name = await promptText(context,
+                          title: 'Group name',
+                          action: 'Save',
+                          initial: _chatTitle);
+                      if (name == null) return;
+                      await _run(
+                          () =>
+                              api.messaging.updateGroup(_convId, {'name': name}),
+                          'Renamed');
+                      if (mounted) setState(() => _chatTitle = name);
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Leave conversation'),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _run(() => api.messaging.leave(_convId),
+                        'Left conversation').then((_) {
+                      if (mounted) Navigator.pop(context);
+                    });
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.delete_outline,
+                      color: Theme.of(context).colorScheme.error),
+                  title: Text('Delete conversation',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    _run(() => api.messaging.delete(_convId), 'Deleted')
+                        .then((_) {
+                      if (mounted) Navigator.pop(context);
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.schedule_send_outlined),
-              title: const Text('Scheduled messages'),
-              onTap: () {
-                Navigator.pop(context);
-                _showScheduled();
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                  _muted ? Icons.notifications_off : Icons.notifications_none),
-              title: Text(_muted ? 'Unmute notifications' : 'Mute notifications'),
-              onTap: () {
-                Navigator.pop(context);
-                _toggleMute();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.event_outlined),
-              title: const Text('Jump to date'),
-              onTap: () {
-                Navigator.pop(context);
-                _jumpToDate();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.vertical_align_top),
-              title: const Text('Jump to oldest'),
-              onTap: () {
-                Navigator.pop(context);
-                if (_scroll.hasClients) {
-                  _scroll.animateTo(_scroll.position.maxScrollExtent,
-                      duration: const Duration(milliseconds: 400),
-                      curve: Curves.easeOut);
-                }
-              },
-            ),
-            if (widget.conversation.isGroup)
-              ListTile(
-                leading: const Icon(Icons.alternate_email),
-                title: const Text('Jump to mentions'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _jumpToMentions();
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Shared media'),
-              onTap: () {
-                Navigator.pop(context);
-                _sharedMedia();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Chat info'),
-              onTap: () {
-                Navigator.pop(context);
-                _chatInfo();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.wallpaper_outlined),
-              title: const Text('Chat wallpaper'),
-              onTap: () {
-                Navigator.pop(context);
-                _chooseWallpaper();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.bubble_chart_outlined),
-              title: const Text('Bubble colour'),
-              onTap: () {
-                Navigator.pop(context);
-                _chooseBubbleColor();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.format_size),
-              title: const Text('Text size'),
-              onTap: () {
-                Navigator.pop(context);
-                _chooseTextSize();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.palette_outlined),
-              title: const Text('Chat theme'),
-              onTap: () {
-                Navigator.pop(context);
-                _chooseChatTheme();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.tune),
-              title: const Text('Appearance'),
-              onTap: () {
-                Navigator.pop(context);
-                _appearanceSheet();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome),
-              title: const Text('Summarize chat (AI)'),
-              onTap: () {
-                Navigator.pop(context);
-                _summarizeChat();
-              },
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.done_all),
-              title: const Text('Read receipts'),
-              subtitle: const Text('Let others see when you’ve read'),
-              value: _receiptsEnabled,
-              onChanged: (v) {
-                Navigator.pop(context);
-                _toggleReadReceipts(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.schedule_outlined),
-              title: const Text('Show timestamps'),
-              value: _showTimestamps,
-              onChanged: (_) {
-                Navigator.pop(context);
-                _toggleTimestamps();
-              },
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.keyboard_return),
-              title: const Text('Send on Enter'),
-              value: _sendOnEnter,
-              onChanged: (_) {
-                Navigator.pop(context);
-                _toggleSendOnEnter();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.quickreply_outlined),
-              title: const Text('Quick replies'),
-              onTap: () {
-                Navigator.pop(context);
-                _manageQuickReplies();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.ios_share),
-              title: const Text('Export conversation'),
-              onTap: () {
-                Navigator.pop(context);
-                _exportChat();
-              },
-            ),
-            if (widget.conversation.isGroup)
-              ListTile(
-                leading: const Icon(Icons.drive_file_rename_outline),
-                title: const Text('Rename group'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final name = await promptText(context,
-                      title: 'Group name',
-                      action: 'Save',
-                      initial: _chatTitle);
-                  if (name == null) return;
-                  await _run(
-                      () => api.messaging.updateGroup(_convId, {'name': name}),
-                      'Renamed');
-                  if (mounted) setState(() => _chatTitle = name);
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.timer_outlined),
-              title: const Text('Disappearing messages'),
-              onTap: () {
-                Navigator.pop(context);
-                _disappearing();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Leave conversation'),
-              onTap: () {
-                Navigator.pop(context);
-                _run(() => api.messaging.leave(_convId), 'Left conversation')
-                    .then((_) {
-                  if (mounted) Navigator.pop(context);
-                });
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error),
-              title: Text('Delete conversation',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              onTap: () {
-                Navigator.pop(context);
-                _run(() => api.messaging.delete(_convId), 'Deleted')
-                    .then((_) {
-                  if (mounted) Navigator.pop(context);
-                });
-              },
-            ),
-          ],
+          ),
         ),
       ),
-    );
+    ));
   }
+
+  /// Small section heading inside the chat-options page.
+  Widget _optionsHeader(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+        child: Text(text.toUpperCase(),
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: Theme.of(context).colorScheme.primary)),
+      );
 
   Future<void> _disappearing() async {
     final seconds = await showModalBottomSheet<int>(
@@ -5035,6 +5067,9 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
 }
 
 /// Full-screen map to drop a pin and return the chosen [LatLng].
+/// WhatsApp-style location picker: a map on top, then "Send your current
+/// location" with its accuracy, a place search, and a list of nearby places to
+/// tap. Pops `(LatLng, name)` for the chosen spot.
 class _LocationPickerScreen extends StatefulWidget {
   const _LocationPickerScreen();
 
@@ -5043,53 +5078,256 @@ class _LocationPickerScreen extends StatefulWidget {
 }
 
 class _LocationPickerScreenState extends State<_LocationPickerScreen> {
-  LatLng _point = const LatLng(43.6532, -79.3832); // Toronto default
+  static const _fallback = LatLng(43.6532, -79.3832); // Toronto, if GPS denied
+  final _mapController = MapController();
+  final _searchCtrl = TextEditingController();
+
+  LatLng? _me; // current GPS fix, when available
+  double _accuracyM = 0;
+  LatLng _pin = _fallback; // the point the map is centred on / would send
+  bool _pinMoved = false; // user tapped the map to choose a custom point
+  bool _locating = true;
+
+  List<Map<String, dynamic>> _nearby = const [];
+  List<Map<String, dynamic>> _results = const [];
+  bool _searching = false;
+  Timer? _searchDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _locate();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _locate() async {
+    final fix = await currentFix();
+    if (!mounted) return;
+    setState(() {
+      if (fix != null) {
+        _me = fix.point;
+        _accuracyM = fix.accuracyM;
+        _pin = fix.point;
+      }
+      _locating = false;
+    });
+    if (fix != null) {
+      _mapController.move(fix.point, 16);
+      _loadNearby(fix.point);
+    }
+  }
+
+  Future<void> _loadNearby(LatLng around) async {
+    final places = await foursquareNearby(around);
+    if (mounted) setState(() => _nearby = places);
+  }
+
+  void _recenter() {
+    final me = _me;
+    if (me == null) return;
+    _mapController.move(me, 16);
+    setState(() {
+      _pin = me;
+      _pinMoved = false;
+    });
+  }
+
+  void _onMapTap(LatLng p) => setState(() {
+        _pin = p;
+        _pinMoved = true;
+      });
+
+  void _onSearchChanged(String q) {
+    _searchDebounce?.cancel();
+    final query = q.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _results = const [];
+        _searching = false;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
+      final found = await geocodePlaces(query, near: _me ?? _pin);
+      if (mounted && _searchCtrl.text.trim() == query) {
+        setState(() {
+          _results = found;
+          _searching = false;
+        });
+      }
+    });
+  }
+
+  void _send(LatLng point, String name) =>
+      Navigator.pop(context, (point, name));
+
+  Widget _placeTile(Map<String, dynamic> p) {
+    final lat = (p['lat'] as num?)?.toDouble();
+    final lng = (p['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return const SizedBox.shrink();
+    final name = '${p['name'] ?? 'Place'}';
+    final addr = '${p['full_address'] ?? ''}';
+    return ListTile(
+      leading: const Icon(Icons.place_outlined),
+      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: addr.isEmpty
+          ? null
+          : Text(addr, maxLines: 1, overflow: TextOverflow.ellipsis),
+      onTap: () => _send(LatLng(lat, lng), name),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final showingResults = _searchCtrl.text.trim().isNotEmpty;
     return Scaffold(
-      appBar: OkayAppBar(
-        title: const Text('Pick a location'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, _point),
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-      body: Stack(
+      appBar: const OkayAppBar(title: Text('Send location')),
+      body: Column(
         children: [
-          FlutterMap(
-            options: MapOptions(
-              initialCenter: _point,
-              initialZoom: 12,
-              onTap: (_, p) => setState(() => _point = p),
+          // Map with the current/selected point and a recenter button.
+          Expanded(
+            flex: 5,
+            child: Stack(
+              children: [
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: _pin,
+                    initialZoom: 12,
+                    onTap: (_, p) => _onMapTap(p),
+                  ),
+                  children: [
+                    mapboxTileLayer(),
+                    MarkerLayer(markers: [
+                      Marker(
+                        point: _pin,
+                        width: 44,
+                        height: 44,
+                        child: Icon(Icons.location_pin,
+                            color: scheme.error, size: 40),
+                      ),
+                    ]),
+                  ],
+                ),
+                if (_locating)
+                  const Positioned(
+                    top: 12,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Card(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          child: Text('Finding your location…'),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_me != null)
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: FloatingActionButton.small(
+                      heroTag: 'loc_recenter',
+                      onPressed: _recenter,
+                      child: const Icon(Icons.my_location),
+                    ),
+                  ),
+              ],
             ),
-            children: [
-              mapboxTileLayer(),
-              MarkerLayer(markers: [
-                Marker(
-                  point: _point,
-                  width: 44,
-                  height: 44,
-                  child: const Icon(Icons.location_pin,
-                      color: Colors.red, size: 40),
-                ),
-              ]),
-            ],
           ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 20,
-            child: Center(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 8),
-                  child: Text('Tap the map to drop a pin',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ),
+          // The action list.
+          Expanded(
+            flex: 6,
+            child: Material(
+              color: scheme.surface,
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  if (_me != null)
+                    ListTile(
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFF22C55E),
+                        child: Icon(Icons.near_me, color: Colors.white),
+                      ),
+                      title: const Text('Send your current location'),
+                      subtitle: Text(_accuracyM > 0
+                          ? 'Accurate to ~${_accuracyM.round()} m'
+                          : 'Using your device location'),
+                      onTap: () => _send(_me!, 'Current location'),
+                    ),
+                  if (_pinMoved)
+                    ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: scheme.error,
+                        child:
+                            const Icon(Icons.location_pin, color: Colors.white),
+                      ),
+                      title: const Text('Send this pinned location'),
+                      subtitle: const Text('The point marked on the map'),
+                      onTap: () => _send(_pin, 'Pinned location'),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      onChanged: _onSearchChanged,
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        hintText: 'Search a place or address',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: showingResults
+                            ? IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  _onSearchChanged('');
+                                },
+                              )
+                            : null,
+                        isDense: true,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  if (_searching)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (showingResults) ...[
+                    if (_results.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: Text('No places found.')),
+                      )
+                    else
+                      for (final p in _results) _placeTile(p),
+                  ] else ...[
+                    if (_nearby.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                        child: Text('NEARBY PLACES',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: scheme.outline)),
+                      ),
+                      for (final p in _nearby) _placeTile(p),
+                    ],
+                  ],
+                ],
               ),
             ),
           ),

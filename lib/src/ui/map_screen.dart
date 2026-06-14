@@ -60,7 +60,7 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   // Default view (Toronto) until the user searches or pans.
   static const _fallback = LatLng(43.6532, -79.3832);
 
@@ -127,31 +127,84 @@ class _MapScreenState extends State<MapScreen> {
     _gpsSpeedKmh = fix.speedKmh;
   }
 
-  // Follow-me: a live GPS stream keeps the location dot (and camera) moving.
-  StreamSubscription<GeoFix>? _followSub;
-  bool get _following => _followSub != null;
+  // Always-on live location: a GPS stream keeps the blue dot tracking the
+  // user from the moment the map opens (no follow "mode" to enable). The dot
+  // glides between fixes so it never snaps.
+  StreamSubscription<GeoFix>? _locSub;
+  AnimationController? _dotAnim; // glides the dot between GPS fixes
+  AnimationController? _camAnim; // eased camera recenter
 
-  void _toggleFollow() async {
-    if (_following) {
-      await _followSub?.cancel();
-      if (!mounted) return;
-      setState(() => _followSub = null);
-      showInfo(context, 'Stopped following your location');
+  /// Smoothly glides the live dot from where it is to [dest], so a new GPS
+  /// fix doesn't jump. One reusable controller: a fresh fix restarts the
+  /// glide from the current interpolated point.
+  void _glideDotTo(LatLng dest) {
+    final from = _myLocation ?? dest;
+    if (from.latitude == dest.latitude && from.longitude == dest.longitude) {
+      setState(() => _myLocation = dest);
       return;
     }
-    // Prime permissions + first fix via the one-shot path.
-    await _locateMe();
-    if (!mounted || _myLocation == null) return;
-    _followSub = fixStream().listen((fix) {
-      if (!mounted) return;
-      setState(() {
-        _applyFix(fix);
-        _center = fix.point;
-      });
-      _controller.move(fix.point, _controller.camera.zoom);
+    _dotAnim?.dispose();
+    final ctl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
+    _dotAnim = ctl;
+    final curve = CurvedAnimation(parent: ctl, curve: Curves.easeOut);
+    final latT = Tween<double>(begin: from.latitude, end: dest.latitude);
+    final lngT = Tween<double>(begin: from.longitude, end: dest.longitude);
+    ctl.addListener(() {
+      final t = curve.value;
+      setState(
+          () => _myLocation = LatLng(latT.transform(t), lngT.transform(t)));
     });
-    setState(() {});
-    showInfo(context, 'Following your location — long-press to stop');
+    ctl.addStatusListener((s) {
+      if (s == AnimationStatus.completed) {
+        ctl.dispose();
+        if (identical(_dotAnim, ctl)) _dotAnim = null;
+      }
+    });
+    ctl.forward();
+  }
+
+  /// Eased camera move to [dest] at [zoom] — used by the locate button so the
+  /// recenter glides instead of teleporting.
+  void _animateCamera(LatLng dest, double zoom) {
+    if (!_mapReady) {
+      _controller.move(dest, zoom);
+      return;
+    }
+    final cam = _controller.camera;
+    _camAnim?.dispose();
+    final ctl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _camAnim = ctl;
+    final curve = CurvedAnimation(parent: ctl, curve: Curves.easeInOut);
+    final latT = Tween<double>(begin: cam.center.latitude, end: dest.latitude);
+    final lngT =
+        Tween<double>(begin: cam.center.longitude, end: dest.longitude);
+    final zT = Tween<double>(begin: cam.zoom, end: zoom);
+    ctl.addListener(() {
+      final t = curve.value;
+      _controller.move(
+          LatLng(latT.transform(t), lngT.transform(t)), zT.transform(t));
+    });
+    ctl.addStatusListener((s) {
+      if (s == AnimationStatus.completed) {
+        ctl.dispose();
+        if (identical(_camAnim, ctl)) _camAnim = null;
+      }
+    });
+    ctl.forward();
+  }
+
+  /// Recenters the camera on the live dot (the locate button). Smoothly zooms
+  /// in if we're currently far out.
+  void _recenterOnMe() {
+    final me = _myLocation;
+    if (me == null) {
+      _startLiveLocation();
+      return;
+    }
+    final z = _mapReady ? _controller.camera.zoom : 11.0;
+    _animateCamera(me, z < 14 ? 16 : z);
   }
 
   // Multi-stop route (waypoints) + straight-line directions target.
@@ -207,11 +260,15 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
     _loadPrefs();
     _loadAll();
+    // Live location is always on — start tracking the moment the map opens.
+    _startLiveLocation();
   }
 
   @override
   void dispose() {
-    _followSub?.cancel();
+    _locSub?.cancel();
+    _dotAnim?.dispose();
+    _camAnim?.dispose();
     _etaSub?.cancel();
     _chromeTimer?.cancel();
     // Don't leave the bars hidden if we leave mid-pan.
@@ -449,23 +506,34 @@ class _MapScreenState extends State<MapScreen> {
     _loadAll();
   }
 
-  /// Centers the map on the device's GPS position and sets the location dot.
-  Future<void> _locateMe() async {
-    setState(() => _locating = true);
+  /// Acquires the device location and keeps the blue dot live from then on.
+  /// Safe to call repeatedly: it re-primes a fix and recenters, but only ever
+  /// opens one position stream. Called once on open and by the locate button
+  /// (and directions) when no fix exists yet.
+  Future<void> _startLiveLocation() async {
+    if (_locSub == null) setState(() => _locating = true);
     final fix = await currentFix();
     if (!mounted) return;
-    setState(() => _locating = false);
-    if (fix == null) {
-      showInfo(context,
-          'Location unavailable — allow location access and try again.');
-      return;
-    }
+    if (_locating) setState(() => _locating = false);
+    if (fix == null) return; // permission/services off — dot just stays hidden
     setState(() {
       _applyFix(fix);
       _center = fix.point;
     });
-    _controller.move(fix.point, 15);
+    if (_mapReady) {
+      final z = _controller.camera.zoom;
+      _animateCamera(fix.point, z < 13 ? 15 : z);
+    }
     _loadAll();
+    if (_locSub != null) return; // stream already live — don't double-subscribe
+    _locSub = fixStream().listen((f) {
+      if (!mounted) return;
+      _gpsAccuracyM = f.accuracyM;
+      _gpsHeading = f.heading;
+      _gpsSpeedKmh = f.speedKmh;
+      _center = f.point;
+      _glideDotTo(f.point); // glide, don't snap
+    });
   }
 
   /// Fetches a Mapbox driving-traffic route through [points] and draws it
@@ -499,7 +567,7 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
     if (_myLocation == null) {
-      await _locateMe();
+      await _startLiveLocation();
       if (_myLocation == null) {
         if (mounted) {
           showInfo(context,
@@ -2536,31 +2604,24 @@ class _MapScreenState extends State<MapScreen> {
                       : () => setState(_areaPoints.clear)),
             ),
 
-          // GPS locate-me button.
+          // GPS recenter button — the live dot is always tracking; this just
+          // re-centers the camera on it.
           Positioned(
             right: 12,
             bottom: widget.embedded ? 160 : 170,
-            child: GestureDetector(
-              // Long-press toggles follow-me (live tracking).
-              onLongPress: _toggleFollow,
-              child: FloatingActionButton.small(
-                heroTag: 'locate-me',
-                backgroundColor: _following ? const Color(0xFF2563EB) : null,
-                foregroundColor: _following ? Colors.white : null,
-                onPressed: _locating ? null : _locateMe,
-                child: _locating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : Icon(_following
-                        ? Icons.navigation
-                        : Icons.my_location),
-              ),
+            child: FloatingActionButton.small(
+              heroTag: 'locate-me',
+              onPressed: _locating ? null : _recenterOnMe,
+              child: _locating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.my_location),
             ),
           ),
-          // Live speed chip while following (Apple Maps drive style).
-          if (_following && _gpsSpeedKmh > 1)
+          // Live speed chip while moving (Apple Maps drive style).
+          if (_gpsSpeedKmh > 1)
             Positioned(
               left: 12,
               top: 100,
