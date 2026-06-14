@@ -220,6 +220,7 @@ class Post {
     this.reactionsTotal = 0,
     this.myReaction,
     this.repliesCount = 0,
+    this.threadCount = 0,
     this.repostsCount = 0,
     this.quotesCount = 0,
     this.bookmarksCount = 0,
@@ -266,6 +267,10 @@ class Post {
   final int reactionsTotal;
   final String? myReaction;
   final int repliesCount;
+
+  /// Self-replies the author posted under this one — when > 0 the post is the
+  /// head of a thread the author continued.
+  final int threadCount;
   final int repostsCount;
   final int quotesCount;
   final int bookmarksCount;
@@ -296,6 +301,7 @@ class Post {
   bool get isRepost => repostOf != null;
   bool get isQuote => quoteOf != null;
   bool get isReply => parentId != null;
+  bool get isThread => threadCount > 0;
 
   factory Post.fromJson(Map<String, dynamic> json) {
     final reposted = asMapOrNull(json['reposted_post']);
@@ -323,6 +329,7 @@ class Post {
       reactionsTotal: asInt(json['reactions_total']),
       myReaction: asStringOrNull(json['my_reaction']),
       repliesCount: asInt(json['replies_count']),
+      threadCount: asInt(json['thread_count']),
       repostsCount: asInt(json['reposts_count']),
       quotesCount: asInt(json['quotes_count']),
       bookmarksCount: asInt(json['bookmarks_count']),
