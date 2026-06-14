@@ -60,7 +60,10 @@ class _ThreeGameViewState extends State<ThreeGameView> {
       _iframe = iframe;
       return iframe;
     });
-    _listener = ((web.Event e) => _onMessage(e)).toJS;
+    // Fire-and-forget: the JS callback must return void, not the Future.
+    _listener = ((web.Event e) {
+      _onMessage(e);
+    }).toJS;
     web.window.addEventListener('message', _listener);
   }
 
