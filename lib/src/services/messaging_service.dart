@@ -270,6 +270,22 @@ class MessagingService {
           asMapOrNull(await _client.getJson('/chat-games/$gameId/connect4')) ??
               const {});
 
+  // Dots and Boxes.
+  Future<DotsBoxesView> dotsboxesMove(
+          String gameId, String kind, int idx) async =>
+      DotsBoxesView.fromJson(asMapOrNull(await _client.postJson(
+              '/chat-games/$gameId/dotsboxes/move',
+              body: {'kind': kind, 'idx': idx})) ??
+          const {});
+  Future<DotsBoxesView> dotsboxesCpuMove(String gameId) async =>
+      DotsBoxesView.fromJson(asMapOrNull(await _client
+              .postJson('/chat-games/$gameId/dotsboxes/cpu-move')) ??
+          const {});
+  Future<DotsBoxesView> dotsboxes(String gameId) async =>
+      DotsBoxesView.fromJson(
+          asMapOrNull(await _client.getJson('/chat-games/$gameId/dotsboxes')) ??
+              const {});
+
   // Poker.
   Future<PokerView> pokerDraw(String gameId, List<int> holds) async =>
       PokerView.fromJson(asMapOrNull(await _client
