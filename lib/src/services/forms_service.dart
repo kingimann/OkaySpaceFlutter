@@ -36,6 +36,8 @@ class FormsService {
     String? description,
     String? submitLabel,
     String? notifyEmail,
+    String? successMessage,
+    bool aiValidate = false,
     required List<Map<String, dynamic>> fields,
   }) async =>
       asMapOrNull(await _client.postJson('/forms', body: {
@@ -43,6 +45,8 @@ class FormsService {
         if (description != null) 'description': description,
         if (submitLabel != null) 'submit_label': submitLabel,
         if (notifyEmail != null) 'notify_email': notifyEmail,
+        if (successMessage != null) 'success_message': successMessage,
+        'ai_validate': aiValidate,
         'fields': fields,
       })) ??
       const {};
