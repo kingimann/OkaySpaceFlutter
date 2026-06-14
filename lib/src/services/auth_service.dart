@@ -69,6 +69,18 @@ class AuthService {
     return User.fromJson(asMapOrNull(data) ?? const {});
   }
 
+  /// Downloads a server-signed bundle of the user's own data (for backup).
+  Future<Map<String, dynamic>> exportData() async {
+    final data = await _client.getJson('/me/export');
+    return asMapOrNull(data) ?? const {};
+  }
+
+  /// Restores content from a previously-exported (signed) bundle.
+  Future<Map<String, dynamic>> importData(Map<String, dynamic> bundle) async {
+    final data = await _client.postJson('/me/import', body: bundle);
+    return asMapOrNull(data) ?? const {};
+  }
+
   /// Updates the current user's profile. Pass only the fields you want to
   /// change (see the `ProfilePatch` schema, e.g. `name`, `bio`, `picture`,
   /// `headline`, `location`, `accent_color`, `is_private`…).

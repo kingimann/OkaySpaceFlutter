@@ -10,6 +10,7 @@ import 'circles_screen.dart';
 import 'common.dart';
 import 'communities_screen.dart';
 import 'connections_screen.dart';
+import 'data_backup_screen.dart';
 import 'document_scanner_screen.dart';
 import 'forms_screen.dart';
 import 'friends_screen.dart';
@@ -101,6 +102,8 @@ class MoreScreen extends StatelessWidget {
               const Color(0xFFFBBF24), () => const LeaderboardScreen()),
           _Item('Circles', Icons.group_work_outlined, const Color(0xFF8B5CF6),
               () => const CirclesScreen()),
+          _Item('Backup & restore', Icons.cloud_download_outlined,
+              const Color(0xFF0EA5E9), () => const DataBackupScreen()),
         ]),
         _Section('Tools', [
           _Item('Roadside', Icons.car_crash_outlined, const Color(0xFFEF4444),
