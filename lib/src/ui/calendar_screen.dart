@@ -87,10 +87,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
           }
           final events = snap.data ?? const <CalendarEvent>[];
           if (events.isEmpty) {
-            return CenteredMessage(
-                message: 'No events yet.\nTap “New event” to add one.',
-                icon: Icons.event_outlined,
-                onRetry: _reload);
+            return RefreshIndicator(
+              onRefresh: _reload,
+              child: const CenteredMessage(
+                  message: 'No events yet.\nTap “New event” to add one.',
+                  icon: Icons.event_outlined),
+            );
           }
           final groups = _byDay(events);
           return RefreshIndicator(

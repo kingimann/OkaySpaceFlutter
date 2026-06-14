@@ -83,10 +83,12 @@ class _NotesScreenState extends State<NotesScreen> {
           }
           final notes = snap.data ?? const <Note>[];
           if (notes.isEmpty) {
-            return CenteredMessage(
-                message: 'No notes yet.\nTap “New note” to jot one down.',
-                icon: Icons.sticky_note_2_outlined,
-                onRetry: _reload);
+            return RefreshIndicator(
+              onRefresh: _reload,
+              child: const CenteredMessage(
+                  message: 'No notes yet.\nTap “New note” to jot one down.',
+                  icon: Icons.sticky_note_2_outlined),
+            );
           }
           return RefreshIndicator(
             onRefresh: _reload,
