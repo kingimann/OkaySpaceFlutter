@@ -8,7 +8,7 @@ import 'common.dart';
 /// belts, not the vault door.
 
 /// Per-transaction caps (advisory; the server owns the real limits).
-const kMaxTopUp = 1000;
+const kMaxTopUp = 50;
 const kMaxSend = 2000;
 const kMaxRequest = 2000;
 

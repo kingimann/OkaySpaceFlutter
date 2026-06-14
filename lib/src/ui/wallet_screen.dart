@@ -1946,7 +1946,32 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   final _amount = TextEditingController();
   bool _busy = false;
 
-  static const _presets = [10, 25, 50, 100, 250];
+  static const _presets = [5, 10, 25, 50];
+
+  // Mirrors the backend top-up fee (routes/money.py topup_fee): the user is
+  // charged amount + fee; only `amount` is credited. Kept in sync so the fee
+  // can be shown before paying; the backend remains the source of truth.
+  static const _feePct = 0.035, _feeFlat = 0.35;
+
+  double? _feeFor(num amount) {
+    final a = amount.toDouble();
+    if (a <= 0) return null;
+    final fee = (_feePct * a + _feeFlat) / (1 - _feePct);
+    return (fee * 100).ceilToDouble() / 100;
+  }
+
+  Widget _feeRow(String label, String value, {bool bold = false}) {
+    final style = TextStyle(
+        fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+        fontSize: bold ? 16 : 14);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [Text(label, style: style), Text(value, style: style)],
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -2195,10 +2220,11 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
               style: const TextStyle(
                   fontSize: 28, fontWeight: FontWeight.bold),
               decoration: const InputDecoration(
-                labelText: 'Amount',
+                labelText: 'Amount (max \$$kMaxTopUp)',
                 prefixIcon: Icon(Icons.attach_money),
                 border: OutlineInputBorder(),
               ),
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -2212,6 +2238,37 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   ),
               ],
             ),
+            const SizedBox(height: 12),
+            Builder(builder: (context) {
+              final amount = parseMoney(_amount.text);
+              final fee = amount == null ? null : _feeFor(amount);
+              if (amount == null || fee == null) {
+                return Text(
+                  'A small processing fee is added to cover card costs.',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 13),
+                );
+              }
+              final total = amount + fee;
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _feeRow('Added to wallet', '\$${amount.toStringAsFixed(2)}'),
+                    _feeRow('Processing fee', '\$${fee.toStringAsFixed(2)}'),
+                    const Divider(height: 16),
+                    _feeRow("You'll be charged", '\$${total.toStringAsFixed(2)}',
+                        bold: true),
+                  ],
+                ),
+              );
+            }),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _busy ? null : _topUp,
