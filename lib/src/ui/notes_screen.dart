@@ -59,9 +59,8 @@ class _NotesScreenState extends State<NotesScreen> {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Notes')),
       // Lifted so it clears the floating bottom nav on pushed screens.
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 72),
-        child: FloatingActionButton.extended(
+      floatingActionButton: liftedFab(
+        FloatingActionButton.extended(
           onPressed: () => _edit(),
           icon: const Icon(Icons.add),
           label: const Text('New note'),

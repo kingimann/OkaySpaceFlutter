@@ -48,9 +48,8 @@ class _CameraScreenState extends State<CameraScreen> {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Camera')),
       // Lifted so it clears the floating bottom nav on pushed screens.
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 72),
-        child: FloatingActionButton.extended(
+      floatingActionButton: liftedFab(
+        FloatingActionButton.extended(
           onPressed: _busy ? null : _capture,
           icon: const Icon(Icons.photo_camera),
           label: Text(_shots.isEmpty ? 'Take a photo' : 'Take another'),

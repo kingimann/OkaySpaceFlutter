@@ -65,6 +65,30 @@ final ValueNotifier<bool> navModalOpen = ValueNotifier<bool>(false);
 /// pushed feature screens without doubling up on the home tabs.
 final ValueNotifier<bool> navCanPop = ValueNotifier<bool>(false);
 
+/// Wraps a screen's floating action button so it lifts above the global
+/// floating bottom nav ONLY when that nav is actually visible (signed in, on a
+/// pushed screen, no modal/keyboard). On screens where the nav isn't shown the
+/// FAB keeps its normal bottom position instead of floating too high.
+Widget liftedFab(Widget fab) {
+  return ValueListenableBuilder<bool>(
+    valueListenable: appSignedIn,
+    builder: (context, signedIn, _) => ValueListenableBuilder<bool>(
+      valueListenable: navCanPop,
+      builder: (context, pushed, _) => ValueListenableBuilder<bool>(
+        valueListenable: navModalOpen,
+        builder: (context, modal, _) {
+          final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
+          final navShowing = signedIn && pushed && !modal && !keyboard;
+          return Padding(
+            padding: EdgeInsets.only(bottom: navShowing ? 72 : 0),
+            child: fab,
+          );
+        },
+      ),
+    ),
+  );
+}
+
 /// Target visibility of the bars. Scrolling down requests hide; scrolling up,
 /// reaching the top, or navigating requests show.
 final ValueNotifier<bool> barsVisible = ValueNotifier<bool>(true);
