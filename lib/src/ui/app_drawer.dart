@@ -17,6 +17,7 @@ import 'guides_screen.dart';
 import 'leaderboard_screen.dart';
 import 'map_screen.dart';
 import 'marketplace_screen.dart';
+import 'more_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
@@ -247,6 +248,12 @@ class _AppDrawerState extends State<AppDrawer> {
                   ),
 
                   const Divider(height: 24, indent: 20, endIndent: 20),
+                  _Shortcut(
+                    icon: Icons.apps_rounded,
+                    color: const Color(0xFF6366F1),
+                    label: 'More',
+                    onTap: () => _push(const MoreScreen()),
+                  ),
                   _Shortcut(
                     icon: Icons.settings_rounded,
                     color: const Color(0xFF8696A0),

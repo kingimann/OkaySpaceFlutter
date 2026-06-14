@@ -12,9 +12,11 @@ import 'services/friends_service.dart';
 import 'services/games_service.dart';
 import 'services/groups_service.dart';
 import 'services/guides_service.dart';
+import 'services/calendar_service.dart';
 import 'services/marketplace_service.dart';
 import 'services/messaging_service.dart';
 import 'services/monetize_service.dart';
+import 'services/notes_service.dart';
 import 'services/notifications_service.dart';
 import 'services/oauth_service.dart';
 import 'services/payments_service.dart';
@@ -76,6 +78,8 @@ class OkaySpaceApi {
     oauth = OAuthService(this.client);
     games = GamesService(this.client);
     monetize = MonetizeService(this.client);
+    notes = NotesService(this.client);
+    calendar = CalendarService(this.client);
   }
 
   /// Shared low-level client. Use it directly for endpoints not yet wrapped by
@@ -150,6 +154,12 @@ class OkaySpaceApi {
 
   /// `/pub` — publisher ad network (monetize): sites, earnings, embed.
   late final MonetizeService monetize;
+
+  /// `/notes` — personal private notes.
+  late final NotesService notes;
+
+  /// `/calendar` — personal calendar events.
+  late final CalendarService calendar;
 
   /// Whether a credential (session token or API key) is currently stored.
   Future<bool> get isAuthenticated => client.isAuthenticated;
