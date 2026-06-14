@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import 'admin_legal_screen.dart';
 import 'admin_money_screen.dart';
 import 'admin_staff_screen.dart';
 import 'admin_stripe_reconcile_screen.dart';
@@ -249,6 +250,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   'Render hosting',
                   'Deploy, restart, env vars',
                   const AdminRenderScreen()
+                ),
+                (
+                  Icons.gavel_outlined,
+                  'Legal documents',
+                  'Edit Terms of Service & Privacy Policy',
+                  const AdminLegalScreen()
                 ),
               ]),
             ],
