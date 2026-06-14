@@ -20,6 +20,7 @@ import 'map_screen.dart';
 import 'marketplace_screen.dart';
 import 'notes_screen.dart';
 import 'notifications_screen.dart';
+import 'pdf_editor_screen.dart';
 import 'reminders_screen.dart';
 import 'reels_screen.dart';
 import 'roadside_screen.dart';
@@ -60,6 +61,8 @@ class MoreScreen extends StatelessWidget {
               () => const CameraScreen()),
           _Item('Scan document', Icons.document_scanner_outlined,
               const Color(0xFF64748B), () => const DocumentScannerScreen()),
+          _Item('PDF editor', Icons.picture_as_pdf_outlined,
+              const Color(0xFFEF4444), () => const PdfEditorScreen()),
           _Item('Calculator', Icons.calculate_outlined,
               const Color(0xFF0EA5E9), () => const CalculatorScreen()),
           _Item('Converter', Icons.swap_horiz, const Color(0xFF14B8A6),
