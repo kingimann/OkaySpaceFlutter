@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 
 import 'common.dart';
 
@@ -37,6 +38,7 @@ class PdfEditorScreen extends StatefulWidget {
 
 class _PdfEditorScreenState extends State<PdfEditorScreen> {
   final List<_Page> _pages = [];
+  Uint8List? _originalPdf; // source bytes, for real text find/replace
   int _seq = 0;
   bool _busy = false;
   String _status = '';
@@ -47,6 +49,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     final bytes = res?.files.single.bytes;
     if (bytes == null) return;
     if (!mounted) return;
+    _originalPdf = bytes;
     setState(() {
       _busy = true;
       _status = 'Reading PDF…';
@@ -81,6 +84,102 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     final im = img.decodeImage(bytes);
     final aspect = (im == null || im.height == 0) ? 0.7071 : im.width / im.height;
     if (mounted) setState(() => _pages.add(_Page(_seq++, bytes, aspect)));
+  }
+
+  Future<void> _promptFindReplace() async {
+    final find = TextEditingController();
+    final repl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit text'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Find text in the document and replace it.',
+                style: TextStyle(fontSize: 13)),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+              controller: find,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Find')),
+          TextField(
+              controller: repl,
+              decoration: const InputDecoration(labelText: 'Replace with')),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Replace')),
+        ],
+      ),
+    );
+    final f = find.text;
+    final r = repl.text;
+    find.dispose();
+    repl.dispose();
+    if (ok == true && f.isNotEmpty) await _findReplace(f, r);
+  }
+
+  /// Real text edit: find occurrences in the source PDF, cover them and draw
+  /// the replacement, then re-render the pages from the edited document.
+  Future<void> _findReplace(String find, String replace) async {
+    final src = _originalPdf;
+    if (src == null) return;
+    setState(() {
+      _busy = true;
+      _status = 'Editing text…';
+    });
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      final matches = sf.PdfTextExtractor(doc).findText([find]);
+      for (final m in matches) {
+        final page = doc.pages[m.pageIndex];
+        final b = m.bounds;
+        page.graphics.drawRectangle(
+            brush: sf.PdfSolidBrush(sf.PdfColor(255, 255, 255)), bounds: b);
+        if (replace.isNotEmpty) {
+          page.graphics.drawString(
+            replace,
+            sf.PdfStandardFont(sf.PdfFontFamily.helvetica,
+                (b.height * 0.7).clamp(6.0, 72.0).toDouble()),
+            brush: sf.PdfSolidBrush(sf.PdfColor(0, 0, 0)),
+            bounds: b,
+          );
+        }
+      }
+      final out = Uint8List.fromList(await doc.save());
+      doc.dispose();
+      _originalPdf = out;
+      final rebuilt = <_Page>[];
+      await for (final pg in Printing.raster(out, dpi: 150)) {
+        final aspect = pg.height == 0 ? 0.7071 : pg.width / pg.height;
+        rebuilt.add(_Page(_seq++, await pg.toPng(), aspect));
+      }
+      if (mounted) {
+        setState(() => _pages
+          ..clear()
+          ..addAll(rebuilt));
+        showInfo(
+            context,
+            matches.isEmpty
+                ? 'No matches found'
+                : 'Replaced ${matches.length} occurrence(s)');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
+      }
+    }
   }
 
   static Uint8List _rotated(_Page p) {
@@ -142,6 +241,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       appBar: OkayAppBar(
         title: const Text('PDF editor'),
         actions: [
+          if (_originalPdf != null)
+            TextButton.icon(
+              onPressed: _busy ? null : _promptFindReplace,
+              icon: const Icon(Icons.edit_note, size: 20),
+              label: const Text('Edit text'),
+            ),
           IconButton(
             tooltip: 'Add image page',
             icon: const Icon(Icons.add_photo_alternate_outlined),
