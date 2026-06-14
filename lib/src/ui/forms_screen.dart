@@ -58,6 +58,104 @@ IconData _fieldIcon(String type) => _kFieldTypes
         orElse: () => ('', '', Icons.short_text))
     .$3;
 
+Map<String, dynamic> _tf(int i, String type, String label,
+        {bool required = false, List<String>? options}) =>
+    {
+      'id': 'f$i',
+      'type': type,
+      'label': label,
+      'required': required,
+      if (options != null) 'options': options,
+    };
+
+/// Pre-built starter forms (name, icon, form map ready for the builder).
+List<(String, IconData, Map<String, dynamic>)> _formTemplates() => [
+      ('Contact form', Icons.contact_mail_outlined, {
+        'title': 'Contact us',
+        'description': 'We\'ll get back to you soon.',
+        'fields': [
+          _tf(1, 'text', 'Name', required: true),
+          _tf(2, 'email', 'Email', required: true),
+          _tf(3, 'phone', 'Phone'),
+          _tf(4, 'textarea', 'Message', required: true),
+        ],
+      }),
+      ('Event RSVP', Icons.event_available_outlined, {
+        'title': 'RSVP',
+        'description': 'Please let us know if you can make it.',
+        'fields': [
+          _tf(1, 'text', 'Full name', required: true),
+          _tf(2, 'email', 'Email', required: true),
+          _tf(3, 'radio', 'Will you attend?',
+              required: true, options: ['Yes', 'No', 'Maybe']),
+          _tf(4, 'number', 'Number of guests'),
+          _tf(5, 'textarea', 'Dietary restrictions'),
+        ],
+      }),
+      ('Feedback survey', Icons.reviews_outlined, {
+        'title': 'Feedback',
+        'description': 'Help us improve.',
+        'fields': [
+          _tf(1, 'rating', 'Overall rating', required: true),
+          _tf(2, 'radio', 'Would you recommend us?',
+              options: ['Definitely', 'Maybe', 'No']),
+          _tf(3, 'textarea', 'What went well?'),
+          _tf(4, 'textarea', 'What could be better?'),
+          _tf(5, 'email', 'Email (optional)'),
+        ],
+      }),
+      ('Job application', Icons.work_outline, {
+        'title': 'Job application',
+        'fields': [
+          _tf(1, 'text', 'Full name', required: true),
+          _tf(2, 'email', 'Email', required: true),
+          _tf(3, 'phone', 'Phone', required: true),
+          _tf(4, 'url', 'LinkedIn / portfolio'),
+          _tf(5, 'select', 'Position',
+              required: true,
+              options: ['Engineering', 'Design', 'Sales', 'Support', 'Other']),
+          _tf(6, 'photo', 'Resume / CV', required: true),
+          _tf(7, 'textarea', 'Why do you want this role?'),
+        ],
+      }),
+      ('Order form', Icons.shopping_bag_outlined, {
+        'title': 'Place an order',
+        'fields': [
+          _tf(1, 'text', 'Name', required: true),
+          _tf(2, 'email', 'Email', required: true),
+          _tf(3, 'select', 'Size',
+              required: true, options: ['Small', 'Medium', 'Large']),
+          _tf(4, 'number', 'Quantity', required: true),
+          _tf(5, 'address', 'Shipping address', required: true),
+          _tf(6, 'textarea', 'Notes'),
+          _tf(7, 'consent', 'I agree to the terms', required: true),
+        ],
+      }),
+      ('Appointment booking', Icons.calendar_month_outlined, {
+        'title': 'Book an appointment',
+        'fields': [
+          _tf(1, 'text', 'Name', required: true),
+          _tf(2, 'phone', 'Phone', required: true),
+          _tf(3, 'email', 'Email'),
+          _tf(4, 'date', 'Preferred date', required: true),
+          _tf(5, 'time', 'Preferred time', required: true),
+          _tf(6, 'select', 'Service',
+              options: ['Consultation', 'Follow-up', 'Other']),
+          _tf(7, 'textarea', 'Anything we should know?'),
+        ],
+      }),
+      ('Newsletter signup', Icons.mark_email_read_outlined, {
+        'title': 'Join our newsletter',
+        'fields': [
+          _tf(1, 'text', 'First name'),
+          _tf(2, 'email', 'Email', required: true),
+          _tf(3, 'checkbox', 'Interests',
+              options: ['Product news', 'Tips', 'Events', 'Offers']),
+          _tf(4, 'consent', 'I agree to receive emails', required: true),
+        ],
+      }),
+    ];
+
 /// The user's custom forms: build, share and collect responses.
 class FormsScreen extends StatefulWidget {
   const FormsScreen({super.key});
@@ -81,8 +179,65 @@ class _FormsScreenState extends State<FormsScreen> {
   }
 
   Future<void> _create() async {
+    final choice = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.92,
+        builder: (ctx, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('Create a form',
+                  style:
+                      TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            Card(
+              child: ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.add)),
+                title: const Text('Blank form'),
+                subtitle: const Text('Start from scratch'),
+                onTap: () => Navigator.pop(ctx, <String, dynamic>{}),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(8, 14, 8, 6),
+              child: Text('TEMPLATES',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5)),
+            ),
+            for (final (name, icon, form) in _formTemplates())
+              Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                      backgroundColor: Theme.of(ctx)
+                          .colorScheme
+                          .primaryContainer,
+                      child: Icon(icon,
+                          color: Theme.of(ctx).colorScheme.onPrimaryContainer)),
+                  title: Text(name),
+                  subtitle: Text(
+                      '${(form['fields'] as List).length} fields',
+                      style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.outline)),
+                  onTap: () => Navigator.pop(ctx, form),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final existing = choice.isEmpty ? null : choice;
     final changed = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(builder: (_) => const FormBuilderScreen()));
+        MaterialPageRoute(builder: (_) => FormBuilderScreen(existing: existing)));
     if (changed == true && mounted) _reload();
   }
 
@@ -215,6 +370,12 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
   late final TextEditingController _successMessage = TextEditingController(
       text: '${widget.existing?['success_message'] ?? ''}');
   late bool _aiValidate = widget.existing?['ai_validate'] == true;
+  late String? _accent = (widget.existing?['accent'] as String?);
+
+  static const _accentChoices = <String>[
+    '#00A884', '#3B82F6', '#8B5CF6', '#EC4899', '#EF4444',
+    '#F97316', '#EAB308', '#14B8A6', '#0EA5E9', '#64748B',
+  ];
 
   late final List<Map<String, dynamic>> _fields = [
     for (final f in (widget.existing?['fields'] as List? ?? const []))
@@ -333,6 +494,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
         if (_successMessage.text.trim().isNotEmpty)
           'success_message': _successMessage.text.trim(),
         'ai_validate': _aiValidate,
+        if (_accent != null) 'accent': _accent,
         'fields': _fields,
       };
       final existingId = '${widget.existing?['id'] ?? ''}';
@@ -350,6 +512,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
               ? null
               : _successMessage.text.trim(),
           aiValidate: _aiValidate,
+          accent: _accent,
           fields: _fields,
         );
       }
@@ -365,7 +528,8 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: OkayAppBar(
-        title: Text(widget.existing != null ? 'Edit form' : 'New form'),
+        title: Text(
+            widget.existing?['id'] != null ? 'Edit form' : 'New form'),
         actions: [
           TextButton(
             onPressed: _busy ? null : _save,
@@ -448,6 +612,44 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
                     subtitle: const Text(
                         'Flag incomplete or implausible submissions'),
                   ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Accent colour',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final hex in _accentChoices)
+                        GestureDetector(
+                          onTap: () => setState(() => _accent = hex),
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: Color(int.parse('FF${hex.substring(1)}',
+                                  radix: 16)),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _accent == hex
+                                    ? Theme.of(context).colorScheme.onSurface
+                                    : Colors.transparent,
+                                width: 3,
+                              ),
+                            ),
+                            child: _accent == hex
+                                ? const Icon(Icons.check,
+                                    color: Colors.white, size: 18)
+                                : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),

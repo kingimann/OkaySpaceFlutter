@@ -38,6 +38,7 @@ class FormsService {
     String? notifyEmail,
     String? successMessage,
     bool aiValidate = false,
+    String? accent,
     required List<Map<String, dynamic>> fields,
   }) async =>
       asMapOrNull(await _client.postJson('/forms', body: {
@@ -47,6 +48,7 @@ class FormsService {
         if (notifyEmail != null) 'notify_email': notifyEmail,
         if (successMessage != null) 'success_message': successMessage,
         'ai_validate': aiValidate,
+        if (accent != null) 'accent': accent,
         'fields': fields,
       })) ??
       const {};
