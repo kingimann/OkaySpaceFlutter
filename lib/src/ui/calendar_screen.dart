@@ -3,7 +3,15 @@ import 'package:flutter/material.dart';
 import '../../okayspace_api.dart';
 import 'common.dart';
 
-/// Personal calendar: an agenda of upcoming events with create / edit / delete.
+const _fullMonths = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+DateTime _dayOf(DateTime x) => DateTime(x.year, x.month, x.day);
+
+/// Personal calendar: a month grid plus the selected day's events, with
+/// create / edit / delete.
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
@@ -13,6 +21,8 @@ class CalendarScreen extends StatefulWidget {
 
 class _CalendarScreenState extends State<CalendarScreen> {
   late Future<List<CalendarEvent>> _future;
+  DateTime _focused = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  DateTime _selected = _dayOf(DateTime.now());
 
   @override
   void initState() {
@@ -27,12 +37,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await _future;
   }
 
-  Future<void> _edit([CalendarEvent? event]) async {
+  Future<void> _edit({CalendarEvent? event, DateTime? initialStart}) async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _EventEditor(event: event),
+      builder: (_) => _EventEditor(event: event, initialStart: initialStart),
     );
     if (saved == true) _reload();
   }
@@ -46,29 +56,42 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  /// Groups events by local calendar day, preserving the soonest-first order.
-  List<MapEntry<DateTime, List<CalendarEvent>>> _byDay(
-      List<CalendarEvent> events) {
+  /// Maps each local day to the events occurring on it (covering multi-day
+  /// events across their range).
+  Map<DateTime, List<CalendarEvent>> _byDayMap(List<CalendarEvent> events) {
     final map = <DateTime, List<CalendarEvent>>{};
     for (final e in events) {
-      final d = e.startAt.toLocal();
-      final key = DateTime(d.year, d.month, d.day);
-      map.putIfAbsent(key, () => []).add(e);
+      var day = _dayOf(e.startAt.toLocal());
+      final last = _dayOf((e.endAt ?? e.startAt).toLocal());
+      var guard = 0;
+      while (!day.isAfter(last) && guard < 366) {
+        map.putIfAbsent(day, () => []).add(e);
+        day = day.add(const Duration(days: 1));
+        guard++;
+      }
     }
-    final entries = map.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    return entries;
+    return map;
   }
+
+  void _shiftMonth(int by) => setState(
+      () => _focused = DateTime(_focused.year, _focused.month + by, 1));
+
+  void _goToday() => setState(() {
+        final now = DateTime.now();
+        _focused = DateTime(now.year, now.month, 1);
+        _selected = _dayOf(now);
+      });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Calendar')),
-      // Lifted so it clears the floating bottom nav on pushed screens.
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 72),
         child: FloatingActionButton.extended(
-          onPressed: () => _edit(),
+          onPressed: () => _edit(
+              initialStart: DateTime(
+                  _selected.year, _selected.month, _selected.day, 9)),
           icon: const Icon(Icons.add),
           label: const Text('New event'),
         ),
@@ -85,120 +108,227 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 icon: Icons.error_outline,
                 onRetry: _reload);
           }
-          final events = snap.data ?? const <CalendarEvent>[];
-          if (events.isEmpty) {
-            return RefreshIndicator(
-              onRefresh: _reload,
-              child: const CenteredMessage(
-                  message: 'No events yet.\nTap “New event” to add one.',
-                  icon: Icons.event_outlined),
-            );
-          }
-          final groups = _byDay(events);
+          final byDay = _byDayMap(snap.data ?? const <CalendarEvent>[]);
+          final dayEvents = byDay[_selected] ?? const <CalendarEvent>[];
           return RefreshIndicator(
             onRefresh: _reload,
-            child: ListView.builder(
+            child: ListView(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
-              itemCount: groups.length,
-              itemBuilder: (context, i) => _DaySection(
-                day: groups[i].key,
-                events: groups[i].value,
-                onTap: _edit,
-                onDelete: _delete,
-              ),
+              children: [
+                _monthHeader(),
+                const SizedBox(height: 8),
+                _weekdayHeader(),
+                _grid(byDay),
+                const Divider(height: 28),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                  child: Text(_dayLabel(_selected),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 16)),
+                ),
+                if (dayEvents.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text('Nothing scheduled',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.outline)),
+                    ),
+                  )
+                else
+                  for (final e in dayEvents)
+                    _EventTile(event: e, onTap: _edit, onDelete: _delete),
+              ],
             ),
           );
         },
       ),
     );
   }
+
+  Widget _monthHeader() {
+    return Row(
+      children: [
+        IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => _shiftMonth(-1)),
+        Expanded(
+          child: Center(
+            child: Text('${_fullMonths[_focused.month - 1]} ${_focused.year}',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        IconButton(
+            icon: const Icon(Icons.today_outlined),
+            tooltip: 'Today',
+            onPressed: _goToday),
+        IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: () => _shiftMonth(1)),
+      ],
+    );
+  }
+
+  Widget _weekdayHeader() {
+    const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        for (final l in labels)
+          Expanded(
+            child: Center(
+              child: Text(l,
+                  style: TextStyle(
+                      color: scheme.outline,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _grid(Map<DateTime, List<CalendarEvent>> byDay) {
+    final daysIn = DateTime(_focused.year, _focused.month + 1, 0).day;
+    final lead = DateTime(_focused.year, _focused.month, 1).weekday % 7; // Sun=0
+    final cells = <DateTime?>[
+      for (var i = 0; i < lead; i++) null,
+      for (var d = 1; d <= daysIn; d++)
+        DateTime(_focused.year, _focused.month, d),
+    ];
+    while (cells.length % 7 != 0) {
+      cells.add(null);
+    }
+    final rows = <Widget>[];
+    for (var i = 0; i < cells.length; i += 7) {
+      rows.add(Row(
+        children: [
+          for (var j = 0; j < 7; j++) Expanded(child: _cell(cells[i + j], byDay)),
+        ],
+      ));
+    }
+    return Column(children: rows);
+  }
+
+  Widget _cell(DateTime? day, Map<DateTime, List<CalendarEvent>> byDay) {
+    if (day == null) return const SizedBox(height: 46);
+    final scheme = Theme.of(context).colorScheme;
+    final selected = _dayOf(day) == _selected;
+    final today = _isToday(day);
+    final hasEvents = (byDay[_dayOf(day)] ?? const []).isNotEmpty;
+    return GestureDetector(
+      onTap: () => setState(() => _selected = _dayOf(day)),
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        height: 46,
+        child: Center(
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? scheme.primary : Colors.transparent,
+              border: (today && !selected)
+                  ? Border.all(color: scheme.primary, width: 1.5)
+                  : null,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('${day.day}',
+                    style: TextStyle(
+                        fontWeight:
+                            today || selected ? FontWeight.bold : null,
+                        color: selected
+                            ? Colors.white
+                            : (today ? scheme.primary : null))),
+                const SizedBox(height: 2),
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: hasEvents
+                        ? (selected ? Colors.white : scheme.primary)
+                        : Colors.transparent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _DaySection extends StatelessWidget {
-  const _DaySection(
-      {required this.day,
-      required this.events,
-      required this.onTap,
-      required this.onDelete});
+class _EventTile extends StatelessWidget {
+  const _EventTile(
+      {required this.event, required this.onTap, required this.onDelete});
 
-  final DateTime day;
-  final List<CalendarEvent> events;
-  final void Function(CalendarEvent) onTap;
+  final CalendarEvent event;
+  final void Function({CalendarEvent? event, DateTime? initialStart}) onTap;
   final void Function(CalendarEvent) onDelete;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(6, 14, 6, 6),
-          child: Text(_dayLabel(day),
-              style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: _isToday(day) ? scheme.primary : null)),
-        ),
-        for (final e in events)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Material(
-              color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(14),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => onTap(e),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
-                  child: Row(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => onTap(event: event),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 4,
+                  height: 38,
+                  margin: const EdgeInsets.only(right: 12, top: 2),
+                  decoration: BoxDecoration(
+                      color: scheme.primary,
+                      borderRadius: BorderRadius.circular(2)),
+                ),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 4,
-                        height: 38,
-                        margin: const EdgeInsets.only(right: 12, top: 2),
-                        decoration: BoxDecoration(
-                            color: scheme.primary,
-                            borderRadius: BorderRadius.circular(2)),
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(e.title,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 15),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 2),
-                            Text(_timeLabel(e),
-                                style:
-                                    TextStyle(color: scheme.onSurfaceVariant)),
-                            if ((e.notes ?? '').trim().isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(e.notes!,
-                                  style: TextStyle(
-                                      color: scheme.onSurfaceVariant,
-                                      fontSize: 13),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis),
-                            ],
-                          ],
-                        ),
-                      ),
-                      PopupMenuButton<String>(
-                        onSelected: (_) => onDelete(e),
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'delete', child: Text('Delete')),
-                        ],
-                      ),
+                      Text(event.title,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 15),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Text(_timeLabel(event),
+                          style: TextStyle(color: scheme.onSurfaceVariant)),
+                      if ((event.notes ?? '').trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(event.notes!,
+                            style: TextStyle(
+                                color: scheme.onSurfaceVariant, fontSize: 13),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                      ],
                     ],
                   ),
                 ),
-              ),
+                PopupMenuButton<String>(
+                  onSelected: (_) => onDelete(event),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
+                ),
+              ],
             ),
           ),
-      ],
+        ),
+      ),
     );
   }
 }
@@ -240,8 +370,9 @@ String _timeLabel(CalendarEvent e) {
 }
 
 class _EventEditor extends StatefulWidget {
-  const _EventEditor({this.event});
+  const _EventEditor({this.event, this.initialStart});
   final CalendarEvent? event;
+  final DateTime? initialStart;
 
   @override
   State<_EventEditor> createState() => _EventEditorState();
@@ -253,7 +384,7 @@ class _EventEditorState extends State<_EventEditor> {
   late final TextEditingController _notes =
       TextEditingController(text: widget.event?.notes ?? '');
   late DateTime _start =
-      widget.event?.startAt.toLocal() ?? _defaultStart();
+      widget.event?.startAt.toLocal() ?? widget.initialStart ?? _defaultStart();
   late DateTime? _end = widget.event?.endAt?.toLocal();
   late bool _allDay = widget.event?.allDay ?? false;
   bool _saving = false;
