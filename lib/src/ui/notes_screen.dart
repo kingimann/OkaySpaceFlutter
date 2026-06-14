@@ -279,6 +279,29 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     showInfo(context, 'Copied');
   }
 
+  /// If the tap landed on a checklist line's box (☐/☑), toggle it; otherwise
+  /// leave the tap to place the caret for editing as usual.
+  void _maybeToggleCheckbox() {
+    final sel = _body.selection;
+    if (!sel.isCollapsed || sel.baseOffset < 0) return;
+    final caret = sel.baseOffset;
+    final text = _body.text;
+    final lineStart = text.lastIndexOf('\n', caret > 0 ? caret - 1 : 0) + 1;
+    var lineEnd = text.indexOf('\n', lineStart);
+    if (lineEnd < 0) lineEnd = text.length;
+    final line = text.substring(lineStart, lineEnd);
+    final col = caret - lineStart;
+    if (col <= 2 && (line.startsWith('☐ ') || line.startsWith('☑ '))) {
+      final toggled = (line.startsWith('☐ ') ? '☑' : '☐') + line.substring(1);
+      setState(() {
+        _body.value = TextEditingValue(
+          text: text.replaceRange(lineStart, lineEnd, toggled),
+          selection: TextSelection.collapsed(offset: caret),
+        );
+      });
+    }
+  }
+
   int get _wordCount {
     final t = _body.text.trim();
     return t.isEmpty ? 0 : t.split(RegExp(r'\s+')).length;
@@ -487,6 +510,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                         textAlignVertical: TextAlignVertical.top,
                         keyboardType: TextInputType.multiline,
                         cursorColor: _accent,
+                        // Tapping a checklist box toggles it; other taps edit.
+                        onTap: _maybeToggleCheckbox,
                         style: const TextStyle(fontSize: 17, height: 1.5),
                         decoration: const InputDecoration(
                             hintText: 'Start writing…',
