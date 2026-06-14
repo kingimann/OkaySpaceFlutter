@@ -628,6 +628,31 @@ class _PostTileState extends State<PostTile> {
               ],
             ],
           ),
+          // Thread connector: when the author continued this post as a thread,
+          // offer to open the chain. Feed-only — the detail view already shows it.
+          if (tappable && post.isThread)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: InkWell(
+                onTap: () => PostDetailScreen.open(context, post),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.forum_outlined,
+                        size: 15,
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Text('Show this thread',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
+            ),
         ],
       ),
     );
