@@ -2709,24 +2709,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 _attachSectionLabel('Play'),
                 Wrap(
                   children: [
-                    _attachTile(Icons.grid_3x3, 'Tic-tac-toe',
-                        () => _startGameFlow('tictactoe')),
-                    _attachTile(Icons.style_outlined, 'Blackjack',
-                        () => _startGameFlow('blackjack')),
-                    _attachTile(Icons.casino_outlined, 'Poker',
-                        () => _startGameFlow('poker')),
-                    _attachTile(Icons.shield_outlined, 'Chess',
-                        () => _startGameFlow('chess')),
-                    _attachTile(Icons.circle_outlined, 'Checkers',
-                        () => _startGameFlow('checkers')),
-                    _attachTile(Icons.grid_view, 'Connect 4',
-                        () => _startGameFlow('connect4')),
-                    _attachTile(Icons.border_all, 'Dots & Boxes',
-                        () => _startGameFlow('dotsboxes')),
-                    _attachTile(Icons.sports_tennis, 'Pong',
-                        () => _startGameFlow('pong')),
-                    _attachTile(Icons.linear_scale, 'Snake',
-                        () => _startGameFlow('snake')),
+                    _attachTile(Icons.sports_esports_outlined, 'Games',
+                        _openGamesList),
                   ],
                 ),
               ],
@@ -2807,8 +2791,72 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Starts an in-chat game of [type] and drops its playable card.
   /// A quick chooser before starting a game: opponent (friend/computer) for the
   /// two-player games when there's a partner, and difficulty for CPU/arcade.
+  /// The full catalogue of games, in display order: (type, one-line blurb).
+  static const _gameCatalog = <(String, String)>[
+    ('tictactoe', 'Three in a row'),
+    ('connect4', 'Drop discs, four in a row'),
+    ('chess', 'The classic'),
+    ('checkers', 'Jump and capture'),
+    ('dotsboxes', 'Claim the most boxes'),
+    ('blackjack', 'Beat the dealer to 21'),
+    ('poker', 'Five-card draw'),
+    ('pong', 'Paddle arcade'),
+    ('snake', 'Eat and grow'),
+  ];
+
+  /// Opens a scrollable list of every game; tapping one starts it.
+  void _openGamesList() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Games',
+                    style: TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final g in _gameCatalog)
+                    _gameListTile(ctx, g.$1, g.$2),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _gameListTile(BuildContext ctx, String type, String blurb) {
+    final (label, icon, color) = _gameMeta(type);
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: color.withValues(alpha: 0.15),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(label),
+      subtitle: Text(blurb),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () {
+        Navigator.pop(ctx);
+        _startGameFlow(type);
+      },
+    );
+  }
+
   Future<void> _startGameFlow(String type) async {
-    const twoPlayer = {'tictactoe', 'chess', 'checkers'};
+    const twoPlayer = {'tictactoe', 'chess', 'checkers', 'connect4', 'dotsboxes'};
     const arcade = {'pong', 'snake'};
     final hasPartner =
         !widget.conversation.isGroup && widget.conversation.otherUser != null;
