@@ -347,6 +347,28 @@ class MessagingService {
   Future<Message> pinMessage(String convId, String msgId) async => _msg(
       await _client.postJson('/conversations/$convId/messages/$msgId/pin'));
 
+  /// Toggles a personal star/bookmark on a message.
+  Future<Message> starMessage(String convId, String msgId) async => _msg(
+      await _client.postJson('/conversations/$convId/messages/$msgId/star'));
+
+  /// Every message the current user has starred, newest first.
+  Future<List<Message>> starredMessages() async =>
+      asModelList(await _client.getJson('/starred'), Message.fromJson);
+
+  /// Forwards a message into another conversation.
+  Future<Message> forwardMessage(
+          String convId, String msgId, String toConversationId) async =>
+      _msg(await _client.postJson(
+          '/conversations/$convId/messages/$msgId/forward',
+          body: {'to_conversation_id': toConversationId}));
+
+  /// Searches a conversation's messages by text.
+  Future<List<Message>> searchMessages(String convId, String query) async =>
+      asModelList(
+          await _client.getJson('/conversations/$convId/search',
+              query: {'q': query}),
+          Message.fromJson);
+
   /// Votes on a poll message by option index.
   Future<Message> votePoll(String convId, String msgId, int optionIndex) async =>
       _msg(await _client.postJson(
