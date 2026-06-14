@@ -178,11 +178,13 @@ class MessagingService {
   Future<Message> createGame(String convId,
           {String type = 'tictactoe',
           String difficulty = 'medium',
-          bool vsCpu = false}) async =>
+          bool vsCpu = false,
+          int bet = 0}) async =>
       _msg(await _client.postJson('/conversations/$convId/chat-games', body: {
         'game_type': type,
         'difficulty': difficulty,
         'vs_cpu': vsCpu,
+        'bet': bet,
       }));
 
   /// Plays the computer's chess move (called after a short pause).
