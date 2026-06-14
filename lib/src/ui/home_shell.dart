@@ -40,6 +40,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    appSignedIn.value = true; // drives the global bottom nav on pushed screens
     loadCurrentUserId();
     refreshMarketplaceOffersBadge();
     _visited.add(_currentId);
@@ -54,6 +55,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    appSignedIn.value = false;
     homeTabSignal.removeListener(_onTabSignal);
     navController.removeListener(_onNavChanged);
     _onlineTimer?.cancel();

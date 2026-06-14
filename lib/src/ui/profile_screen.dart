@@ -1385,10 +1385,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                           animation: profileDecor,
                           builder: (_, __) => MaxWidth(child: _profileCard(u)),
                         ),
-                        if (_completeness(u).$1 < 1.0) ...[
-                          const SizedBox(height: 12),
-                          MaxWidth(child: _completenessCard(u)),
-                        ],
                         const SizedBox(height: 12),
                         MaxWidth(child: _MyPostsSection(userId: u.userId)),
                       ],
@@ -1611,75 +1607,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   }
 
   /// Returns (fraction complete, list of missing field labels).
-  (double, List<String>) _completeness(User u) {
-    final checks = <String, bool>{
-      'Profile photo': u.picture != null && u.picture!.isNotEmpty,
-      'Cover photo': u.coverPhoto != null && u.coverPhoto!.isNotEmpty,
-      'Bio': u.bio != null && u.bio!.isNotEmpty,
-      'Headline': u.headline != null && u.headline!.isNotEmpty,
-      'Location': u.location != null && u.location!.isNotEmpty,
-      'Interests': u.interests.isNotEmpty,
-    };
-    final done = checks.values.where((v) => v).length;
-    final missing = [
-      for (final e in checks.entries)
-        if (!e.value) e.key
-    ];
-    return (done / checks.length, missing);
-  }
-
-  Widget _completenessCard(User u) {
-    final scheme = Theme.of(context).colorScheme;
-    final (frac, missing) = _completeness(u);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.account_circle_outlined, color: scheme.primary),
-              const SizedBox(width: 8),
-              const Text('Complete your profile',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              const Spacer(),
-              Text('${(frac * 100).round()}%',
-                  style: TextStyle(
-                      color: scheme.primary, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: frac,
-              minHeight: 6,
-              backgroundColor: scheme.surfaceContainerHighest,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final m in missing)
-                ActionChip(
-                  avatar: const Icon(Icons.add, size: 16),
-                  label: Text(m),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _editProfile(u),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showQr(User u) =>
       showProfileQr(context, name: u.name, handle: u.username ?? u.userId);
 
@@ -1990,29 +1917,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 ],
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _editProfile(u),
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('Edit profile'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => ProfileScreen.open(context, u.userId,
-                        previewAsVisitor: true),
-                    icon: const Icon(Icons.visibility_outlined),
-                    label: const Text('View as visitor'),
-                  ),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 12),
         ],
       ),
