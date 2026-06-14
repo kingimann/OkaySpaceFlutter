@@ -583,6 +583,7 @@ class _ConversationTile extends StatelessWidget {
       'gif' => 'GIF',
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
+      'live_location' => '📍 Live location',
       'money' || 'tip' => '💸 Payment',
       'poll' => '📊 Poll',
       'file' => '📎 File',
@@ -877,6 +878,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _typingTimer?.cancel();
     _highlightTimer?.cancel();
     _draftTimer?.cancel();
+    for (final t in _liveUpdaters.values) {
+      t.cancel();
+    }
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -2180,6 +2184,9 @@ class _ChatScreenState extends State<ChatScreen> {
             onVotePoll: msg.type == 'poll' && !msg.deleted
                 ? (i) => _run(() => api.messaging.votePoll(_convId, msg.id, i))
                 : null,
+            onStopLive: msg.type == 'live_location' && mine
+                ? () => _stopLiveShare('${msg.raw['live_share_id'] ?? ''}')
+                : null,
             senderName:
                 (isGroup && !mine && !msg.deleted) ? _senderName(msg.senderId) : null,
             receipt: (!isGroup &&
@@ -2783,22 +2790,26 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Picks a point on a map and sends it as a location message.
+  /// Picks a point on a map and sends it as a location message, or starts a
+  /// live-location share.
   Future<void> _attachLocation() async {
-    final picked = await Navigator.of(context).push<(LatLng, String)>(
+    final picked = await Navigator.of(context).push<_LocationResult>(
       MaterialPageRoute(builder: (_) => const _LocationPickerScreen()),
     );
     if (picked == null || !mounted) return;
-    final (point, name) = picked;
+    if (picked.isLive) {
+      await _startLiveShare(picked.liveMinutes!, picked.point);
+      return;
+    }
     setState(() => _sending = true);
     try {
       await api.messaging.send(
         _convId,
         MessageCreate(
           type: 'place',
-          placeName: name,
-          placeLatitude: point.latitude,
-          placeLongitude: point.longitude,
+          placeName: picked.name,
+          placeLatitude: picked.point.latitude,
+          placeLongitude: picked.point.longitude,
         ),
       );
       await _fetch(silent: true);
@@ -2807,6 +2818,60 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Active live-location updaters, keyed by share id, so they can be cancelled
+  /// on stop or when the screen is disposed.
+  final Map<String, Timer> _liveUpdaters = {};
+
+  /// Begins a live-location share and pumps the device's position to the
+  /// backend until it expires or is stopped.
+  Future<void> _startLiveShare(int minutes, LatLng initial) async {
+    setState(() => _sending = true);
+    try {
+      final msg = await api.messaging
+          .startLiveLocation(_convId, minutes, initial.latitude, initial.longitude);
+      final shareId = '${msg.raw['live_share_id'] ?? ''}';
+      if (shareId.isNotEmpty) {
+        final expiry = DateTime.now().add(Duration(minutes: minutes));
+        // Push a fresh fix every 15s until the share's time is up.
+        _liveUpdaters[shareId] = Timer.periodic(
+            const Duration(seconds: 15), (t) async {
+          if (!mounted || DateTime.now().isAfter(expiry)) {
+            t.cancel();
+            _liveUpdaters.remove(shareId);
+            return;
+          }
+          final fix = await currentFix();
+          if (fix == null) return;
+          try {
+            await api.messaging
+                .updateLiveLocation(shareId, fix.point.latitude, fix.point.longitude);
+          } catch (_) {
+            // 410 (ended/expired) or transient — stop pushing on a hard stop.
+            t.cancel();
+            _liveUpdaters.remove(shareId);
+          }
+        });
+      }
+      await _fetch(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Stops a live-location share (the sharer tapped "Stop").
+  Future<void> _stopLiveShare(String shareId) async {
+    _liveUpdaters.remove(shareId)?.cancel();
+    try {
+      await api.messaging.stopLiveLocation(shareId);
+      await _fetch(silent: true);
+    } catch (e) {
+      if (mounted) showError(context, e);
     }
   }
 
@@ -3842,6 +3907,7 @@ class _MessageBubble extends StatelessWidget {
       this.onTapReply,
       this.onTapReactions,
       this.onVotePoll,
+      this.onStopLive,
       this.replyTo,
       this.senderName,
       this.receipt});
@@ -3891,6 +3957,9 @@ class _MessageBubble extends StatelessWidget {
 
   /// Casts a vote on this poll message (option index).
   final void Function(int optionIndex)? onVotePoll;
+
+  /// Sharer-only: stop an in-progress live-location share.
+  final VoidCallback? onStopLive;
 
   /// The message this one is replying to (resolved), if any.
   final Message? replyTo;
@@ -4154,6 +4223,10 @@ class _MessageBubble extends StatelessWidget {
         !message.deleted &&
         placeLat != null &&
         placeLng != null;
+    final liveShareId = '${message.raw['live_share_id'] ?? ''}';
+    final isLive = message.type == 'live_location' &&
+        !message.deleted &&
+        liveShareId.isNotEmpty;
     final isPoll = message.type == 'poll' && !message.deleted;
     final isTip = (message.type == 'tip' || message.type == 'money') &&
         !message.deleted;
@@ -4161,6 +4234,7 @@ class _MessageBubble extends StatelessWidget {
     final typeLabel = switch (message.type) {
       'post' => '📄 Shared a post',
       'place' => '📍 Location',
+      'live_location' => '📍 Live location',
       'money' || 'tip' => '💸 Payment',
       'gif' => 'GIF',
       'voice' => '🎤 Voice message',
@@ -4172,12 +4246,15 @@ class _MessageBubble extends StatelessWidget {
     final bodyText = message.deleted
         ? 'Message deleted'
         : (message.text ??
-            (hasMedia || hasPlace || isPoll || isTip ? '' : typeLabel));
+            (hasMedia || hasPlace || isLive || isPoll || isTip
+                ? ''
+                : typeLabel));
     // A short, all-emoji message renders large with no bubble (like WhatsApp).
     final t = (message.text ?? '').trim();
     final emojiOnly = !message.deleted &&
         !hasMedia &&
         !hasPlace &&
+        !isLive &&
         message.replyToId == null &&
         t.isNotEmpty &&
         t.runes.length <= 8 &&
@@ -4282,6 +4359,19 @@ class _MessageBubble extends StatelessWidget {
                       padding:
                           EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
                       child: _placeCard(placeLat, placeLng),
+                    ),
+                  if (isLive)
+                    Padding(
+                      padding:
+                          EdgeInsets.only(bottom: bodyText.isEmpty ? 4 : 6),
+                      child: _LiveLocationCard(
+                        shareId: liveShareId,
+                        mine: mine,
+                        fallbackLat: placeLat,
+                        fallbackLng: placeLng,
+                        initialActive: message.raw['live_active'] != false,
+                        onStop: onStopLive,
+                      ),
                     ),
                   if (isTip)
                     Row(mainAxisSize: MainAxisSize.min, children: [
@@ -5067,9 +5157,213 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
 }
 
 /// Full-screen map to drop a pin and return the chosen [LatLng].
-/// WhatsApp-style location picker: a map on top, then "Send your current
-/// location" with its accuracy, a place search, and a list of nearby places to
-/// tap. Pops `(LatLng, name)` for the chosen spot.
+/// In-bubble live-location view: a small map that polls the share and tracks
+/// the sharer's moving dot, with a status line and (for the sharer) a Stop
+/// button. Stops polling once the share ends or expires.
+class _LiveLocationCard extends StatefulWidget {
+  const _LiveLocationCard({
+    required this.shareId,
+    required this.mine,
+    this.fallbackLat,
+    this.fallbackLng,
+    this.initialActive = true,
+    this.onStop,
+  });
+
+  final String shareId;
+  final bool mine;
+  final double? fallbackLat;
+  final double? fallbackLng;
+  final bool initialActive;
+  final VoidCallback? onStop;
+
+  @override
+  State<_LiveLocationCard> createState() => _LiveLocationCardState();
+}
+
+class _LiveLocationCardState extends State<_LiveLocationCard> {
+  final _map = MapController();
+  LiveLocationView? _live;
+  Timer? _poll;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _poll = Timer.periodic(const Duration(seconds: 10), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _map.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final v = await api.messaging.liveLocation(widget.shareId);
+      if (!mounted) return;
+      setState(() {
+        _live = v;
+        _loading = false;
+      });
+      // Keep the dot centred as it moves.
+      try {
+        _map.move(LatLng(v.latitude, v.longitude), _map.camera.zoom);
+      } catch (_) {/* map not ready yet */}
+      if (!v.active) _poll?.cancel(); // ended/expired — stop polling
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _hhmm(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final live = _live;
+    final lat = live?.latitude ?? widget.fallbackLat;
+    final lng = live?.longitude ?? widget.fallbackLng;
+    final active = live?.active ?? widget.initialActive;
+    final point = (lat != null && lng != null) ? LatLng(lat, lng) : null;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 230,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 140,
+              child: Stack(
+                children: [
+                  if (point != null)
+                    IgnorePointer(
+                      child: FlutterMap(
+                        mapController: _map,
+                        options: MapOptions(
+                          initialCenter: point,
+                          initialZoom: 15,
+                          interactionOptions: const InteractionOptions(
+                              flags: InteractiveFlag.none),
+                        ),
+                        children: [
+                          mapboxTileLayer(),
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: point,
+                              width: 34,
+                              height: 34,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: active
+                                      ? const Color(0xFF2563EB)
+                                      : scheme.outline,
+                                  border: Border.all(
+                                      color: Colors.white, width: 3),
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      color: scheme.surfaceContainerHighest,
+                      alignment: Alignment.center,
+                      child: _loading
+                          ? const CircularProgressIndicator()
+                          : const Icon(Icons.location_off),
+                    ),
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: active
+                            ? const Color(0xFF2563EB)
+                            : Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(
+                            active
+                                ? Icons.share_location
+                                : Icons.location_off,
+                            size: 13,
+                            color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(active ? 'LIVE' : 'Ended',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold)),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      active
+                          ? (live?.expiresAt != null
+                              ? 'Live until ${_hhmm(live!.expiresAt!.toLocal())}'
+                              : 'Sharing live location')
+                          : 'Live location ended',
+                      style: TextStyle(
+                          fontSize: 12.5, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                  if (widget.mine && active && widget.onStop != null)
+                    TextButton(
+                      onPressed: widget.onStop,
+                      style: TextButton.styleFrom(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 30)),
+                      child: const Text('Stop'),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What the location picker returns: either a one-off place to send, or a
+/// request to start sharing live location for [liveMinutes].
+class _LocationResult {
+  const _LocationResult.place(this.point, this.name) : liveMinutes = null;
+  const _LocationResult.live(this.liveMinutes, this.point) : name = null;
+
+  final LatLng point;
+  final String? name;
+  final int? liveMinutes;
+
+  bool get isLive => liveMinutes != null;
+}
+
+/// WhatsApp-style location picker: a map on top, then "Share live location",
+/// "Send your current location" with its accuracy, a place search, and a list
+/// of nearby places to tap. Pops a [_LocationResult].
 class _LocationPickerScreen extends StatefulWidget {
   const _LocationPickerScreen();
 
@@ -5167,7 +5461,43 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
   }
 
   void _send(LatLng point, String name) =>
-      Navigator.pop(context, (point, name));
+      Navigator.pop(context, _LocationResult.place(point, name));
+
+  /// Lets the sharer pick how long to broadcast their live location, then pops
+  /// a live result. This is the "how long to share" setting.
+  Future<void> _chooseLiveDuration() async {
+    final minutes = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Share live location for',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+            for (final opt in const [
+              ('15 minutes', 15),
+              ('1 hour', 60),
+              ('8 hours', 480),
+            ])
+              ListTile(
+                leading: const Icon(Icons.schedule),
+                title: Text(opt.$1),
+                onTap: () => Navigator.pop(sheetCtx, opt.$2),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (minutes == null || !mounted) return;
+    Navigator.pop(context, _LocationResult.live(minutes, _me ?? _pin));
+  }
 
   Widget _placeTile(Map<String, dynamic> p) {
     final lat = (p['lat'] as num?)?.toDouble();
@@ -5254,6 +5584,19 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
+                  // Live location: share a moving position for a set time.
+                  ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFF2563EB),
+                      child: Icon(Icons.share_location, color: Colors.white),
+                    ),
+                    title: const Text('Share live location'),
+                    subtitle: Text(_me == null
+                        ? 'Waiting for your location…'
+                        : 'Updates in real time for a set time'),
+                    onTap: _me == null ? null : _chooseLiveDuration,
+                  ),
+                  const Divider(height: 1),
                   if (_me != null)
                     ListTile(
                       leading: const CircleAvatar(

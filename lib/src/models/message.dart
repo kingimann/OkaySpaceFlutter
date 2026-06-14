@@ -150,6 +150,42 @@ class ConversationView {
   }
 }
 
+/// A snapshot of a live-location share: where the sharer is now, and whether
+/// the share is still running.
+class LiveLocationView {
+  const LiveLocationView({
+    required this.shareId,
+    required this.userId,
+    this.name,
+    required this.latitude,
+    required this.longitude,
+    this.active = true,
+    this.expiresAt,
+    this.updatedAt,
+  });
+
+  final String shareId;
+  final String userId;
+  final String? name;
+  final double latitude;
+  final double longitude;
+  final bool active;
+  final DateTime? expiresAt;
+  final DateTime? updatedAt;
+
+  factory LiveLocationView.fromJson(Map<String, dynamic> json) =>
+      LiveLocationView(
+        shareId: asString(json['share_id']),
+        userId: asString(json['user_id']),
+        name: asStringOrNull(json['name']),
+        latitude: asDoubleOrNull(json['latitude']) ?? 0,
+        longitude: asDoubleOrNull(json['longitude']) ?? 0,
+        active: asBool(json['active'], true),
+        expiresAt: asDateOrNull(json['expires_at']),
+        updatedAt: asDateOrNull(json['updated_at']),
+      );
+}
+
 /// Request body for sending a message. Defaults to a plain text message.
 class MessageCreate {
   const MessageCreate({
