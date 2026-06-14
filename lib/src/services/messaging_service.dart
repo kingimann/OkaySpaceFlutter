@@ -194,6 +194,11 @@ class MessagingService {
       asMapOrNull(await _client.postJson('/chat-games/$gameId/cpu-move')) ??
           const {});
 
+  /// Resets a game to a fresh start (Play again).
+  Future<void> rematch(String gameId) async {
+    await _client.postJson('/chat-games/$gameId/rematch');
+  }
+
   // Blackjack.
   Future<BlackjackView> blackjackHit(String gameId) async =>
       BlackjackView.fromJson(asMapOrNull(

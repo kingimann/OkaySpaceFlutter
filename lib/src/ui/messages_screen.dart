@@ -6201,6 +6201,11 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
   Future<Map<String, dynamic>?> _onAction(Map<String, dynamic> action) async {
     final api2 = api.messaging;
     try {
+      // Play again: reset the game, then hand back the fresh state.
+      if (action['move'] == 'rematch') {
+        await api2.rematch(widget.gameId);
+        return _fetchState();
+      }
       switch (widget.gameType) {
         case 'tictactoe':
           final cell = action['cell'];
