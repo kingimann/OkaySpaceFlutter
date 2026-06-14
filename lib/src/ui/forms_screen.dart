@@ -58,6 +58,19 @@ IconData _fieldIcon(String type) => _kFieldTypes
         orElse: () => ('', '', Icons.short_text))
     .$3;
 
+/// A clean, filled input style that stays visible on dark backgrounds.
+InputDecoration _formDec(String label, {String? hint, IconData? icon}) =>
+    InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: icon != null ? Icon(icon) : null,
+      filled: true,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+    );
+
 Map<String, dynamic> _tf(int i, String type, String label,
         {bool required = false, List<String>? options}) =>
     {
@@ -402,11 +415,13 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
       if (type == null) return;
     }
     if (!mounted) return;
-    final field = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (_) => _FieldDialog(
-        existing: index != null ? _fields[index] : null,
-        initialType: type,
+    final field = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _FieldEditorScreen(
+          existing: index != null ? _fields[index] : null,
+          initialType: type,
+        ),
       ),
     );
     if (field == null) return;
@@ -548,32 +563,21 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
           children: [
             TextField(
               controller: _title,
-              decoration: const InputDecoration(
-                  labelText: 'Form title', border: OutlineInputBorder()),
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.w600),
+              decoration: _formDec('Form title'),
             ),
             const SizedBox(height: 14),
             TextField(
               controller: _description,
               maxLines: 2,
-              decoration: const InputDecoration(
-                  labelText: 'Description (optional)',
-                  border: OutlineInputBorder()),
+              decoration: _formDec('Description (optional)'),
             ),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _submitLabel,
-                    decoration: const InputDecoration(
-                        labelText: 'Submit button label',
-                        hintText: 'Submit',
-                        border: OutlineInputBorder()),
-                  ),
-                ),
-              ],
+            TextField(
+              controller: _submitLabel,
+              decoration: _formDec('Submit button label', hint: 'Submit'),
             ),
-            const SizedBox(height: 14),
             const SizedBox(height: 8),
             Theme(
               data: Theme.of(context)
@@ -587,20 +591,16 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
                   TextField(
                     controller: _notifyEmail,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                        labelText: 'Email responses to (optional)',
-                        prefixIcon: Icon(Icons.mail_outline),
-                        border: OutlineInputBorder()),
+                    decoration: _formDec('Email responses to (optional)',
+                        icon: Icons.mail_outline),
                   ),
                   const SizedBox(height: 14),
                   TextField(
                     controller: _successMessage,
                     maxLines: 2,
-                    decoration: const InputDecoration(
-                        labelText: 'Thank-you message (optional)',
-                        hintText: 'Shown after someone submits the form',
-                        prefixIcon: Icon(Icons.celebration_outlined),
-                        border: OutlineInputBorder()),
+                    decoration: _formDec('Thank-you message (optional)',
+                        hint: 'Shown after someone submits the form',
+                        icon: Icons.celebration_outlined),
                   ),
                   const SizedBox(height: 6),
                   SwitchListTile(
@@ -732,17 +732,17 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
 
 /// Add/edit one form field: type, label, required, options and type-specific
 /// settings (placeholder, payment price, consent text…).
-class _FieldDialog extends StatefulWidget {
-  const _FieldDialog({this.existing, this.initialType});
+class _FieldEditorScreen extends StatefulWidget {
+  const _FieldEditorScreen({this.existing, this.initialType});
 
   final Map<String, dynamic>? existing;
   final String? initialType;
 
   @override
-  State<_FieldDialog> createState() => _FieldDialogState();
+  State<_FieldEditorScreen> createState() => _FieldEditorScreenState();
 }
 
-class _FieldDialogState extends State<_FieldDialog> {
+class _FieldEditorScreenState extends State<_FieldEditorScreen> {
   late final TextEditingController _label =
       TextEditingController(text: '${widget.existing?['label'] ?? ''}');
   late final TextEditingController _placeholder = TextEditingController(
@@ -802,72 +802,95 @@ class _FieldDialogState extends State<_FieldDialog> {
     Navigator.pop(context, field);
   }
 
+  InputDecoration _dec(String label,
+          {String? hint, String? prefixText, IconData? icon}) =>
+      InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixText: prefixText,
+        prefixIcon: icon != null ? Icon(icon) : null,
+        filled: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.existing != null ? 'Edit field' : 'Add field'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: Text(widget.existing != null ? 'Edit field' : 'Add field'),
+        actions: [
+          TextButton(
+            onPressed: _label.text.trim().isEmpty ? null : _submit,
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+      body: MaxWidth(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            DropdownButtonFormField<String>(
-              initialValue: _type,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                  labelText: 'Type', border: OutlineInputBorder()),
-              items: [
-                for (final (label, value, icon) in _kFieldTypes)
-                  DropdownMenuItem(
-                    value: value,
-                    child: Row(children: [
-                      Icon(icon, size: 18),
-                      const SizedBox(width: 8),
-                      Text(label),
-                    ]),
-                  ),
-              ],
-              onChanged: (v) => setState(() => _type = v ?? 'text'),
+            // Field-type selector.
+            Card(
+              clipBehavior: Clip.antiAlias,
+              child: DropdownButtonFormField<String>(
+                initialValue: _type,
+                isExpanded: true,
+                decoration: _dec('Field type', icon: _fieldIcon(_type)),
+                items: [
+                  for (final (label, value, icon) in _kFieldTypes)
+                    DropdownMenuItem(
+                      value: value,
+                      child: Row(children: [
+                        Icon(icon, size: 18),
+                        const SizedBox(width: 10),
+                        Text(label),
+                      ]),
+                    ),
+                ],
+                onChanged: (v) => setState(() => _type = v ?? 'text'),
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             TextField(
               controller: _label,
               autofocus: true,
-              decoration: InputDecoration(
-                  labelText: _isHeading ? 'Section title' : 'Label',
-                  border: const OutlineInputBorder()),
+              onChanged: (_) => setState(() {}),
+              decoration:
+                  _dec(_isHeading ? 'Section title' : 'Field label'),
             ),
             if (_isPlaceholderType) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               TextField(
                 controller: _placeholder,
-                decoration: const InputDecoration(
-                    labelText: 'Placeholder (optional)',
-                    border: OutlineInputBorder()),
+                decoration: _dec('Placeholder',
+                    hint: 'Hint shown inside the field'),
               ),
             ],
             if (_hasOptions(_type)) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               TextField(
                 controller: _options,
-                decoration: const InputDecoration(
-                    labelText: 'Options (comma-separated)',
-                    hintText: 'Red, Green, Blue',
-                    border: OutlineInputBorder()),
+                minLines: 1,
+                maxLines: 4,
+                decoration: _dec('Options',
+                    hint: 'Comma-separated, e.g. Red, Green, Blue'),
               ),
             ],
             if (_type == 'consent') ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               TextField(
                 controller: _consentText,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                    labelText: 'Agreement text',
-                    hintText: 'The terms the person agrees to…',
-                    border: OutlineInputBorder()),
+                maxLines: 5,
+                decoration: _dec('Agreement text',
+                    hint: 'The terms the person agrees to…'),
               ),
             ],
             if (_type == 'payment') ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Row(children: [
                 Expanded(
                   flex: 2,
@@ -875,45 +898,54 @@ class _FieldDialogState extends State<_FieldDialog> {
                     controller: _amount,
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
-                    decoration: const InputDecoration(
-                        labelText: 'Price',
-                        prefixText: '\$ ',
-                        border: OutlineInputBorder()),
+                    decoration: _dec('Price', prefixText: '\$ '),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Expanded(
                   child: TextField(
                     controller: _currency,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                        labelText: 'Cur.', border: OutlineInputBorder()),
+                    decoration: _dec('Currency'),
                   ),
                 ),
               ]),
-              SwitchListTile(
-                value: _amountOpen,
-                onChanged: (v) => setState(() => _amountOpen = v),
-                title: const Text('Let the payer choose the amount'),
-                contentPadding: EdgeInsets.zero,
+              const SizedBox(height: 6),
+              Card(
+                color: scheme.surfaceContainerHighest,
+                child: SwitchListTile(
+                  value: _amountOpen,
+                  onChanged: (v) => setState(() => _amountOpen = v),
+                  title: const Text('Let the payer choose the amount'),
+                ),
               ),
             ],
-            if (!_isHeading)
-              SwitchListTile(
-                value: _required,
-                onChanged: (v) => setState(() => _required = v),
-                title: const Text('Required'),
-                contentPadding: EdgeInsets.zero,
+            if (!_isHeading) ...[
+              const SizedBox(height: 14),
+              Card(
+                color: scheme.surfaceContainerHighest,
+                child: SwitchListTile(
+                  value: _required,
+                  onChanged: (v) => setState(() => _required = v),
+                  secondary: const Icon(Icons.priority_high),
+                  title: const Text('Required'),
+                  subtitle: const Text('People must fill this in'),
+                ),
               ),
+            ],
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: _label.text.trim().isEmpty ? null : _submit,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text(widget.existing != null
+                    ? 'Save field'
+                    : 'Add field'),
+              ),
+            ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
-        FilledButton(onPressed: _submit, child: const Text('Done')),
-      ],
     );
   }
 }
