@@ -86,6 +86,21 @@ class AdminService {
         if (email != null) 'email': email,
       }));
 
+  // --- Legal documents ----------------------------------------------------
+
+  /// Current Terms of Service & Privacy Policy text (public endpoint).
+  Future<Map<String, dynamic>> legal() async =>
+      _map(await _client.getJson('/legal'));
+
+  /// Edits the Terms of Service and/or Privacy Policy (admin only).
+  Future<Map<String, dynamic>> updateLegal(
+          {String? terms, String? privacy, String? effectiveDate}) async =>
+      _map(await _client.postJson('/admin/legal', body: {
+        if (terms != null) 'terms': terms,
+        if (privacy != null) 'privacy': privacy,
+        if (effectiveDate != null) 'effective_date': effectiveDate,
+      }));
+
   // --- Platform finance ---------------------------------------------------
 
   Future<dynamic> revenue() => _client.getJson('/admin/revenue');
