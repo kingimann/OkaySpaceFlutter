@@ -370,4 +370,15 @@ class MessagingService {
   /// Fetches a call/media token for a conversation.
   Future<Map<String, dynamic>> callToken(String convId) async =>
       asMapOrNull(await _client.postJson('/calls/$convId/token')) ?? const {};
+
+  /// Records the outcome of a call as a message in the conversation
+  /// (status: 'ended' | 'missed' | 'declined').
+  Future<void> endCall(String convId,
+      {String status = 'ended', int durationMs = 0, bool video = false}) async {
+    await _client.postJson('/calls/$convId/end', body: {
+      'status': status,
+      'duration_ms': durationMs,
+      'video': video,
+    });
+  }
 }

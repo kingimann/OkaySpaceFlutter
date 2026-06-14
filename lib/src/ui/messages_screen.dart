@@ -20,6 +20,23 @@ import '../core/update_checker.dart';
 import 'common.dart';
 import 'linked_text.dart';
 
+/// Label for a call-event message (missed / declined / ended-with-duration).
+String _callLabel(Message m) {
+  final status = '${m.raw['call_status'] ?? 'ended'}';
+  final video = m.raw['call_video'] == true;
+  final icon = video ? '📹' : '📞';
+  if (status == 'missed') return '$icon Missed ${video ? 'video ' : ''}call';
+  if (status == 'declined') return '$icon Call declined';
+  final ms = (m.raw['call_duration_ms'] as num?)?.toInt() ?? 0;
+  if (ms >= 1000) {
+    final s = ms ~/ 1000;
+    final mm = s ~/ 60;
+    final ss = (s % 60).toString().padLeft(2, '0');
+    return '$icon Call · $mm:$ss';
+  }
+  return '$icon Call ended';
+}
+
 /// Safely renders a custom-emoji image from a base64 (or data-URI) string,
 /// returning [fallback] if the data is missing or malformed (base64Decode
 /// throws synchronously, before Image.memory's errorBuilder can catch it).
@@ -592,6 +609,7 @@ class _ConversationTile extends StatelessWidget {
       'file' => '📎 File',
       'contact' => '👤 Contact',
       'form' => '📋 Form',
+      'call' => m.raw['call_status'] == 'missed' ? '📞 Missed call' : '📞 Call',
       _ => 'New message',
     };
   }
@@ -4454,6 +4472,7 @@ class _MessageBubble extends StatelessWidget {
       'contact' => '👤 Contact',
       'file' => '📎 ${message.raw['file_name'] ?? 'File'}',
       'form' => '📋 Form',
+      'call' => _callLabel(message),
       _ => '[${message.type}]',
     };
     final bodyText = message.deleted
