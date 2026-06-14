@@ -730,8 +730,40 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
     }
   }
 
+  /// A titled, collapsible section card used to group the builder's settings.
+  Widget _section({
+    required String title,
+    required IconData icon,
+    String? subtitle,
+    bool initiallyExpanded = false,
+    required List<Widget> children,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          leading: Icon(icon, color: scheme.primary),
+          title: Text(title,
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w700)),
+          subtitle: subtitle != null
+              ? Text(subtitle, style: TextStyle(color: scheme.outline))
+              : null,
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: children,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: OkayAppBar(
         title: Text(
@@ -750,200 +782,207 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
       ),
       body: MaxWidth(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           children: [
-            TextField(
-              controller: _title,
-              style: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.w600),
-              decoration: _formDec('Form title'),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _description,
-              maxLines: 2,
-              decoration: _formDec('Description (optional)'),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _submitLabel,
-              decoration: _formDec('Submit button label', hint: 'Submit'),
-            ),
-            const SizedBox(height: 8),
-            Theme(
-              data: Theme.of(context)
-                  .copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.only(bottom: 8),
-                leading: const Icon(Icons.tune),
-                title: const Text('Settings & customization'),
-                children: [
-                  TextField(
-                    controller: _notifyEmail,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: _formDec('Email responses to (optional)',
-                        icon: Icons.mail_outline),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _successMessage,
-                    maxLines: 2,
-                    decoration: _formDec('Thank-you message (optional)',
-                        hint: 'Shown after someone submits the form',
-                        icon: Icons.celebration_outlined),
-                  ),
-                  const SizedBox(height: 6),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _aiValidate,
-                    onChanged: (v) => setState(() => _aiValidate = v),
-                    secondary: const Icon(Icons.verified_outlined),
-                    title: const Text('AI response check'),
-                    subtitle: const Text(
-                        'Flag incomplete or implausible submissions'),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _e2e,
-                    onChanged: (v) => _toggleE2E(v),
-                    secondary: const Icon(Icons.lock_outline),
-                    title: const Text('End-to-end encrypt responses'),
-                    subtitle: Text(_e2e
-                        ? 'On — responses can only be read with your passphrase'
-                        : 'Only you can read responses; not even the server can'),
-                  ),
-                  if (_e2e)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Icon(Icons.info_outline,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.outline),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                                'Keep your passphrase safe — it can’t be recovered.',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color:
-                                        Theme.of(context).colorScheme.outline)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Accent colour',
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      for (final hex in _accentChoices)
-                        GestureDetector(
-                          onTap: () => setState(() => _accent = hex),
-                          child: Container(
-                            width: 34,
-                            height: 34,
-                            decoration: BoxDecoration(
-                              color: Color(int.parse('FF${hex.substring(1)}',
-                                  radix: 16)),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _accent == hex
-                                    ? Theme.of(context).colorScheme.onSurface
-                                    : Colors.transparent,
-                                width: 3,
-                              ),
-                            ),
-                            child: _accent == hex
-                                ? const Icon(Icons.check,
-                                    color: Colors.white, size: 18)
-                                : null,
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
+            // ── Form basics ─────────────────────────────────────────────
+            _section(
+              title: 'Form basics',
+              icon: Icons.description_outlined,
+              subtitle: 'Title, description and button',
+              initiallyExpanded: true,
               children: [
-                Text('Fields',
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold)),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => _addOrEditField(),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add field'),
+                TextField(
+                  controller: _title,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w600),
+                  decoration: _formDec('Form title'),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _description,
+                  maxLines: 2,
+                  decoration: _formDec('Description (optional)'),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _submitLabel,
+                  decoration: _formDec('Submit button label', hint: 'Submit'),
                 ),
               ],
             ),
-            if (_fields.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text('No fields yet. Tap “Add field”.',
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.outline)),
+            // ── Fields ──────────────────────────────────────────────────
+            _section(
+              title: 'Fields',
+              icon: Icons.list_alt_outlined,
+              subtitle:
+                  '${_fields.length} field${_fields.length == 1 ? '' : 's'}',
+              initiallyExpanded: true,
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _addOrEditField(),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add field'),
+                  ),
                 ),
-              )
-            else
-              ReorderableListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                buildDefaultDragHandles: false,
-                itemCount: _fields.length,
-                onReorder: (oldI, newI) => setState(() {
-                  if (newI > oldI) newI -= 1;
-                  _fields.insert(newI, _fields.removeAt(oldI));
-                }),
-                itemBuilder: (context, i) {
-                  final f = _fields[i];
-                  final type = '${f['type']}';
-                  return Card(
-                    key: ValueKey('${f['id'] ?? i}'),
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      leading: Icon(_fieldIcon(type)),
-                      title: Text('${f['label'] ?? 'Field'}'),
-                      subtitle: Text([
-                        _typeLabel(type),
-                        if (f['required'] == true) 'required',
-                      ].join(' · ')),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 20),
-                            tooltip: 'Remove',
-                            onPressed: () =>
-                                setState(() => _fields.removeAt(i)),
+                if (_fields.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: Text('No fields yet. Tap “Add field”.',
+                          style: TextStyle(color: scheme.outline)),
+                    ),
+                  )
+                else
+                  ReorderableListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    itemCount: _fields.length,
+                    onReorder: (oldI, newI) => setState(() {
+                      if (newI > oldI) newI -= 1;
+                      _fields.insert(newI, _fields.removeAt(oldI));
+                    }),
+                    itemBuilder: (context, i) {
+                      final f = _fields[i];
+                      final type = '${f['type']}';
+                      return Card(
+                        key: ValueKey('${f['id'] ?? i}'),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: Icon(_fieldIcon(type)),
+                          title: Text('${f['label'] ?? 'Field'}'),
+                          subtitle: Text([
+                            _typeLabel(type),
+                            if (f['required'] == true) 'required',
+                          ].join(' · ')),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    size: 20),
+                                tooltip: 'Remove',
+                                onPressed: () =>
+                                    setState(() => _fields.removeAt(i)),
+                              ),
+                              ReorderableDragStartListener(
+                                index: i,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(Icons.drag_handle),
+                                ),
+                              ),
+                            ],
                           ),
-                          ReorderableDragStartListener(
-                            index: i,
-                            child: const Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(Icons.drag_handle),
+                          onTap: () => _addOrEditField(i),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+            // ── Notifications ───────────────────────────────────────────
+            _section(
+              title: 'Notifications',
+              icon: Icons.notifications_outlined,
+              subtitle: 'Where responses go',
+              children: [
+                TextField(
+                  controller: _notifyEmail,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: _formDec('Email responses to (optional)',
+                      icon: Icons.mail_outline),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _successMessage,
+                  maxLines: 2,
+                  decoration: _formDec('Thank-you message (optional)',
+                      hint: 'Shown after someone submits the form',
+                      icon: Icons.celebration_outlined),
+                ),
+              ],
+            ),
+            // ── Privacy & security ──────────────────────────────────────
+            _section(
+              title: 'Privacy & security',
+              icon: Icons.shield_outlined,
+              subtitle: _e2e ? 'End-to-end encrypted' : 'Validation & encryption',
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _aiValidate,
+                  onChanged: (v) => setState(() => _aiValidate = v),
+                  secondary: const Icon(Icons.verified_outlined),
+                  title: const Text('AI response check'),
+                  subtitle: const Text(
+                      'Flag incomplete or implausible submissions'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _e2e,
+                  onChanged: (v) => _toggleE2E(v),
+                  secondary: const Icon(Icons.lock_outline),
+                  title: const Text('End-to-end encrypt responses'),
+                  subtitle: Text(_e2e
+                      ? 'On — responses can only be read with your passphrase'
+                      : 'Only you can read responses; not even the server can'),
+                ),
+                if (_e2e)
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 16, color: scheme.outline),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                            'Keep your passphrase safe — it can’t be recovered.',
+                            style: TextStyle(
+                                fontSize: 12, color: scheme.outline)),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            // ── Appearance ──────────────────────────────────────────────
+            _section(
+              title: 'Appearance',
+              icon: Icons.palette_outlined,
+              subtitle: 'Brand accent colour',
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final hex in _accentChoices)
+                      GestureDetector(
+                        onTap: () => setState(() => _accent = hex),
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Color(int.parse('FF${hex.substring(1)}',
+                                radix: 16)),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _accent == hex
+                                  ? scheme.onSurface
+                                  : Colors.transparent,
+                              width: 3,
                             ),
                           ),
-                        ],
+                          child: _accent == hex
+                              ? const Icon(Icons.check,
+                                  color: Colors.white, size: 18)
+                              : null,
+                        ),
                       ),
-                      onTap: () => _addOrEditField(i),
-                    ),
-                  );
-                },
-              ),
+                  ],
+                ),
+              ],
+            ),
           ],
         ),
       ),
