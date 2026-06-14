@@ -365,43 +365,44 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
 /// Re-shows the top/bottom bars whenever a route is pushed or popped, so a new
 /// screen never opens with its bars hidden from the previous screen's scroll.
 class _BarsNavObserver extends NavigatorObserver {
-  // Modal routes (dialogs, menus, bottom sheets) are PopupRoutes; track when
-  // one is on top so the global bottom nav can hide behind it.
-  int _modals = 0;
+  // Track the actual top-most route (instead of a fragile counter) so the
+  // global bottom nav reliably hides behind anything modal-like and shows on
+  // ordinary pushed pages — even after odd push/pop sequences.
+  Route<dynamic>? _top;
+
+  // Modal-like = a dialog/menu/bottom sheet (PopupRoute) OR a full-screen
+  // dialog (a self-contained editor/viewer that shouldn't be overlaid).
+  static bool _isModalLike(Route<dynamic>? r) =>
+      r is PopupRoute || (r is ModalRoute && r.fullscreenDialog);
 
   void _sync() {
-    navModalOpen.value = _modals > 0;
+    navModalOpen.value = _isModalLike(_top);
     navCanPop.value = navigator?.canPop() ?? false;
   }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     showBars();
-    if (route is PopupRoute) {
-      _modals++;
-    } else {
-      // A new full-screen page means no modal/dialog is on top. Reset the
-      // counter so a single leaked decrement can't keep the global bottom nav
-      // hidden forever on every pushed screen.
-      _modals = 0;
-    }
+    _top = route;
     _sync();
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     showBars();
-    if (route is PopupRoute && _modals > 0) _modals--;
+    _top = previousRoute;
     _sync();
   }
 
   @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
-      _sync();
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _top = newRoute;
+    _sync();
+  }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (route is PopupRoute && _modals > 0) _modals--;
+    _top = previousRoute;
     _sync();
   }
 }
