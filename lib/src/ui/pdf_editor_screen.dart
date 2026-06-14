@@ -50,11 +50,13 @@ class _Word {
   final bool italic;
 }
 
-/// A select-and-replace edit: clear these word bounds, draw [text] in [draw]
-/// using the same size/style as the text it replaces.
+/// A select-and-edit operation on a page's words.
+/// [mode] is 'replace' (cover + redraw [text]), 'highlight' (translucent
+/// yellow marker), or 'redact' (opaque black box).
 class _TextEdit {
   _TextEdit(this.pageIndex, this.clear, this.draw, this.text, this.fontSize,
-      this.bold, this.italic);
+      this.bold, this.italic,
+      {this.mode = 'replace'});
   final int pageIndex;
   final List<Rect> clear;
   final Rect draw;
@@ -62,6 +64,7 @@ class _TextEdit {
   final double fontSize;
   final bool bold;
   final bool italic;
+  final String mode;
 }
 
 /// A page-level PDF editor: open a PDF (its pages are rendered to images),
@@ -184,6 +187,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         await _fillForm();
       case 'extract':
         await _extractText();
+      case 'duplicate':
+        _duplicatePage(p);
+      case 'blankAfter':
+        _insertBlankAfter(p);
+      case 'exportPage':
+        await _exportPage(p);
       default:
         setState(() {}); // reflect any rotation done on the page
     }
@@ -264,30 +273,54 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     try {
       final doc = sf.PdfDocument(inputBytes: src);
       final page = doc.pages[edit.pageIndex];
-      for (final r in edit.clear) {
-        page.graphics.drawRectangle(
-            brush: sf.PdfSolidBrush(sf.PdfColor(255, 255, 255)), bounds: r);
-      }
-      if (edit.text.isNotEmpty) {
-        final styles = <sf.PdfFontStyle>[
-          if (edit.bold) sf.PdfFontStyle.bold,
-          if (edit.italic) sf.PdfFontStyle.italic,
-        ];
-        page.graphics.drawString(
-          edit.text,
-          sf.PdfStandardFont(
-            sf.PdfFontFamily.helvetica,
-            edit.fontSize.clamp(6.0, 72.0).toDouble(),
-            multiStyle: styles.isEmpty ? null : styles,
-          ),
-          brush: sf.PdfSolidBrush(sf.PdfColor(0, 0, 0)),
-          bounds: edit.draw,
-        );
+      if (edit.mode == 'highlight') {
+        final g = page.graphics;
+        g.save();
+        g.setTransparency(0.4);
+        for (final r in edit.clear) {
+          g.drawRectangle(
+              brush: sf.PdfSolidBrush(sf.PdfColor(255, 235, 59)), bounds: r);
+        }
+        g.restore();
+      } else if (edit.mode == 'redact') {
+        for (final r in edit.clear) {
+          page.graphics.drawRectangle(
+              brush: sf.PdfSolidBrush(sf.PdfColor(0, 0, 0)), bounds: r);
+        }
+      } else {
+        for (final r in edit.clear) {
+          page.graphics.drawRectangle(
+              brush: sf.PdfSolidBrush(sf.PdfColor(255, 255, 255)), bounds: r);
+        }
+        if (edit.text.isNotEmpty) {
+          final styles = <sf.PdfFontStyle>[
+            if (edit.bold) sf.PdfFontStyle.bold,
+            if (edit.italic) sf.PdfFontStyle.italic,
+          ];
+          page.graphics.drawString(
+            edit.text,
+            sf.PdfStandardFont(
+              sf.PdfFontFamily.helvetica,
+              edit.fontSize.clamp(6.0, 72.0).toDouble(),
+              multiStyle: styles.isEmpty ? null : styles,
+            ),
+            brush: sf.PdfSolidBrush(sf.PdfColor(0, 0, 0)),
+            bounds: edit.draw,
+          );
+        }
       }
       final outBytes = Uint8List.fromList(await doc.save());
       doc.dispose();
       await _applyEditedPdf(outBytes);
-      if (mounted) showInfo(context, 'Replaced');
+      if (mounted) {
+        showInfo(
+            context,
+            edit.mode == 'highlight'
+                ? 'Highlighted'
+                : edit.mode == 'redact'
+                    ? 'Redacted'
+                    : 'Replaced');
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -447,6 +480,184 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           _status = '';
         });
       }
+    }
+  }
+
+  // ---- Document-wide tools -------------------------------------------------
+
+  /// Runs a Syncfusion edit over the whole document, then re-renders previews.
+  Future<void> _runDocEdit(
+      String status, void Function(sf.PdfDocument doc) edit) async {
+    final src = _originalPdf;
+    if (src == null) return;
+    setState(() {
+      _busy = true;
+      _status = status;
+    });
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      edit(doc);
+      final out = Uint8List.fromList(await doc.save());
+      doc.dispose();
+      await _applyEditedPdf(out);
+      if (mounted) showInfo(context, 'Done');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
+      }
+    }
+  }
+
+  Future<void> _addWatermark() async {
+    final text = await promptText(context,
+        title: 'Watermark', hint: 'e.g. CONFIDENTIAL', action: 'Add');
+    if (text == null || text.trim().isEmpty) return;
+    await _runDocEdit('Adding watermark…', (doc) {
+      final font = sf.PdfStandardFont(sf.PdfFontFamily.helvetica, 48,
+          style: sf.PdfFontStyle.bold);
+      for (var i = 0; i < doc.pages.count; i++) {
+        final page = doc.pages[i];
+        final g = page.graphics;
+        final size = page.size;
+        g.save();
+        g.setTransparency(0.18);
+        g.translateTransform(size.width / 2, size.height / 2);
+        g.rotateTransform(-45);
+        final ts = font.measureString(text);
+        g.drawString(text, font,
+            brush: sf.PdfSolidBrush(sf.PdfColor(120, 120, 120)),
+            bounds: Rect.fromLTWH(-ts.width / 2, -ts.height / 2, ts.width, ts.height));
+        g.restore();
+      }
+    });
+  }
+
+  Future<void> _addPageNumbers() async {
+    await _runDocEdit('Numbering pages…', (doc) {
+      final font = sf.PdfStandardFont(sf.PdfFontFamily.helvetica, 10);
+      final n = doc.pages.count;
+      for (var i = 0; i < n; i++) {
+        final page = doc.pages[i];
+        final size = page.size;
+        page.graphics.drawString('${i + 1} / $n', font,
+            brush: sf.PdfSolidBrush(sf.PdfColor(80, 80, 80)),
+            bounds: Rect.fromLTWH(0, size.height - 28, size.width, 18),
+            format: sf.PdfStringFormat(alignment: sf.PdfTextAlignment.center));
+      }
+    });
+  }
+
+  Future<void> _setPassword() async {
+    final pw = await promptText(context,
+        title: 'Protect with password', hint: 'Password', action: 'Protect');
+    if (pw == null || pw.isEmpty) return;
+    await _runDocEdit('Encrypting…', (doc) {
+      final sec = doc.security;
+      sec.algorithm = sf.PdfEncryptionAlgorithm.aesx256Bit;
+      sec.userPassword = pw;
+    });
+  }
+
+  Future<void> _editDocInfo() async {
+    final src = _originalPdf;
+    if (src == null) return;
+    var title = '', author = '', subject = '';
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      title = doc.documentInformation.title;
+      author = doc.documentInformation.author;
+      subject = doc.documentInformation.subject;
+      doc.dispose();
+    } catch (_) {}
+    if (!mounted) return;
+    final tc = TextEditingController(text: title);
+    final ac = TextEditingController(text: author);
+    final sc = TextEditingController(text: subject);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Document info'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+              controller: tc,
+              decoration: const InputDecoration(labelText: 'Title')),
+          TextField(
+              controller: ac,
+              decoration: const InputDecoration(labelText: 'Author')),
+          TextField(
+              controller: sc,
+              decoration: const InputDecoration(labelText: 'Subject')),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    final t = tc.text, a = ac.text, s = sc.text;
+    tc.dispose();
+    ac.dispose();
+    sc.dispose();
+    if (ok != true) return;
+    await _runDocEdit('Saving info…', (doc) {
+      doc.documentInformation.title = t;
+      doc.documentInformation.author = a;
+      doc.documentInformation.subject = s;
+    });
+  }
+
+  /// Inserts a copy of [page] right after it in the working list.
+  void _duplicatePage(_Page page) {
+    final i = _pages.indexOf(page);
+    if (i < 0) return;
+    // The duplicate is a standalone image page (no source-text mapping).
+    final copy = _Page(_seq++, page.png, page.aspect)..quarter = page.quarter;
+    setState(() => _pages.insert(i + 1, copy));
+    showInfo(context, 'Page duplicated');
+  }
+
+  /// Inserts a blank white page after [page].
+  void _insertBlankAfter(_Page page) {
+    final i = _pages.indexOf(page);
+    if (i < 0) return;
+    final blank = img.Image(width: 850, height: 1100);
+    img.fill(blank, color: img.ColorRgb8(255, 255, 255));
+    final png = img.encodePng(blank);
+    setState(() => _pages.insert(i + 1, _Page(_seq++, png, 850 / 1100)));
+    showInfo(context, 'Blank page added');
+  }
+
+  /// Exports a single page as its own PDF.
+  Future<void> _exportPage(_Page page) async {
+    setState(() => _busy = true);
+    try {
+      final doc = pw.Document();
+      final rotated = (page.quarter % 4) == 1 || (page.quarter % 4) == 3;
+      final aspect = rotated ? 1 / page.aspect : page.aspect;
+      const pageW = 595.0;
+      final pageH = pageW / (aspect <= 0 ? 0.7071 : aspect);
+      final image = pw.MemoryImage(_rotated(page));
+      doc.addPage(pw.Page(
+        pageFormat: PdfPageFormat(pageW, pageH),
+        margin: pw.EdgeInsets.zero,
+        build: (_) => pw.Image(image, fit: pw.BoxFit.fill),
+      ));
+      await Printing.sharePdf(
+          bytes: await doc.save(),
+          filename: 'page-${DateTime.now().millisecondsSinceEpoch}.pdf');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -635,6 +846,34 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             icon: const Icon(Icons.add_photo_alternate_outlined),
             onPressed: _busy ? null : _addImage,
           ),
+          if (_pages.isNotEmpty)
+            PopupMenuButton<String>(
+              tooltip: 'Document tools',
+              icon: const Icon(Icons.tune),
+              enabled: !_busy,
+              onSelected: (v) {
+                switch (v) {
+                  case 'watermark':
+                    _addWatermark();
+                  case 'numbers':
+                    _addPageNumbers();
+                  case 'password':
+                    _setPassword();
+                  case 'info':
+                    _editDocInfo();
+                  case 'extract':
+                    _extractText();
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'watermark', child: Text('Add watermark')),
+                PopupMenuItem(value: 'numbers', child: Text('Add page numbers')),
+                PopupMenuItem(
+                    value: 'password', child: Text('Protect with password')),
+                PopupMenuItem(value: 'info', child: Text('Document info')),
+                PopupMenuItem(value: 'extract', child: Text('Extract all text')),
+              ],
+            ),
           if (_pages.isNotEmpty)
             TextButton.icon(
               onPressed: _busy ? null : _export,
@@ -1273,6 +1512,17 @@ class _TextSelectScreenState extends State<_TextSelectScreen> {
     return idx.map((i) => widget.words[i].text).join(' ');
   }
 
+  ({List<Rect> clears, Rect union, _Word first}) _selBounds() {
+    final idx = _sel.toList()..sort();
+    final first = widget.words[idx.first];
+    final clears = [for (final i in idx) widget.words[i].pdf];
+    var union = clears.first;
+    for (final r in clears) {
+      union = union.expandToInclude(r);
+    }
+    return (clears: clears, union: union, first: first);
+  }
+
   Future<void> _replace() async {
     if (_sel.isEmpty) return;
     final controller = TextEditingController(text: _selectedText);
@@ -1297,18 +1547,22 @@ class _TextSelectScreenState extends State<_TextSelectScreen> {
     );
     controller.dispose();
     if (result == null || !mounted) return;
-    final idx = _sel.toList()..sort();
-    final first = widget.words[idx.first];
-    final clears = [for (final i in idx) widget.words[i].pdf];
-    var union = clears.first;
-    for (final r in clears) {
-      union = union.expandToInclude(r);
-    }
+    final b = _selBounds();
     // Use the same size/style as the text being replaced.
     Navigator.pop(
         context,
-        _TextEdit(widget.pageIndex, clears, union, result, first.fontSize,
-            first.bold, first.italic));
+        _TextEdit(widget.pageIndex, b.clears, b.union, result, b.first.fontSize,
+            b.first.bold, b.first.italic));
+  }
+
+  void _markup(String mode) {
+    if (_sel.isEmpty) return;
+    final b = _selBounds();
+    Navigator.pop(
+        context,
+        _TextEdit(widget.pageIndex, b.clears, b.union, '', b.first.fontSize,
+            b.first.bold, b.first.italic,
+            mode: mode));
   }
 
   @override
@@ -1318,6 +1572,16 @@ class _TextSelectScreenState extends State<_TextSelectScreen> {
       appBar: OkayAppBar(
         title: Text(_sel.isEmpty ? 'Select text' : '${_sel.length} selected'),
         actions: [
+          IconButton(
+            tooltip: 'Highlight',
+            onPressed: _sel.isEmpty ? null : () => _markup('highlight'),
+            icon: const Icon(Icons.highlight),
+          ),
+          IconButton(
+            tooltip: 'Redact',
+            onPressed: _sel.isEmpty ? null : () => _markup('redact'),
+            icon: const Icon(Icons.format_color_fill),
+          ),
           TextButton(
             onPressed: _sel.isEmpty ? null : _replace,
             child: const Text('Replace'),
@@ -1330,7 +1594,7 @@ class _TextSelectScreenState extends State<_TextSelectScreen> {
             padding: const EdgeInsets.all(8),
             child: Text(
                 _sel.isEmpty
-                    ? 'Drag across the words you want to replace.'
+                    ? 'Drag across words, then replace, highlight, or redact.'
                     : '“$_selectedText”',
                 style: TextStyle(color: scheme.outline)),
           ),
@@ -1437,6 +1701,11 @@ class _PageScreenState extends State<_PageScreen> {
               PopupMenuItem(value: 'markup', child: Text('Add text / signature')),
               PopupMenuItem(value: 'form', child: Text('Fill form fields')),
               PopupMenuItem(value: 'extract', child: Text('Extract text')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'duplicate', child: Text('Duplicate page')),
+              PopupMenuItem(
+                  value: 'blankAfter', child: Text('Insert blank page after')),
+              PopupMenuItem(value: 'exportPage', child: Text('Export this page')),
             ],
           ),
         ],
