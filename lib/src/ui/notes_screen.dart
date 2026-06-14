@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../okayspace_api.dart';
 import 'common.dart';
@@ -28,13 +29,10 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Future<void> _edit([Note? note]) async {
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _NoteEditor(note: note),
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => NoteEditorScreen(note: note)),
     );
-    if (saved == true) _reload();
+    if (changed == true) _reload();
   }
 
   Future<void> _togglePin(Note n) async {
@@ -182,20 +180,31 @@ class _NoteTile extends StatelessWidget {
   }
 }
 
-class _NoteEditor extends StatefulWidget {
-  const _NoteEditor({this.note});
+/// A full-screen, Apple Notes-style editor: a big title line, an edited-at
+/// timestamp, and a body that fills the screen. Auto-saves on leave; emptying
+/// an existing note deletes it. Pin/Copy/Delete live in the toolbar.
+class NoteEditorScreen extends StatefulWidget {
+  const NoteEditorScreen({super.key, this.note});
   final Note? note;
 
   @override
-  State<_NoteEditor> createState() => _NoteEditorState();
+  State<NoteEditorScreen> createState() => _NoteEditorScreenState();
 }
 
-class _NoteEditorState extends State<_NoteEditor> {
+class _NoteEditorScreenState extends State<NoteEditorScreen> {
   late final TextEditingController _title =
       TextEditingController(text: widget.note?.title ?? '');
   late final TextEditingController _body =
       TextEditingController(text: widget.note?.body ?? '');
-  bool _saving = false;
+  late bool _pinned = widget.note?.pinned ?? false;
+  bool _done = false; // guard against double-save (Done + pop)
+
+  bool get _empty =>
+      _title.text.trim().isEmpty && _body.text.trim().isEmpty;
+  bool get _changed =>
+      _title.text != (widget.note?.title ?? '') ||
+      _body.text != (widget.note?.body ?? '') ||
+      _pinned != (widget.note?.pinned ?? false);
 
   @override
   void dispose() {
@@ -204,61 +213,140 @@ class _NoteEditorState extends State<_NoteEditor> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (_title.text.trim().isEmpty && _body.text.trim().isEmpty) {
-      Navigator.pop(context, false);
-      return;
-    }
-    setState(() => _saving = true);
+  /// Persists on leave (Apple Notes-style auto-save). Returns whether the list
+  /// needs refreshing.
+  Future<bool> _persist() async {
+    final n = widget.note;
     try {
-      final n = widget.note;
       if (n == null) {
-        await api.notes.create(title: _title.text, body: _body.text);
-      } else {
-        await api.notes.update(n.id,
-            title: _title.text, body: _body.text, color: n.color,
-            pinned: n.pinned);
+        if (_empty) return false; // nothing typed
+        await api.notes
+            .create(title: _title.text, body: _body.text, pinned: _pinned);
+        return true;
       }
-      if (mounted) Navigator.pop(context, true);
+      if (_empty) {
+        await api.notes.delete(n.id); // emptied → remove
+        return true;
+      }
+      if (!_changed) return false;
+      await api.notes.update(n.id,
+          title: _title.text, body: _body.text, color: n.color,
+          pinned: _pinned);
+      return true;
     } catch (e) {
-      if (mounted) {
-        setState(() => _saving = false);
-        showError(context, e);
-      }
+      if (mounted) showError(context, e);
+      return false;
     }
+  }
+
+  Future<void> _leave() async {
+    if (_done) return;
+    _done = true;
+    final changed = await _persist();
+    if (mounted) Navigator.pop(context, changed);
+  }
+
+  Future<void> _delete() async {
+    _done = true;
+    final n = widget.note;
+    if (n != null) {
+      try {
+        await api.notes.delete(n.id);
+      } catch (_) {}
+    }
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  void _copy() {
+    final text = [_title.text, _body.text]
+        .where((s) => s.trim().isNotEmpty)
+        .join('\n');
+    Clipboard.setData(ClipboardData(text: text));
+    showInfo(context, 'Copied');
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, bottom + 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _title,
-            textCapitalization: TextCapitalization.sentences,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-            decoration: const InputDecoration(
-                hintText: 'Title', border: InputBorder.none),
+    final scheme = Theme.of(context).colorScheme;
+    final when = widget.note?.updatedAt.toLocal();
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _leave();
+      },
+      child: Scaffold(
+        appBar: OkayAppBar(
+          title: const Text('Note'),
+          actions: [
+            IconButton(
+              tooltip: _pinned ? 'Unpin' : 'Pin',
+              icon: Icon(_pinned ? Icons.push_pin : Icons.push_pin_outlined),
+              onPressed: () => setState(() => _pinned = !_pinned),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (v) => v == 'copy' ? _copy() : _delete(),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'copy', child: Text('Copy text')),
+                if (widget.note != null)
+                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+            TextButton(onPressed: _leave, child: const Text('Done')),
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 6, 18, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _title,
+                autofocus: widget.note == null,
+                textCapitalization: TextCapitalization.sentences,
+                textInputAction: TextInputAction.next,
+                style:
+                    const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                decoration: const InputDecoration(
+                    hintText: 'Title',
+                    border: InputBorder.none,
+                    isCollapsed: true),
+              ),
+              if (when != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text(_stamp(when),
+                      style: TextStyle(color: scheme.outline, fontSize: 12)),
+                ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: TextField(
+                  controller: _body,
+                  textCapitalization: TextCapitalization.sentences,
+                  expands: true,
+                  maxLines: null,
+                  minLines: null,
+                  textAlignVertical: TextAlignVertical.top,
+                  keyboardType: TextInputType.multiline,
+                  style: const TextStyle(fontSize: 17, height: 1.4),
+                  decoration: const InputDecoration(
+                      hintText: 'Write something…', border: InputBorder.none),
+                ),
+              ),
+            ],
           ),
-          TextField(
-            controller: _body,
-            textCapitalization: TextCapitalization.sentences,
-            minLines: 3,
-            maxLines: 12,
-            decoration: const InputDecoration(
-                hintText: 'Write something…', border: InputBorder.none),
-          ),
-          const SizedBox(height: 8),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: Text(widget.note == null ? 'Save note' : 'Save changes'),
-          ),
-        ],
+        ),
       ),
     );
   }
+}
+
+String _stamp(DateTime d) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final m = d.minute.toString().padLeft(2, '0');
+  return 'Edited ${months[d.month - 1]} ${d.day}, ${d.year} '
+      'at $h:$m ${d.hour < 12 ? 'AM' : 'PM'}';
 }

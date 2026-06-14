@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'ads_screen.dart';
 import 'api_keys_screen.dart';
 import 'bookmarks_screen.dart';
+import 'calculator_screen.dart';
 import 'calendar_screen.dart';
 import 'camera_screen.dart';
 import 'circles_screen.dart';
@@ -52,6 +53,8 @@ class MoreScreen extends StatelessWidget {
               const Color(0xFF14B8A6), () => const CalendarScreen()),
           _Item('Camera', Icons.photo_camera_outlined, const Color(0xFF6366F1),
               () => const CameraScreen()),
+          _Item('Calculator', Icons.calculate_outlined,
+              const Color(0xFF0EA5E9), () => const CalculatorScreen()),
           _Item('Bookmarks', Icons.bookmark_outline, const Color(0xFFEAB308),
               () => const BookmarksScreen()),
         ]),
