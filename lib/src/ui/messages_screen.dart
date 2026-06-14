@@ -17,6 +17,8 @@ import '../core/mapbox_api.dart';
 import 'games/three_game.dart';
 import 'call_screen.dart';
 import '../core/update_checker.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import 'common.dart';
 import 'linked_text.dart';
 import 'voice_message.dart';
@@ -2798,6 +2800,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   _attachTile(
                       Icons.place_outlined, 'Location', _attachLocation),
                   _attachTile(Icons.poll_outlined, 'Poll', _attachPoll),
+                  _attachTile(
+                      Icons.assignment_outlined, 'Form', _attachForm),
                   _attachTile(Icons.attach_money, 'Tip', _attachTip),
                 ],
               ),
@@ -3407,6 +3411,51 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Pick one of the user's forms and send it into the chat.
+  Future<void> _attachForm() async {
+    List<Map<String, dynamic>> forms;
+    try {
+      forms = await api.forms.forms();
+    } catch (e) {
+      if (mounted) showError(context, e);
+      return;
+    }
+    if (!mounted) return;
+    if (forms.isEmpty) {
+      showInfo(context, 'You have no forms yet — create one in More → Forms.');
+      return;
+    }
+    final chosen = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+                title: Text('Send a form',
+                    style: TextStyle(fontWeight: FontWeight.bold))),
+            for (final f in forms)
+              ListTile(
+                leading: const Icon(Icons.assignment_outlined),
+                title: Text('${f['title'] ?? 'Untitled'}'),
+                onTap: () => Navigator.pop(context, f),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    try {
+      await api.messaging.send(
+          _convId, MessageCreate(type: 'form', formId: '${chosen['id']}'));
+      await _fetch(silent: true);
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) showError(context, e);
     }
   }
 
@@ -4663,6 +4712,9 @@ class _MessageBubble extends StatelessWidget {
     final isVoice = message.type == 'voice' &&
         !message.deleted &&
         (message.audioBase64 ?? '').isNotEmpty;
+    final formKey = '${message.raw['form_key'] ?? ''}';
+    final isForm =
+        message.type == 'form' && !message.deleted && formKey.isNotEmpty;
     final tipAmount = (message.raw['amount'] as num?);
     final typeLabel = switch (message.type) {
       'post' => '📄 Shared a post',
@@ -4693,7 +4745,8 @@ class _MessageBubble extends StatelessWidget {
                         isGame ||
                         isPoll ||
                         isTip ||
-                        isVoice
+                        isVoice ||
+                        isForm
                     ? ''
                     : typeLabel));
     // A short, all-emoji message renders large with no bubble (like WhatsApp).
@@ -4850,6 +4903,12 @@ class _MessageBubble extends StatelessWidget {
                     VoiceBubble(
                       base64Audio: message.audioBase64!,
                       durationMs: message.audioDurationMs,
+                      dark: mine,
+                    ),
+                  if (isForm)
+                    _FormCard(
+                      title: '${message.raw['form_title'] ?? 'Form'}',
+                      url: api.forms.publicLink(formKey),
                       dark: mine,
                     ),
                   if (bodyText.isNotEmpty)
@@ -7875,6 +7934,55 @@ class _StarredMessagesScreenState extends State<StarredMessagesScreen> {
               },
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// A tappable "open this form" card shown for a shared-form chat message.
+class _FormCard extends StatelessWidget {
+  const _FormCard({required this.title, required this.url, required this.dark});
+
+  final String title;
+  final String url;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = dark ? Colors.white : Theme.of(context).colorScheme.onSurface;
+    return InkWell(
+      onTap: () async {
+        final uri = Uri.tryParse(url);
+        if (uri != null) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 240),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.assignment_outlined, color: fg),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
+                  Text('Tap to open form',
+                      style: TextStyle(
+                          color: fg.withValues(alpha: 0.7), fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

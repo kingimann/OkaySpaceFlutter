@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../okayspace_api.dart';
 import 'common.dart';
 
 /// Field types supported by the form builder, grouped by category
@@ -254,6 +256,29 @@ class _FormsScreenState extends State<FormsScreen> {
     if (changed == true && mounted) _reload();
   }
 
+  Future<void> _copyLink(Map<String, dynamic> f) async {
+    final key = '${f['form_key'] ?? ''}';
+    if (key.isEmpty) {
+      showInfo(context, 'No share link yet — save the form first.');
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: api.forms.publicLink(key)));
+    if (mounted) showInfo(context, 'Share link copied');
+  }
+
+  Future<void> _sendToChat(Map<String, dynamic> f) async {
+    final id = '${f['id'] ?? ''}';
+    if (id.isEmpty) return;
+    final conv = await pickConversation(context);
+    if (conv == null || !mounted) return;
+    try {
+      await api.messaging.send(conv.id, MessageCreate(type: 'form', formId: id));
+      if (mounted) showInfo(context, 'Sent');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _delete(Map<String, dynamic> f) async {
     final id = '${f['id'] ?? ''}';
     final ok = await showDialog<bool>(
@@ -334,12 +359,20 @@ class _FormsScreenState extends State<FormsScreen> {
                                   builder: (_) =>
                                       FormBuilderScreen(existing: f)));
                           if (changed == true && mounted) _reload();
+                        } else if (v == 'link') {
+                          _copyLink(f);
+                        } else if (v == 'send') {
+                          _sendToChat(f);
                         } else if (v == 'delete') {
                           _delete(f);
                         }
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(
+                            value: 'link', child: Text('Copy share link')),
+                        PopupMenuItem(
+                            value: 'send', child: Text('Send to a chat')),
                         PopupMenuItem(value: 'delete', child: Text('Delete')),
                       ],
                     ),

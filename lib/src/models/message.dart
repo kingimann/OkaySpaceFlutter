@@ -508,6 +508,7 @@ class MessageCreate {
     this.fileSize,
     this.fileMime,
     this.contactUserId,
+    this.formId,
     this.replyTo,
   });
 
@@ -530,6 +531,7 @@ class MessageCreate {
   final int? fileSize;
   final String? fileMime;
   final String? contactUserId;
+  final String? formId;
   final String? replyTo;
 
   /// A plain text message.
@@ -556,6 +558,7 @@ class MessageCreate {
         if (fileSize != null) 'file_size': fileSize,
         if (fileMime != null) 'file_mime': fileMime,
         if (contactUserId != null) 'contact_user_id': contactUserId,
+        if (formId != null) 'form_id': formId,
         if (replyTo != null) 'reply_to': replyTo,
       };
 }

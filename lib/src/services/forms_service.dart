@@ -8,6 +8,13 @@ class FormsService {
 
   final ApiClient _client;
 
+  /// The public, shareable URL for a form (a self-contained page that also
+  /// works embedded). [formKey] is the form's `form_key`.
+  String publicLink(String formKey) {
+    final base = _client.baseUrl.replaceFirst(RegExp(r'/v\d+/?$'), '');
+    return '$base/pub/form-unit?form=$formKey';
+  }
+
   List<Map<String, dynamic>> _list(dynamic data, [String? key]) {
     final list = data is Map
         ? (data[key] ?? data['items'] ?? data['forms'] ?? data['data'])
