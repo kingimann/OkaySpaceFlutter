@@ -96,6 +96,7 @@ class ConversationView {
     this.otherUser,
     this.members = const [],
     this.ownerId,
+    this.adminIds = const [],
     this.listingId,
     this.listingTitle,
     this.lastMessage,
@@ -115,6 +116,7 @@ class ConversationView {
   final PublicUser? otherUser;
   final List<PublicUser> members;
   final String? ownerId;
+  final List<String> adminIds;
   final String? listingId;
   final String? listingTitle;
   final Message? lastMessage;
@@ -139,6 +141,7 @@ class ConversationView {
       otherUser: other != null ? PublicUser.fromJson(other) : null,
       members: asModelList(json['members'], PublicUser.fromJson),
       ownerId: asStringOrNull(json['owner_id']),
+      adminIds: asStringList(json['admin_ids']),
       listingId: asStringOrNull(json['listing_id']),
       listingTitle: asStringOrNull(json['listing_title']),
       lastMessage: last != null ? Message.fromJson(last) : null,

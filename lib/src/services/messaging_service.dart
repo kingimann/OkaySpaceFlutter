@@ -39,9 +39,24 @@ class MessagingService {
           String convId, Map<String, dynamic> changes) async =>
       _conv(await _client.patchJson('/conversations/$convId', body: changes));
 
-  Future<void> leave(String convId) async {
-    await _client.postJson('/conversations/$convId/leave');
+  /// Leaves a group. If you're the last admin, pass [newAdminId] to hand off
+  /// admin to a remaining member (required by the server in that case).
+  Future<void> leave(String convId, {String? newAdminId}) async {
+    await _client.postJson('/conversations/$convId/leave',
+        body: {if (newAdminId != null) 'new_admin_id': newAdminId});
   }
+
+  /// Promotes a member to group admin.
+  Future<ConversationView> promoteAdmin(String convId, String userId) =>
+      updateGroup(convId, {'add_admin_ids': [userId]});
+
+  /// Demotes a group admin (owner only).
+  Future<ConversationView> demoteAdmin(String convId, String userId) =>
+      updateGroup(convId, {'remove_admin_ids': [userId]});
+
+  /// Removes (kicks) a member from a group.
+  Future<ConversationView> removeMember(String convId, String userId) =>
+      updateGroup(convId, {'remove_member_ids': [userId]});
 
   Future<void> delete(String convId) async {
     await _client.deleteJson('/conversations/$convId');
