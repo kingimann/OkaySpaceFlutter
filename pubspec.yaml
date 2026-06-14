@@ -40,6 +40,9 @@ dependencies:
   # Real PDF text find/replace (pure Dart, works on web).
   # Free under Syncfusion's Community License (eligibility limits apply).
   syncfusion_flutter_pdf: ^28.1.33
+  # Voice messages: record (mic) + audioplayers (playback). Both support web.
+  record: ^5.1.2
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
