@@ -197,9 +197,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   late final TextEditingController _body =
       TextEditingController(text: widget.note?.body ?? '');
   final UndoHistoryController _undo = UndoHistoryController();
+  final FocusNode _bodyFocus = FocusNode();
   late bool _pinned = widget.note?.pinned ?? false;
   late String? _color = widget.note?.color;
   bool _done = false; // guard against double-save (Done + pop)
+
+  @override
+  void initState() {
+    super.initState();
+    // Swap between the graphical preview and the text field as focus changes.
+    _bodyFocus.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() => setState(() {});
 
   static const _palette = <String, Color>{
     'red': Color(0xFFEF4444),
@@ -220,6 +230,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
   @override
   void dispose() {
+    _bodyFocus.removeListener(_onFocusChanged);
+    _bodyFocus.dispose();
     _title.dispose();
     _body.dispose();
     _undo.dispose();
@@ -277,6 +289,121 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         .join('\n');
     Clipboard.setData(ClipboardData(text: text));
     showInfo(context, 'Copied');
+  }
+
+  void _toggleLine(int idx) {
+    final lines = _body.text.split('\n');
+    if (idx < 0 || idx >= lines.length) return;
+    final l = lines[idx];
+    if (l.startsWith('☐ ')) {
+      lines[idx] = '☑ ${l.substring(2)}';
+    } else if (l.startsWith('☑ ')) {
+      lines[idx] = '☐ ${l.substring(2)}';
+    } else {
+      return;
+    }
+    setState(() => _body.text = lines.join('\n'));
+  }
+
+  /// Focuses the text field, placing the caret at the end of [idx]'s line.
+  void _editAtLine(int idx) {
+    final lines = _body.text.split('\n');
+    var off = 0;
+    for (var i = 0; i < idx && i < lines.length; i++) {
+      off += lines[i].length + 1;
+    }
+    if (idx < lines.length) off += lines[idx].length;
+    _body.selection =
+        TextSelection.collapsed(offset: off.clamp(0, _body.text.length));
+    _bodyFocus.requestFocus();
+  }
+
+  /// The body: a graphical preview (tappable checklist circles, strikethrough
+  /// done items) when not editing; the raw text field when focused or empty.
+  Widget _buildBody() {
+    final showPreview =
+        _body.text.trim().isNotEmpty && !_bodyFocus.hasFocus;
+    if (!showPreview) {
+      return TextField(
+        controller: _body,
+        focusNode: _bodyFocus,
+        undoController: _undo,
+        inputFormatters: [_ListContinuationFormatter()],
+        textCapitalization: TextCapitalization.sentences,
+        expands: true,
+        maxLines: null,
+        minLines: null,
+        textAlignVertical: TextAlignVertical.top,
+        keyboardType: TextInputType.multiline,
+        cursorColor: _accent,
+        onTap: _maybeToggleCheckbox,
+        style: const TextStyle(fontSize: 17, height: 1.5),
+        decoration: const InputDecoration(
+            hintText: 'Start writing…', border: InputBorder.none),
+      );
+    }
+    final scheme = Theme.of(context).colorScheme;
+    final lines = _body.text.split('\n');
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _editAtLine(lines.length - 1),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < lines.length; i++) _previewLine(i, lines[i], scheme),
+            const SizedBox(height: 80),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _previewLine(int idx, String line, ColorScheme scheme) {
+    const ts = TextStyle(fontSize: 17, height: 1.5);
+    if (line.startsWith('☐ ') || line.startsWith('☑ ')) {
+      final done = line.startsWith('☑ ');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () => _toggleLine(idx),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 10, top: 1),
+                child: Icon(
+                    done ? Icons.check_circle : Icons.circle_outlined,
+                    size: 24,
+                    color: done ? (_accent ?? scheme.primary) : scheme.outline),
+              ),
+            ),
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _editAtLine(idx),
+                child: Text(
+                  line.substring(2).isEmpty ? ' ' : line.substring(2),
+                  style: ts.copyWith(
+                    decoration: done ? TextDecoration.lineThrough : null,
+                    color: done ? scheme.outline : null,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: () => _editAtLine(idx),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Text(line.isEmpty ? ' ' : line, style: ts),
+      ),
+    );
   }
 
   /// If the tap landed on a checklist line's box (☐/☑), toggle it; otherwise
@@ -498,26 +625,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                 TextStyle(color: scheme.outline, fontSize: 12)),
                       ),
                     const SizedBox(height: 6),
-                    Expanded(
-                      child: TextField(
-                        controller: _body,
-                        undoController: _undo,
-                        inputFormatters: [_ListContinuationFormatter()],
-                        textCapitalization: TextCapitalization.sentences,
-                        expands: true,
-                        maxLines: null,
-                        minLines: null,
-                        textAlignVertical: TextAlignVertical.top,
-                        keyboardType: TextInputType.multiline,
-                        cursorColor: _accent,
-                        // Tapping a checklist box toggles it; other taps edit.
-                        onTap: _maybeToggleCheckbox,
-                        style: const TextStyle(fontSize: 17, height: 1.5),
-                        decoration: const InputDecoration(
-                            hintText: 'Start writing…',
-                            border: InputBorder.none),
-                      ),
-                    ),
+                    Expanded(child: _buildBody()),
                   ],
                 ),
               ),
