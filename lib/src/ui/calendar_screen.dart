@@ -86,9 +86,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Calendar')),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 72),
-        child: FloatingActionButton.extended(
+      floatingActionButton: liftedFab(
+        FloatingActionButton.extended(
           onPressed: () => _edit(
               initialStart: DateTime(
                   _selected.year, _selected.month, _selected.day, 9)),

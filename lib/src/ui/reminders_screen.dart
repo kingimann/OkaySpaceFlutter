@@ -60,9 +60,8 @@ class _RemindersScreenState extends State<RemindersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const OkayAppBar(title: Text('Reminders')),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 72),
-        child: FloatingActionButton.extended(
+      floatingActionButton: liftedFab(
+        FloatingActionButton.extended(
           onPressed: () => _edit(),
           icon: const Icon(Icons.add),
           label: const Text('New reminder'),

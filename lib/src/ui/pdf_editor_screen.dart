@@ -947,9 +947,8 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             ),
         ],
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 72),
-        child: FloatingActionButton.extended(
+      floatingActionButton: liftedFab(
+        FloatingActionButton.extended(
           onPressed: _busy ? null : _openPdf,
           icon: const Icon(Icons.folder_open_outlined),
           label: const Text('Open PDF'),

@@ -179,9 +179,8 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
             ),
         ],
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 72),
-        child: FloatingActionButton.extended(
+      floatingActionButton: liftedFab(
+        FloatingActionButton.extended(
           onPressed: _busy ? null : _addSheet,
           icon: const Icon(Icons.add_a_photo_outlined),
           label: const Text('Add page'),
