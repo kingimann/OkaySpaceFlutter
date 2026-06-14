@@ -4475,12 +4475,18 @@ class _MessageBubble extends StatelessWidget {
       'call' => _callLabel(message),
       _ => '[${message.type}]',
     };
+    // Call events carry no text (the server leaves it empty), so show the
+    // call label rather than an empty bubble.
+    final isCall = message.type == 'call';
     final bodyText = message.deleted
         ? 'Message deleted'
-        : (message.text ??
-            (hasMedia || hasPlace || isLive || isGame || isPoll || isTip
-                ? ''
-                : typeLabel));
+        : isCall
+            ? typeLabel
+            : ((message.text?.isNotEmpty ?? false)
+                ? message.text!
+                : (hasMedia || hasPlace || isLive || isGame || isPoll || isTip
+                    ? ''
+                    : typeLabel));
     // A short, all-emoji message renders large with no bubble (like WhatsApp).
     final t = (message.text ?? '').trim();
     final emojiOnly = !message.deleted &&
