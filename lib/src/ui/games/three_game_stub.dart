@@ -4,11 +4,19 @@ import 'package:flutter/material.dart';
 bool get threeGamesSupported => false;
 
 class ThreeGameView extends StatelessWidget {
-  const ThreeGameView(
-      {super.key, required this.gameType, required this.onScore});
+  const ThreeGameView({
+    super.key,
+    required this.gameType,
+    this.initialState,
+    this.onAction,
+    this.onScore,
+  });
 
   final String gameType;
-  final void Function(int score) onScore;
+  final Map<String, dynamic>? initialState;
+  final Future<Map<String, dynamic>?> Function(Map<String, dynamic> action)?
+      onAction;
+  final void Function(int score)? onScore;
 
   @override
   Widget build(BuildContext context) => const SizedBox(

@@ -5239,59 +5239,55 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
 }
 
 /// Opens the game in a popup dialog (the board lives here, not in the bubble).
-void _openGameDialog(BuildContext context, String gameId, String gameType,
+/// Game types that render as a Three.js (WebGL) WebView when supported.
+const _threeGames = {'pong', 'snake', 'tictactoe'};
+
+/// Opens a game on its own full-screen page (back returns to the chat).
+void _openGamePage(BuildContext context, String gameId, String gameType,
     bool mine, String? otherUserId) {
   final (label, icon, color) = _gameMeta(gameType);
   final isArcade = gameType == 'pong' || gameType == 'snake';
-  showDialog<void>(
-    context: context,
-    builder: (ctx) {
-      final Widget board = switch (gameType) {
-        'blackjack' => _BlackjackBoard(gameId: gameId, mine: mine),
-        'chess' => _ChessBoard(gameId: gameId),
-        'checkers' => _CheckersBoard(gameId: gameId),
-        'poker' => _PokerBoard(gameId: gameId, mine: mine),
-        // Pong is the Three.js (WebGL) example on the web; native elsewhere.
-        'pong' => threeGamesSupported
+  final asThree = threeGamesSupported && _threeGames.contains(gameType);
+  Navigator.of(context).push(MaterialPageRoute(builder: (ctx) {
+    final Widget board = asThree
+        ? (isArcade
             ? _ThreeArcade(
-                gameId: gameId, gameType: 'pong', otherUserId: otherUserId)
-            : _PongBoard(gameId: gameId, otherUserId: otherUserId),
-        'snake' => _SnakeBoard(gameId: gameId, otherUserId: otherUserId),
-        _ => _TicTacToeBoard(gameId: gameId),
-      };
-      return Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 380),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(children: [
-                  Icon(icon, color: color),
-                  const SizedBox(width: 8),
-                  Text(label,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ]),
-                Flexible(child: SingleChildScrollView(child: board)),
-                // Arcade boards show their own high-score comparison.
-                if (!isArcade) ...[
-                  const SizedBox(height: 8),
-                  const _GameStatsFooter(),
-                ],
-              ],
-            ),
+                gameId: gameId, gameType: gameType, otherUserId: otherUserId)
+            : _ThreeBridged(gameId: gameId, gameType: gameType))
+        : switch (gameType) {
+            'blackjack' => _BlackjackBoard(gameId: gameId, mine: mine),
+            'chess' => _ChessBoard(gameId: gameId),
+            'checkers' => _CheckersBoard(gameId: gameId),
+            'poker' => _PokerBoard(gameId: gameId, mine: mine),
+            'pong' => _PongBoard(gameId: gameId, otherUserId: otherUserId),
+            'snake' => _SnakeBoard(gameId: gameId, otherUserId: otherUserId),
+            _ => _TicTacToeBoard(gameId: gameId),
+          };
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Text(label),
+        ]),
+      ),
+      body: SafeArea(
+        child: Column(children: [
+          Expanded(
+            child: asThree
+                ? board
+                : Center(child: SingleChildScrollView(child: board)),
           ),
-        ),
-      );
-    },
-  );
+          // Arcade games show their own high-score line; others show W/L/T.
+          if (!isArcade)
+            const Padding(
+              padding: EdgeInsets.all(10),
+              child: _GameStatsFooter(),
+            ),
+        ]),
+      ),
+    );
+  }));
 }
 
 /// Shows the current user's overall win/loss/tie record under a game board,
@@ -5360,7 +5356,7 @@ class _GameChip extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () =>
-          _openGameDialog(context, gameId, gameType, mine, otherUserId),
+          _openGamePage(context, gameId, gameType, mine, otherUserId),
       child: Container(
         width: 220,
         padding: const EdgeInsets.all(10),
@@ -6087,18 +6083,98 @@ class _ThreeArcadeState extends State<_ThreeArcade> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      SizedBox(
-        width: 320,
-        height: 360,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: ThreeGameView(gameType: widget.gameType, onScore: _onScore),
-        ),
+    return Column(children: [
+      Expanded(
+        child: ThreeGameView(gameType: widget.gameType, onScore: _onScore),
       ),
-      const SizedBox(height: 8),
-      if (_myBest != null) _ArcadeScores(mine: _myBest!, theirs: _theirBest),
+      if (_myBest != null)
+        Padding(
+          padding: const EdgeInsets.all(10),
+          child: _ArcadeScores(mine: _myBest!, theirs: _theirBest),
+        ),
     ]);
+  }
+}
+
+/// Hosts a backend-driven Three.js game: loads the initial state, renders it in
+/// the WebGL view, and resolves each move the WebView sends against the API,
+/// pushing the new state back. Tic-tac-toe today; chess/checkers/etc. plug in
+/// here by adding an [_actionFor] branch.
+class _ThreeBridged extends StatefulWidget {
+  const _ThreeBridged({required this.gameId, required this.gameType});
+  final String gameId;
+  final String gameType;
+  @override
+  State<_ThreeBridged> createState() => _ThreeBridgedState();
+}
+
+class _ThreeBridgedState extends State<_ThreeBridged> {
+  Map<String, dynamic>? _initial;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final s = await _fetchState();
+      if (mounted) setState(() => _initial = s);
+    } catch (_) {}
+  }
+
+  /// Current state of the game as a plain map the WebView understands.
+  Future<Map<String, dynamic>> _fetchState() async {
+    switch (widget.gameType) {
+      case 'tictactoe':
+        return _tttState(await api.messaging.game(widget.gameId));
+      default:
+        return const {};
+    }
+  }
+
+  Map<String, dynamic> _tttState(GameView g) => {
+        'board': g.board,
+        'turn': g.turn,
+        'status': g.status,
+        'winner': g.winner,
+        'x': g.xPlayer,
+        'o': g.oPlayer,
+        'you': currentUserId,
+      };
+
+  /// Applies a move from the WebView and returns the resulting state.
+  Future<Map<String, dynamic>?> _onAction(Map<String, dynamic> action) async {
+    try {
+      if (widget.gameType == 'tictactoe') {
+        final cell = action['cell'];
+        if (cell is! int) return null;
+        var g = await api.messaging.gameMove(widget.gameId, cell);
+        // CPU replies after a brief pause (so it isn't instant).
+        if (!g.isOver && g.turn == 'cpu') {
+          await Future.delayed(const Duration(milliseconds: 700));
+          g = await api.messaging.cpuMove(widget.gameId);
+        }
+        return _tttState(g);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final init = _initial;
+    if (init == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return ThreeGameView(
+      gameType: widget.gameType,
+      initialState: init,
+      onAction: _onAction,
+    );
   }
 }
 
