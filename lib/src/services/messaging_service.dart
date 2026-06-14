@@ -255,6 +255,21 @@ class MessagingService {
       asMapOrNull(await _client.getJson('/chat-games/$gameId/checkers')) ??
           const {});
 
+  // Connect Four.
+  Future<ConnectFourView> connect4Move(String gameId, int col) async =>
+      ConnectFourView.fromJson(asMapOrNull(await _client.postJson(
+              '/chat-games/$gameId/connect4/move',
+              body: {'col': col})) ??
+          const {});
+  Future<ConnectFourView> connect4CpuMove(String gameId) async =>
+      ConnectFourView.fromJson(asMapOrNull(await _client
+              .postJson('/chat-games/$gameId/connect4/cpu-move')) ??
+          const {});
+  Future<ConnectFourView> connect4(String gameId) async =>
+      ConnectFourView.fromJson(
+          asMapOrNull(await _client.getJson('/chat-games/$gameId/connect4')) ??
+              const {});
+
   // Poker.
   Future<PokerView> pokerDraw(String gameId, List<int> holds) async =>
       PokerView.fromJson(asMapOrNull(await _client

@@ -331,6 +331,40 @@ class CheckersView {
       );
 }
 
+/// A snapshot of a Connect Four game.
+class ConnectFourView {
+  const ConnectFourView({
+    required this.gameId,
+    required this.board,
+    required this.redPlayer,
+    required this.yellowPlayer,
+    required this.turn,
+    this.status = 'active',
+    this.winner,
+  });
+
+  final String gameId;
+  final String board; // 42 chars, row0=top, '.'/'R'/'Y'
+  final String redPlayer;
+  final String yellowPlayer;
+  final String turn;
+  final String status; // active | won | draw
+  final String? winner;
+
+  bool get isOver => status != 'active';
+
+  factory ConnectFourView.fromJson(Map<String, dynamic> json) =>
+      ConnectFourView(
+        gameId: asString(json['game_id']),
+        board: asString(json['board']),
+        redPlayer: asString(json['red_player']),
+        yellowPlayer: asString(json['yellow_player']),
+        turn: asString(json['turn']),
+        status: asString(json['status'], 'active'),
+        winner: asStringOrNull(json['winner']),
+      );
+}
+
 /// A snapshot of a five-card draw poker hand (player vs dealer).
 class PokerView {
   const PokerView({
