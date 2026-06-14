@@ -402,6 +402,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ],
           ),
           IconButton(
+            icon: const Icon(Icons.star_outline),
+            tooltip: 'Starred messages',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const StarredMessagesScreen())),
+          ),
+          IconButton(
             icon: const Icon(Icons.group_add_outlined),
             tooltip: 'New group',
             onPressed: _newGroup,
@@ -3413,6 +3419,18 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Forwards [msg] to another conversation the user picks.
+  Future<void> _forwardMessage(Message msg) async {
+    final conv = await pickConversation(context);
+    if (conv == null || !mounted) return;
+    try {
+      await api.messaging.forwardMessage(_convId, msg.id, conv.id);
+      if (mounted) showInfo(context, 'Forwarded');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   /// Leaves the group. If the server says the last admin must hand off first,
   /// prompt for a successor and retry.
   Future<void> _leaveGroup() async {
@@ -3617,6 +3635,28 @@ class _ChatScreenState extends State<ChatScreen> {
                 _run(() => api.messaging.pinMessage(_convId, msg.id));
               },
             ),
+            Builder(builder: (_) {
+              final starred =
+                  (msg.raw['starred_by'] as List?)?.contains(currentUserId) ==
+                      true;
+              return ListTile(
+                leading: Icon(starred ? Icons.star : Icons.star_border),
+                title: Text(starred ? 'Unstar' : 'Star'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _run(() => api.messaging.starMessage(_convId, msg.id));
+                },
+              );
+            }),
+            if (!msg.deleted)
+              ListTile(
+                leading: const Icon(Icons.forward),
+                title: const Text('Forward'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _forwardMessage(msg);
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('Info'),
@@ -7771,6 +7811,72 @@ class _PollComposerState extends State<_PollComposer> {
             child: const Text('Cancel')),
         FilledButton(onPressed: _submit, child: const Text('Send')),
       ],
+    );
+  }
+}
+
+/// Lists every message the current user has starred, across conversations.
+class StarredMessagesScreen extends StatefulWidget {
+  const StarredMessagesScreen({super.key});
+
+  @override
+  State<StarredMessagesScreen> createState() => _StarredMessagesScreenState();
+}
+
+class _StarredMessagesScreenState extends State<StarredMessagesScreen> {
+  late Future<List<Message>> _future = api.messaging.starredMessages();
+
+  String _label(Message m) {
+    if ((m.text ?? '').isNotEmpty) return m.text!;
+    return switch (m.type) {
+      'media' => '📷 Photo',
+      'voice' => '🎤 Voice message',
+      'file' => '📎 File',
+      'gif' => 'GIF',
+      'place' => '📍 Location',
+      'post' => '📄 Shared a post',
+      _ => '[${m.type}]',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const OkayAppBar(title: Text('Starred messages')),
+      body: RefreshIndicator(
+        onRefresh: () async =>
+            setState(() => _future = api.messaging.starredMessages()),
+        child: FutureBuilder<List<Message>>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final items = snap.data ?? const [];
+            if (items.isEmpty) {
+              return const CenteredMessage(
+                  icon: Icons.star_outline,
+                  message: 'No starred messages yet.\n'
+                      'Star a message to bookmark it here.');
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) {
+                final m = items[i];
+                return ListTile(
+                  leading: const Icon(Icons.star, color: Color(0xFFFBBF24)),
+                  title: Text(_label(m),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                      m.createdAt.toLocal().toString().split('.').first),
+                );
+              },
+            );
+          },
+        ),
+      ),
     );
   }
 }
