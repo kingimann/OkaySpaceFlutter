@@ -2719,6 +2719,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         () => _startGameFlow('chess')),
                     _attachTile(Icons.circle_outlined, 'Checkers',
                         () => _startGameFlow('checkers')),
+                    _attachTile(Icons.grid_view, 'Connect 4',
+                        () => _startGameFlow('connect4')),
                     _attachTile(Icons.sports_tennis, 'Pong',
                         () => _startGameFlow('pong')),
                     _attachTile(Icons.linear_scale, 'Snake',
@@ -5291,6 +5293,8 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
       return ('Pong', Icons.sports_tennis, const Color(0xFF0EA5E9));
     case 'snake':
       return ('Snake', Icons.linear_scale, const Color(0xFF22C55E));
+    case 'connect4':
+      return ('Connect 4', Icons.grid_view, const Color(0xFFF59E0B));
     default:
       return ('Tic-tac-toe', Icons.grid_3x3, const Color(0xFF2563EB));
   }
@@ -5300,6 +5304,7 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
 /// Game types that render as a Three.js (WebGL) WebView when supported.
 const _threeGames = {
   'pong', 'snake', 'tictactoe', 'chess', 'checkers', 'blackjack', 'poker',
+  'connect4',
 };
 
 /// Opens a game on its own full-screen page (back returns to the chat).
@@ -6191,7 +6196,7 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
   Timer? _poll;
   final _updates = StreamController<Map<String, dynamic>>.broadcast();
 
-  static const _twoPlayer = {'tictactoe', 'chess', 'checkers'};
+  static const _twoPlayer = {'tictactoe', 'chess', 'checkers', 'connect4'};
 
   @override
   void initState() {
@@ -6244,6 +6249,8 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
         return _chessState(await api2.chess(widget.gameId));
       case 'checkers':
         return _checkersState(await api2.checkers(widget.gameId));
+      case 'connect4':
+        return _c4State(await api2.connect4(widget.gameId));
       case 'blackjack':
         return _bjState(await api2.blackjack(widget.gameId));
       case 'poker':
@@ -6282,6 +6289,16 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
         'white': v.whitePlayer,
         'black': v.blackPlayer,
         'chain': v.chain,
+        'you': currentUserId,
+      };
+
+  Map<String, dynamic> _c4State(ConnectFourView v) => {
+        'board': v.board,
+        'turn': v.turn,
+        'status': v.status,
+        'winner': v.winner,
+        'red': v.redPlayer,
+        'yellow': v.yellowPlayer,
         'you': currentUserId,
       };
 
@@ -6356,6 +6373,16 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
             c = await api2.checkersCpuMove(widget.gameId);
           }
           return _checkersState(c);
+        case 'connect4':
+          final col = action['col'];
+          if (col is! int) return null;
+          var v = await api2.connect4Move(widget.gameId, col);
+          if (!v.isOver && v.turn == 'cpu') {
+            _updates.add(_c4State(v)); // show my drop immediately
+            await Future.delayed(const Duration(milliseconds: 500));
+            v = await api2.connect4CpuMove(widget.gameId);
+          }
+          return _c4State(v);
         case 'blackjack':
           final m = action['move'];
           if (m == 'hit') return _bjState(await api2.blackjackHit(widget.gameId));

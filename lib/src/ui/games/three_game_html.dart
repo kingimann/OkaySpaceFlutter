@@ -39,8 +39,11 @@ var current=null, you=null, dirty=true, pending=false;
 // Sends a move and locks input until the server's reply arrives, so a fast
 // double-tap can't fire two moves.
 function sendAction(a){if(pending)return;pending=true;send("action",{action:a});}
-function onDown(e){if(pending||!current||!current.pick)return;var r=canvas.getBoundingClientRect();var cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;var cy=(e.touches?e.touches[0].clientY:e.clientY)-r.top;current.pick(cx,cy);dirty=true;}
+function ptXY(e){var r=canvas.getBoundingClientRect();return {x:(e.touches?e.touches[0].clientX:e.clientX)-r.left,y:(e.touches?e.touches[0].clientY:e.clientY)-r.top};}
+function onDown(e){if(pending||!current||!current.pick)return;var p=ptXY(e);current.pick(p.x,p.y);dirty=true;}
+function onMove(e){if(!current||!current.move)return;var p=ptXY(e);current.move(p.x,p.y);dirty=true;}
 canvas.addEventListener("pointerdown",onDown);
+canvas.addEventListener("pointermove",onMove);
 
 function loop(){requestAnimationFrame(loop);if(!current)return;if(current.tick){current.tick();dirty=true;}if(dirty){ctx.clearRect(0,0,W,H);if(current.draw)current.draw();dirty=false;}}
 
@@ -112,6 +115,25 @@ GAMES.checkers=function(){
         var c=st.board[sq];if(c!=="."){var white=(c==="w"||c==="W"),king=(c==="W"||c==="B");ctx.beginPath();ctx.arc(p.x+g.cs/2,p.y+g.cs/2,g.cs*0.36,0,7);ctx.fillStyle=white?"#f1f5f9":"#1f2937";ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#0008";ctx.stroke();if(king){ctx.beginPath();ctx.arc(p.x+g.cs/2,p.y+g.cs/2,g.cs*0.16,0,7);ctx.fillStyle="#f6c455";ctx.fill();}}}
       if(st.status!=="active")overWith(status());else hideOver();},
     pick:function(cx,cy){if(st.turn!==you||st.status!=="active")return;var g=boardGeom();var sq=sqAt(cx,cy,amWhite,g);if(sq<0)return;var p=st.board[sq],mine=amWhite?(p==="w"||p==="W"):(p==="b"||p==="B");if(sel===null){if(mine)sel=sq;return;}if(sq===sel){sel=null;return;}if(mine){sel=sq;return;}var from=sel;sel=null;sendAction({from:from,to:sq});}
+  };
+};
+
+// ===== Connect Four =====
+GAMES.connect4=function(){
+  var st=null,hoverCol=-1;
+  function status(){if(st.status==="won")return st.winner===you?"You won!":"You lost";if(st.status==="draw")return "It is a draw";if(st.turn==="cpu")return "Thinking...";return st.turn===you?"Your move":"Their move";}
+  function geom(){var cs=Math.max(26,Math.min((W-24)/7,(H-170)/6));var bw=cs*7,bh=cs*6;return {cs:cs,bw:bw,bh:bh,ox:(W-bw)/2,oy:Math.max(64,(H-bh)/2-6)};}
+  function colAt(cx,g){var c=Math.floor((cx-g.ox)/g.cs);return (c<0||c>6)?-1:c;}
+  return {
+    build:function(s){st=s;},onState:function(s){st=s;hoverCol=-1;},
+    draw:function(){hud(status());var g=geom();
+      var mine=(st.turn===you&&st.status==="active");
+      if(mine&&hoverCol>=0&&st.board[hoverCol]==="."){ctx.fillStyle="#1e3a8a";ctx.fillRect(g.ox+hoverCol*g.cs,g.oy,g.cs,g.bh);}
+      ctx.fillStyle="#1d4ed8";rr(g.ox,g.oy,g.bw,g.bh,12);ctx.fill();
+      for(var i=0;i<42;i++){var c=i%7,r=Math.floor(i/7);var x=g.ox+c*g.cs+g.cs/2,y=g.oy+r*g.cs+g.cs/2;var v=st.board[i];ctx.beginPath();ctx.arc(x,y,g.cs*0.38,0,7);ctx.fillStyle=(v==="R")?"#ef4444":(v==="Y")?"#facc15":"#0b1220";ctx.fill();if(v!=="."){ctx.lineWidth=2;ctx.strokeStyle="#0006";ctx.stroke();}}
+      if(st.status!=="active")overWith(status());else hideOver();},
+    move:function(cx,cy){var g=geom();hoverCol=colAt(cx,g);},
+    pick:function(cx,cy){if(st.turn!==you||st.status!=="active")return;var g=geom();var c=colAt(cx,g);if(c<0)return;if(st.board[c]!==".")return;sendAction({col:c});}
   };
 };
 
