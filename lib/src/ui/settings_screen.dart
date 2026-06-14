@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
+import '../core/update_checker.dart';
 import 'account_standing_screen.dart';
 import 'admin_settings_screen.dart';
 import 'ads_screen.dart';
@@ -42,6 +43,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadStaffPending();
+    _refreshEncryptionFlag();
+  }
+
+  /// Refresh the server-side message-encryption flag so the readout is accurate
+  /// even on platforms where the web update-checker doesn't run.
+  void _refreshEncryptionFlag() {
+    api.client.getJson('/public/app-config').then((cfg) {
+      if (cfg is Map) messagesEncrypted.value = cfg['messages_encrypted'] == true;
+    }).catchError((_) {});
   }
 
   void _loadStaffPending() {
@@ -595,6 +605,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: const Text('Display your points on your profile'),
             value: _showPoints,
             onChanged: (v) => _toggle('show_points', v, (x) => _showPoints = x),
+          ),
+        ]),
+        _section('Security'),
+        _card([
+          ListTile(
+            leading: const Icon(Icons.lock_outline),
+            title: const Text('Message encryption'),
+            subtitle: const Text(
+                'Message content is encrypted at rest on our servers'),
+            trailing: ValueListenableBuilder<bool>(
+              valueListenable: messagesEncrypted,
+              builder: (context, on, _) => Text(
+                on ? 'On' : 'Off',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: on
+                        ? const Color(0xFF16A34A)
+                        : Theme.of(context).colorScheme.outline),
+              ),
+            ),
           ),
         ]),
         _section('Interactions'),
