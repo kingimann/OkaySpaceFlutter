@@ -5853,8 +5853,14 @@ class _BlackjackBoardState extends State<_BlackjackBoard> {
 }
 
 // ===== Chess board (popup) =====
+// Black-series glyphs for black pieces, white-series for white: on iOS these
+// render as emoji that ignore the text colour, so the glyph itself must carry
+// the colour or both sides look identical.
 const _chessGlyph = {
   'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟',
+};
+const _chessGlyphWhite = {
+  'k': '♔', 'q': '♕', 'r': '♖', 'b': '♗', 'n': '♘', 'p': '♙',
 };
 
 String _sqName(int i) =>
@@ -5922,7 +5928,7 @@ class _ChessBoardState extends State<_ChessBoard> {
       }
       // Playing the computer: let it reply after a brief pause.
       if (!nv.isOver && nv.turn == 'cpu') {
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 300));
         nv = await api.messaging.chessCpuMove(widget.gameId);
         if (mounted) setState(() => _v = nv);
       }
@@ -5980,7 +5986,11 @@ class _ChessBoardState extends State<_ChessBoard> {
                 alignment: Alignment.center,
                 child: p == '.'
                     ? null
-                    : Text(_chessGlyph[p.toLowerCase()] ?? '',
+                    : Text(
+                        (p == p.toUpperCase()
+                                ? _chessGlyphWhite
+                                : _chessGlyph)[p.toLowerCase()] ??
+                            '',
                         style: TextStyle(
                             fontSize: 28,
                             color: p == p.toUpperCase()
@@ -6064,7 +6074,7 @@ class _CheckersBoardState extends State<_CheckersBoard> {
       }
       // Playing the computer: let it reply after a brief pause.
       if (!nv.isOver && nv.turn == 'cpu') {
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 300));
         nv = await api.messaging.checkersCpuMove(widget.gameId);
         if (mounted) setState(() => _v = nv);
       }
@@ -6536,7 +6546,7 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
               widget.gameId, '${action['from']}', '${action['to']}');
           if (!v.isOver && v.turn == 'cpu') {
             _updates.add(_chessState(v)); // show my move immediately
-            await Future.delayed(const Duration(milliseconds: 500));
+            await Future.delayed(const Duration(milliseconds: 300));
             v = await api2.chessCpuMove(widget.gameId);
           }
           return _chessState(v);
@@ -6546,7 +6556,7 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
           var c = await api2.checkersMove(widget.gameId, from, to);
           if (!c.isOver && c.turn == 'cpu') {
             _updates.add(_checkersState(c));
-            await Future.delayed(const Duration(milliseconds: 500));
+            await Future.delayed(const Duration(milliseconds: 300));
             c = await api2.checkersCpuMove(widget.gameId);
           }
           return _checkersState(c);
@@ -6556,7 +6566,7 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
           var v = await api2.connect4Move(widget.gameId, col);
           if (!v.isOver && v.turn == 'cpu') {
             _updates.add(_c4State(v)); // show my drop immediately
-            await Future.delayed(const Duration(milliseconds: 500));
+            await Future.delayed(const Duration(milliseconds: 300));
             v = await api2.connect4CpuMove(widget.gameId);
           }
           return _c4State(v);
@@ -6566,7 +6576,7 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
           var d = await api2.dotsboxesMove(widget.gameId, kind, idx);
           if (!d.isOver && d.turn == 'cpu') {
             _updates.add(_dbxState(d)); // show my edge immediately
-            await Future.delayed(const Duration(milliseconds: 500));
+            await Future.delayed(const Duration(milliseconds: 300));
             d = await api2.dotsboxesCpuMove(widget.gameId);
           }
           return _dbxState(d);
