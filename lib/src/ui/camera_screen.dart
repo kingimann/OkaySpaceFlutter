@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../okayspace_api.dart';
 import 'common.dart';
 
 /// A simple in-app camera: open the device camera, take a photo, and review
@@ -83,12 +85,83 @@ class _CameraScreenState extends State<CameraScreen> {
               itemBuilder: (context, i) => ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: GestureDetector(
-                  onTap: () => _preview(_shots[i]),
+                  onTap: () => _open(i),
                   child: Image.memory(_shots[i], fit: BoxFit.cover),
                 ),
               ),
             ),
     );
+  }
+
+  void _open(int i) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.fullscreen),
+              title: const Text('View'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _preview(_shots[i]);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.dynamic_feed_outlined),
+              title: const Text('Post to feed'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _post(_shots[i]);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.send_outlined),
+              title: const Text('Send to a chat'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _send(_shots[i]);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Remove'),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _shots.removeAt(i));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _post(Uint8List bytes) async {
+    try {
+      await api.feed.createPost(PostCreate(
+          text: '', media: [PostMedia(type: 'image', base64: base64Encode(bytes))]));
+      if (mounted) showInfo(context, 'Posted to your feed');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _send(Uint8List bytes) async {
+    final conv = await pickConversation(context);
+    if (conv == null || !mounted) return;
+    try {
+      await api.messaging.send(
+        conv.id,
+        MessageCreate(
+            type: 'media',
+            media: [PostMedia(type: 'image', base64: base64Encode(bytes))]),
+      );
+      if (mounted) showInfo(context, 'Sent');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   void _preview(Uint8List bytes) {
