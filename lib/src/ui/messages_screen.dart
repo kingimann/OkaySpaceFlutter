@@ -2710,19 +2710,19 @@ class _ChatScreenState extends State<ChatScreen> {
                 Wrap(
                   children: [
                     _attachTile(Icons.grid_3x3, 'Tic-tac-toe',
-                        () => _startGame('tictactoe')),
+                        () => _startGameFlow('tictactoe')),
                     _attachTile(Icons.style_outlined, 'Blackjack',
-                        () => _startGame('blackjack')),
+                        () => _startGameFlow('blackjack')),
                     _attachTile(Icons.casino_outlined, 'Poker',
-                        () => _startGame('poker')),
+                        () => _startGameFlow('poker')),
                     _attachTile(Icons.shield_outlined, 'Chess',
-                        () => _startGame('chess')),
+                        () => _startGameFlow('chess')),
                     _attachTile(Icons.circle_outlined, 'Checkers',
-                        () => _startGame('checkers')),
+                        () => _startGameFlow('checkers')),
                     _attachTile(Icons.sports_tennis, 'Pong',
-                        () => _startGame('pong')),
+                        () => _startGameFlow('pong')),
                     _attachTile(Icons.linear_scale, 'Snake',
-                        () => _startGame('snake')),
+                        () => _startGameFlow('snake')),
                   ],
                 ),
               ],
@@ -2801,10 +2801,66 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Starts an in-chat game of [type] and drops its playable card.
-  Future<void> _startGame(String type) async {
+  /// A quick chooser before starting a game: opponent (friend/computer) for the
+  /// two-player games when there's a partner, and difficulty for CPU/arcade.
+  Future<void> _startGameFlow(String type) async {
+    const twoPlayer = {'tictactoe', 'chess', 'checkers'};
+    const arcade = {'pong', 'snake'};
+    final hasPartner =
+        !widget.conversation.isGroup && widget.conversation.otherUser != null;
+    var vsCpu = !hasPartner; // notes-to-self has no partner → computer
+    if (twoPlayer.contains(type) && hasPartner) {
+      final opp = await _gamePick(context, 'Play against', const [
+        ('A friend', 'friend'),
+        ('The computer', 'cpu'),
+      ]);
+      if (opp == null) return;
+      vsCpu = opp == 'cpu';
+    }
+    if (!mounted) return;
+    var difficulty = 'medium';
+    if (arcade.contains(type) || (twoPlayer.contains(type) && vsCpu)) {
+      final d = await _gamePick(context, 'Difficulty', const [
+        ('Easy', 'easy'),
+        ('Medium', 'medium'),
+        ('Hard', 'hard'),
+      ]);
+      if (d == null) return;
+      difficulty = d;
+    }
+    await _startGame(type, difficulty: difficulty, vsCpu: vsCpu);
+  }
+
+  Future<String?> _gamePick(
+          BuildContext ctx, String title, List<(String, String)> opts) =>
+      showModalBottomSheet<String>(
+        context: ctx,
+        builder: (_) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(title,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            for (final o in opts)
+              ListTile(
+                  title: Text(o.$1),
+                  onTap: () => Navigator.pop(ctx, o.$2)),
+            const SizedBox(height: 8),
+          ]),
+        ),
+      );
+
+  Future<void> _startGame(String type,
+      {String difficulty = 'medium', bool vsCpu = false}) async {
     setState(() => _sending = true);
     try {
-      await api.messaging.createGame(_convId, type: type);
+      await api.messaging
+          .createGame(_convId, type: type, difficulty: difficulty, vsCpu: vsCpu);
       await _fetch(silent: true);
       _scrollToBottom();
     } catch (e) {
@@ -4432,7 +4488,9 @@ class _MessageBubble extends StatelessWidget {
                           gameId: gameId,
                           gameType: gameType,
                           mine: mine,
-                          otherUserId: otherUserId),
+                          otherUserId: otherUserId,
+                          difficulty:
+                              '${message.raw['difficulty'] ?? 'medium'}'),
                     ),
                   if (isTip)
                     Row(mainAxisSize: MainAxisSize.min, children: [
@@ -5246,7 +5304,8 @@ const _threeGames = {
 
 /// Opens a game on its own full-screen page (back returns to the chat).
 void _openGamePage(BuildContext context, String gameId, String gameType,
-    bool mine, String? otherUserId) {
+    bool mine, String? otherUserId,
+    [String difficulty = 'medium']) {
   final (label, icon, color) = _gameMeta(gameType);
   final isArcade = gameType == 'pong' || gameType == 'snake';
   final asThree = threeGamesSupported && _threeGames.contains(gameType);
@@ -5254,7 +5313,10 @@ void _openGamePage(BuildContext context, String gameId, String gameType,
     final Widget board = asThree
         ? (isArcade
             ? _ThreeArcade(
-                gameId: gameId, gameType: gameType, otherUserId: otherUserId)
+                gameId: gameId,
+                gameType: gameType,
+                otherUserId: otherUserId,
+                difficulty: difficulty)
             : _ThreeBridged(gameId: gameId, gameType: gameType, mine: mine))
         : switch (gameType) {
             'blackjack' => _BlackjackBoard(gameId: gameId, mine: mine),
@@ -5344,12 +5406,14 @@ class _GameChip extends StatelessWidget {
       {required this.gameId,
       required this.gameType,
       required this.mine,
-      this.otherUserId});
+      this.otherUserId,
+      this.difficulty = 'medium'});
 
   final String gameId;
   final String gameType;
   final bool mine;
   final String? otherUserId;
+  final String difficulty;
 
   @override
   Widget build(BuildContext context) {
@@ -5357,8 +5421,8 @@ class _GameChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () =>
-          _openGamePage(context, gameId, gameType, mine, otherUserId),
+      onTap: () => _openGamePage(
+          context, gameId, gameType, mine, otherUserId, difficulty),
       child: Container(
         width: 220,
         padding: const EdgeInsets.all(10),
@@ -6050,14 +6114,18 @@ class _ArcadeScores extends StatelessWidget {
   }
 }
 
-/// Hosts a WebGL (Three.js) arcade game and, when it ends, reports the score
-/// and shows the high-score comparison.
+/// Hosts a self-contained arcade game and, when it ends, reports the score and
+/// shows the high-score comparison.
 class _ThreeArcade extends StatefulWidget {
   const _ThreeArcade(
-      {required this.gameId, required this.gameType, this.otherUserId});
+      {required this.gameId,
+      required this.gameType,
+      this.otherUserId,
+      this.difficulty = 'medium'});
   final String gameId;
   final String gameType;
   final String? otherUserId;
+  final String difficulty;
   @override
   State<_ThreeArcade> createState() => _ThreeArcadeState();
 }
@@ -6087,7 +6155,10 @@ class _ThreeArcadeState extends State<_ThreeArcade> {
   Widget build(BuildContext context) {
     return Column(children: [
       Expanded(
-        child: ThreeGameView(gameType: widget.gameType, onScore: _onScore),
+        child: ThreeGameView(
+            gameType: widget.gameType,
+            initialState: {'difficulty': widget.difficulty},
+            onScore: _onScore),
       ),
       if (_myBest != null)
         Padding(
@@ -6267,13 +6338,24 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
           }
           return _tttState(g);
         case 'chess':
-          return _chessState(await api2.chessMove(
-              widget.gameId, '${action['from']}', '${action['to']}'));
+          var v = await api2.chessMove(
+              widget.gameId, '${action['from']}', '${action['to']}');
+          if (!v.isOver && v.turn == 'cpu') {
+            _updates.add(_chessState(v)); // show my move immediately
+            await Future.delayed(const Duration(milliseconds: 500));
+            v = await api2.chessCpuMove(widget.gameId);
+          }
+          return _chessState(v);
         case 'checkers':
           final from = action['from'], to = action['to'];
           if (from is! int || to is! int) return null;
-          return _checkersState(
-              await api2.checkersMove(widget.gameId, from, to));
+          var c = await api2.checkersMove(widget.gameId, from, to);
+          if (!c.isOver && c.turn == 'cpu') {
+            _updates.add(_checkersState(c));
+            await Future.delayed(const Duration(milliseconds: 500));
+            c = await api2.checkersCpuMove(widget.gameId);
+          }
+          return _checkersState(c);
         case 'blackjack':
           final m = action['move'];
           if (m == 'hit') return _bjState(await api2.blackjackHit(widget.gameId));
