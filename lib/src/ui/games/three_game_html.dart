@@ -88,12 +88,49 @@ GAMES.tictactoe=function(){
 };
 
 // ===== Chess =====
-// Two Unicode series: the "white" set (U+2654..) for white pieces and the
-// "black" set (U+265A..) for black. This is essential on iOS/Safari, where
-// these render as emoji that IGNORE fillStyle — so the glyph itself must carry
-// the colour. The fill/stroke below is a fallback for text-presentation fonts.
-var CG_W={k:"♔",q:"♕",r:"♖",b:"♗",n:"♘",p:"♙"};
-var CG_B={k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
+// Pieces are drawn as vector shapes (a Staunton-style set), NOT Unicode glyphs:
+// iOS/Safari renders the chess characters as fixed-colour emoji that ignore
+// fillStyle, so glyphs can't be recoloured. Each piece is built from simple
+// parts, filled in the piece colour and outlined for contour detail.
+function drawChessPiece(px,py,s,white,kind){
+  var cx=px+s/2;
+  function Y(f){return py+f*s;}
+  var parts=[];
+  function trap(yt,yb,ht,hb){parts.push(function(){ctx.moveTo(cx-ht*s,Y(yt));ctx.lineTo(cx+ht*s,Y(yt));ctx.lineTo(cx+hb*s,Y(yb));ctx.lineTo(cx-hb*s,Y(yb));ctx.closePath();});}
+  function ball(xf,yf,rf){parts.push(function(){ctx.moveTo(cx+(xf+rf)*s,Y(yf));ctx.arc(cx+xf*s,Y(yf),rf*s,0,7);});}
+  function bar(xf,yt,yb,hf){parts.push(function(){ctx.rect(cx+(xf-hf)*s,Y(yt),2*hf*s,(yb-yt)*s);});}
+  function spike(xf,yb,yt,hf){parts.push(function(){ctx.moveTo(cx+(xf-hf)*s,Y(yb));ctx.lineTo(cx+xf*s,Y(yt));ctx.lineTo(cx+(xf+hf)*s,Y(yb));ctx.closePath();});}
+  function poly(pts){parts.push(function(){ctx.moveTo(cx+pts[0][0]*s,Y(pts[0][1]));for(var i=1;i<pts.length;i++)ctx.lineTo(cx+pts[i][0]*s,Y(pts[i][1]));ctx.closePath();});}
+  trap(0.82,0.88,0.30,0.24); trap(0.77,0.82,0.24,0.27);            // base + foot
+  if(kind==="p"){
+    trap(0.47,0.77,0.105,0.20); trap(0.43,0.47,0.15,0.105); ball(0,0.32,0.135);
+  }else if(kind==="r"){
+    trap(0.47,0.77,0.18,0.22); trap(0.39,0.47,0.25,0.18); trap(0.345,0.39,0.27,0.25);
+    bar(-0.20,0.26,0.345,0.06); bar(0,0.26,0.345,0.06); bar(0.20,0.26,0.345,0.06);
+  }else if(kind==="b"){
+    trap(0.47,0.77,0.115,0.21); trap(0.43,0.47,0.17,0.115); ball(0,0.33,0.145);
+    spike(0,0.30,0.13,0.05); ball(0,0.115,0.042);
+  }else if(kind==="q"){
+    trap(0.49,0.77,0.13,0.23); trap(0.43,0.49,0.22,0.13); trap(0.37,0.43,0.26,0.22);
+    var qx=[-0.22,-0.11,0,0.11,0.22];
+    for(var i=0;i<5;i++){spike(qx[i],0.37,0.21,0.045); ball(qx[i],0.19,0.04);}
+  }else if(kind==="k"){
+    trap(0.49,0.77,0.13,0.23); trap(0.43,0.49,0.22,0.13); trap(0.37,0.43,0.25,0.22);
+    trap(0.31,0.37,0.18,0.25); bar(0,0.10,0.31,0.03); bar(0,0.145,0.205,0.085);
+  }else if(kind==="n"){
+    poly([[-0.20,0.78],[-0.16,0.52],[-0.24,0.44],[-0.30,0.405],[-0.265,0.335],
+          [-0.15,0.35],[-0.12,0.22],[-0.03,0.13],[0.01,0.225],[0.07,0.155],
+          [0.105,0.255],[0.20,0.34],[0.215,0.55],[0.23,0.78]]);
+  }
+  ctx.lineJoin="round"; ctx.lineCap="round";
+  ctx.fillStyle=white?"#f2efe6":"#383838";
+  ctx.shadowColor="rgba(0,0,0,0.28)"; ctx.shadowBlur=s*0.045; ctx.shadowOffsetY=s*0.025;
+  for(var a=0;a<parts.length;a++){ctx.beginPath();parts[a]();ctx.fill();}
+  ctx.shadowColor="transparent"; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.lineWidth=Math.max(1,s*0.024); ctx.strokeStyle=white?"#5b564e":"#0b0b0b";
+  for(var b2=0;b2<parts.length;b2++){ctx.beginPath();parts[b2]();ctx.stroke();}
+  if(kind==="n"){ctx.beginPath();ctx.arc(cx-0.135*s,Y(0.31),s*0.022,0,7);ctx.fillStyle=white?"#5b564e":"#d2d8e0";ctx.fill();}
+}
 var CT={light:"#eeeed2",dark:"#769656",last:"rgba(245,222,82,0.55)",sel:"rgba(245,222,82,0.85)"};
 GAMES.chess=function(){
   var st=null,amWhite=true,sel=null,prev=null,lastFrom=-1,lastTo=-1;
@@ -101,7 +138,7 @@ GAMES.chess=function(){
   // Spot the last move by diffing the previous board (square emptied -> filled).
   function diffLast(nb){if(prev&&nb&&nb!==prev){var gone=-1,got=-1;for(var i=0;i<64;i++){if(prev[i]!==nb[i]){if(nb[i]===".")gone=i;else got=i;}}if(gone>=0&&got>=0){lastFrom=gone;lastTo=got;}}prev=nb;}
   function checkSq(){if(!st.inCheck)return -1;var k=(st.turn===st.white)?"K":"k";for(var i=0;i<64;i++)if(st.board[i]===k)return i;return -1;}
-  function piece(p,c,g){var wht=(c===c.toUpperCase()),ch=(wht?CG_W:CG_B)[c.toLowerCase()];var x=p.x+g.cs/2,y=p.y+g.cs/2+g.cs*0.04;ctx.font="700 "+Math.round(g.cs*0.82)+"px 'Segoe UI Symbol','Noto Sans Symbols2','DejaVu Sans',sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";ctx.shadowColor="rgba(0,0,0,0.45)";ctx.shadowBlur=g.cs*0.05;ctx.shadowOffsetY=g.cs*0.025;ctx.lineWidth=Math.max(1.4,g.cs*0.04);ctx.strokeStyle=wht?"#0f172a":"#cbd5e1";ctx.strokeText(ch,x,y);ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;ctx.fillStyle=wht?"#ffffff":"#0d1117";ctx.fillText(ch,x,y);}
+  function piece(p,c,g){drawChessPiece(p.x,p.y,g.cs,c===c.toUpperCase(),c.toLowerCase());}
   return {
     build:function(s){st=s;amWhite=(st.white===you);prev=s.board;lastFrom=lastTo=-1;},
     onState:function(s){diffLast(s.board);st=s;sel=null;},
