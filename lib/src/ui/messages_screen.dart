@@ -19,6 +19,7 @@ import 'call_screen.dart';
 import '../core/update_checker.dart';
 import 'common.dart';
 import 'linked_text.dart';
+import 'voice_message.dart';
 
 /// Label for a call-event message (missed / declined / ended-with-duration).
 String _callLabel(Message m) {
@@ -2703,6 +2704,7 @@ class _ChatScreenState extends State<ChatScreen> {
               Wrap(
                 children: [
                   _attachTile(Icons.photo_outlined, 'Photo', _attachImage),
+                  _attachTile(Icons.mic_none_outlined, 'Voice', _attachVoice),
                   _attachTile(Icons.attach_file, 'File', _attachFile),
                   _attachTile(
                       Icons.place_outlined, 'Location', _attachLocation),
@@ -3316,6 +3318,15 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _attachVoice() async {
+    if (_sending) return;
+    final sent = await recordAndSendVoice(context, _convId);
+    if (sent && mounted) {
+      await _fetch(silent: true);
+      _scrollToBottom();
     }
   }
 
@@ -4460,6 +4471,9 @@ class _MessageBubble extends StatelessWidget {
     final isPoll = message.type == 'poll' && !message.deleted;
     final isTip = (message.type == 'tip' || message.type == 'money') &&
         !message.deleted;
+    final isVoice = message.type == 'voice' &&
+        !message.deleted &&
+        (message.audioBase64 ?? '').isNotEmpty;
     final tipAmount = (message.raw['amount'] as num?);
     final typeLabel = switch (message.type) {
       'post' => '📄 Shared a post',
@@ -4484,7 +4498,13 @@ class _MessageBubble extends StatelessWidget {
             ? typeLabel
             : ((message.text?.isNotEmpty ?? false)
                 ? message.text!
-                : (hasMedia || hasPlace || isLive || isGame || isPoll || isTip
+                : (hasMedia ||
+                        hasPlace ||
+                        isLive ||
+                        isGame ||
+                        isPoll ||
+                        isTip ||
+                        isVoice
                     ? ''
                     : typeLabel));
     // A short, all-emoji message renders large with no bubble (like WhatsApp).
@@ -4637,6 +4657,12 @@ class _MessageBubble extends StatelessWidget {
                               color: fg, fontWeight: FontWeight.bold)),
                     ]),
                   if (isPoll) _pollCard(fg),
+                  if (isVoice)
+                    VoiceBubble(
+                      base64Audio: message.audioBase64!,
+                      durationMs: message.audioDurationMs,
+                      dark: mine,
+                    ),
                   if (bodyText.isNotEmpty)
                     message.deleted
                         ? Text(bodyText,
