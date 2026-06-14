@@ -50,6 +50,8 @@ class _CallScreenState extends State<CallScreen> {
   late bool _cameraOn = widget.video;
   bool _speaker = true;
   String? _error;
+  DateTime? _connectedAt;
+  bool _reported = false;
 
   @override
   void initState() {
@@ -68,7 +70,10 @@ class _CallScreenState extends State<CallScreen> {
       // token['token'] and token['url'] here. We mark the call connected
       // once the session token is issued.
       if ((token['token'] ?? token['access_token']) != null) {
-        setState(() => _state = _CallState.connected);
+        setState(() {
+          _state = _CallState.connected;
+          _connectedAt = DateTime.now();
+        });
       } else {
         setState(() {
           _state = _CallState.failed;
@@ -92,7 +97,33 @@ class _CallScreenState extends State<CallScreen> {
         _CallState.failed => _error ?? 'Call failed',
       };
 
-  void _end() => Navigator.of(context).maybePop();
+  /// Records how the call ended in the conversation: a duration if it was
+  /// answered, otherwise a missed call.
+  void _reportEnd() {
+    if (_reported) return;
+    _reported = true;
+    final connected = _connectedAt != null;
+    final ms = connected
+        ? DateTime.now().difference(_connectedAt!).inMilliseconds
+        : 0;
+    api.messaging
+        .endCall(widget.conversationId,
+            status: connected ? 'ended' : 'missed',
+            durationMs: ms,
+            video: widget.video)
+        .ignore();
+  }
+
+  void _end() {
+    _reportEnd();
+    Navigator.of(context).maybePop();
+  }
+
+  @override
+  void dispose() {
+    _reportEnd(); // also record if the screen is closed another way
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
