@@ -421,6 +421,10 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
         builder: (_) => _FieldEditorScreen(
           existing: index != null ? _fields[index] : null,
           initialType: type,
+          otherFields: [
+            for (var j = 0; j < _fields.length; j++)
+              if (j != index) _fields[j]
+          ],
         ),
       ),
     );
@@ -733,10 +737,12 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> {
 /// Add/edit one form field: type, label, required, options and type-specific
 /// settings (placeholder, payment price, consent text…).
 class _FieldEditorScreen extends StatefulWidget {
-  const _FieldEditorScreen({this.existing, this.initialType});
+  const _FieldEditorScreen(
+      {this.existing, this.initialType, this.otherFields = const []});
 
   final Map<String, dynamic>? existing;
   final String? initialType;
+  final List<Map<String, dynamic>> otherFields;
 
   @override
   State<_FieldEditorScreen> createState() => _FieldEditorScreenState();
@@ -762,6 +768,23 @@ class _FieldEditorScreenState extends State<_FieldEditorScreen> {
   late bool _required = widget.existing?['required'] == true;
   late bool _amountOpen = widget.existing?['amount_open'] == true;
 
+  // Conditional logic state.
+  late final Map? _rule = widget.existing?['visible_if'] as Map?;
+  late bool _condOn = _rule?['field'] != null;
+  late String? _condField = _rule?['field'] as String?;
+  late String _condOp = '${_rule?['op'] ?? 'eq'}';
+  late final TextEditingController _condValue =
+      TextEditingController(text: '${_rule?['value'] ?? ''}');
+
+  static const _condOps = <(String, String)>[
+    ('eq', 'is'),
+    ('ne', 'is not'),
+    ('contains', 'contains'),
+    ('filled', 'is filled in'),
+    ('empty', 'is empty'),
+  ];
+  bool get _condNeedsValue => _condOp == 'eq' || _condOp == 'ne' || _condOp == 'contains';
+
   bool get _isHeading => _type == 'heading';
   bool get _isPlaceholderType => const {
         'text', 'textarea', 'email', 'phone', 'number', 'url'
@@ -775,6 +798,7 @@ class _FieldEditorScreenState extends State<_FieldEditorScreen> {
     _consentText.dispose();
     _amount.dispose();
     _currency.dispose();
+    _condValue.dispose();
     super.dispose();
   }
 
@@ -798,6 +822,12 @@ class _FieldEditorScreenState extends State<_FieldEditorScreen> {
         'amount_open': _amountOpen,
         'currency': _currency.text.trim().toUpperCase(),
       },
+      if (_condOn && _condField != null)
+        'visible_if': {
+          'field': _condField,
+          'op': _condOp,
+          'value': _condNeedsValue ? _condValue.text.trim() : '',
+        },
     };
     Navigator.pop(context, field);
   }
@@ -815,6 +845,30 @@ class _FieldEditorScreenState extends State<_FieldEditorScreen> {
           borderSide: BorderSide.none,
         ),
       );
+
+  /// The value input for a condition: a dropdown of the controlling field's
+  /// options when it has them, otherwise free text.
+  Widget _condValueField() {
+    final ctrl = widget.otherFields.firstWhere(
+      (f) => '${f['id']}' == _condField,
+      orElse: () => const <String, dynamic>{},
+    );
+    final options =
+        (ctrl['options'] as List?)?.map((e) => '$e').toList() ?? const <String>[];
+    if (options.isNotEmpty) {
+      return DropdownButtonFormField<String>(
+        initialValue:
+            options.contains(_condValue.text) ? _condValue.text : null,
+        isExpanded: true,
+        decoration: _dec('Value'),
+        items: [
+          for (final o in options) DropdownMenuItem(value: o, child: Text(o)),
+        ],
+        onChanged: (v) => setState(() => _condValue.text = v ?? ''),
+      );
+    }
+    return TextField(controller: _condValue, decoration: _dec('Value'));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -930,6 +984,68 @@ class _FieldEditorScreenState extends State<_FieldEditorScreen> {
                   secondary: const Icon(Icons.priority_high),
                   title: const Text('Required'),
                   subtitle: const Text('People must fill this in'),
+                ),
+              ),
+            ],
+            if (widget.otherFields.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Card(
+                color: scheme.surfaceContainerHighest,
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      value: _condOn,
+                      onChanged: (v) => setState(() => _condOn = v),
+                      secondary: const Icon(Icons.alt_route),
+                      title: const Text('Conditional visibility'),
+                      subtitle:
+                          const Text('Only show this field when a rule matches'),
+                    ),
+                    if (_condOn) ...[
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          children: [
+                            DropdownButtonFormField<String>(
+                              initialValue: widget.otherFields.any(
+                                      (f) => '${f['id']}' == _condField)
+                                  ? _condField
+                                  : null,
+                              isExpanded: true,
+                              decoration: _dec('Show this field if'),
+                              items: [
+                                for (final f in widget.otherFields)
+                                  DropdownMenuItem(
+                                    value: '${f['id']}',
+                                    child: Text('${f['label'] ?? 'Field'}',
+                                        overflow: TextOverflow.ellipsis),
+                                  ),
+                              ],
+                              onChanged: (v) => setState(() => _condField = v),
+                            ),
+                            const SizedBox(height: 10),
+                            DropdownButtonFormField<String>(
+                              initialValue: _condOp,
+                              isExpanded: true,
+                              decoration: _dec('Condition'),
+                              items: [
+                                for (final (value, label) in _condOps)
+                                  DropdownMenuItem(
+                                      value: value, child: Text(label)),
+                              ],
+                              onChanged: (v) =>
+                                  setState(() => _condOp = v ?? 'eq'),
+                            ),
+                            if (_condNeedsValue) ...[
+                              const SizedBox(height: 10),
+                              _condValueField(),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
