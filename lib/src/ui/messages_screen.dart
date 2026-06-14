@@ -6259,7 +6259,10 @@ class _ThreeBridgedState extends State<_ThreeBridged> {
           if (cell is! int) return null;
           var g = await api2.gameMove(widget.gameId, cell);
           if (!g.isOver && g.turn == 'cpu') {
-            await Future.delayed(const Duration(milliseconds: 700));
+            // Show the player's move right away (with "Thinking…") before the
+            // CPU pauses and replies — so it doesn't feel laggy.
+            _updates.add(_tttState(g));
+            await Future.delayed(const Duration(milliseconds: 600));
             g = await api2.cpuMove(widget.gameId);
           }
           return _tttState(g);
