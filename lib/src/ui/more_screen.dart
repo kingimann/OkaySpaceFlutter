@@ -19,6 +19,7 @@ import 'map_screen.dart';
 import 'marketplace_screen.dart';
 import 'notes_screen.dart';
 import 'notifications_screen.dart';
+import 'reminders_screen.dart';
 import 'reels_screen.dart';
 import 'roadside_screen.dart';
 import 'search_screen.dart';
@@ -52,6 +53,8 @@ class MoreScreen extends StatelessWidget {
               () => const NotesScreen()),
           _Item('Calendar', Icons.calendar_today_outlined,
               const Color(0xFF14B8A6), () => const CalendarScreen()),
+          _Item('Reminders', Icons.checklist_rtl, const Color(0xFFEF4444),
+              () => const RemindersScreen()),
           _Item('Camera', Icons.photo_camera_outlined, const Color(0xFF6366F1),
               () => const CameraScreen()),
           _Item('Calculator', Icons.calculate_outlined,
