@@ -2409,38 +2409,121 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Sheet listing the members of a group conversation.
+  /// Sheet listing the members of a group conversation, with admin controls
+  /// (promote/demote/kick) for admins.
   void _showMembers() {
-    final members = widget.conversation.members;
+    final conv = widget.conversation;
+    final ownerId = conv.ownerId;
+    final myId = currentUserId;
+    final members = [...conv.members];
+    final admins = <String>{...conv.adminIds, if (ownerId != null) ownerId};
+    final iAmOwner = myId != null && myId == ownerId;
+    final iAmAdmin = myId != null && admins.contains(myId);
+
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-                title: Text('${members.length} members',
-                    style: const TextStyle(fontWeight: FontWeight.bold))),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final u in members)
-                    ListTile(
-                      leading: Avatar(url: u.picture, name: u.name),
-                      title: Text(u.name),
-                      subtitle: u.username != null ? Text(u.handle) : null,
-                      trailing: u.userId == widget.conversation.ownerId
-                          ? const Text('Owner')
-                          : null,
-                    ),
-                ],
-              ),
+      builder: (_) => StatefulBuilder(
+        builder: (sheetCtx, setSheet) {
+          Future<void> act(Future<void> Function() op, void Function() local) async {
+            try {
+              await op();
+              setSheet(local);
+            } catch (e) {
+              if (mounted) showError(context, e);
+            }
+          }
+
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                    title: Text('${members.length} members',
+                        style: const TextStyle(fontWeight: FontWeight.bold))),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final u in members)
+                        ListTile(
+                          leading: Avatar(url: u.picture, name: u.name),
+                          title: Text(u.name),
+                          subtitle: u.username != null ? Text(u.handle) : null,
+                          trailing: _memberTrailing(
+                              u, ownerId, myId, admins, iAmAdmin, iAmOwner,
+                              onPromote: () => act(
+                                  () => api.messaging.promoteAdmin(conv.id, u.userId),
+                                  () => admins.add(u.userId)),
+                              onDemote: () => act(
+                                  () => api.messaging.demoteAdmin(conv.id, u.userId),
+                                  () => admins.remove(u.userId)),
+                              onKick: () => act(
+                                  () => api.messaging.removeMember(conv.id, u.userId),
+                                  () => members.removeWhere(
+                                      (m) => m.userId == u.userId))),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
+    );
+  }
+
+  Widget? _memberTrailing(
+    PublicUser u,
+    String? ownerId,
+    String? myId,
+    Set<String> admins,
+    bool iAmAdmin,
+    bool iAmOwner, {
+    required VoidCallback onPromote,
+    required VoidCallback onDemote,
+    required VoidCallback onKick,
+  }) {
+    final isOwner = u.userId == ownerId;
+    final isAdmin = admins.contains(u.userId);
+    final badge = isOwner
+        ? 'Owner'
+        : isAdmin
+            ? 'Admin'
+            : null;
+    // Build the actions an admin may take on this member.
+    final items = <PopupMenuEntry<String>>[];
+    if (iAmAdmin && u.userId != myId && !isOwner) {
+      if (!isAdmin) {
+        items.add(const PopupMenuItem(value: 'promote', child: Text('Make admin')));
+      } else if (iAmOwner) {
+        items.add(const PopupMenuItem(value: 'demote', child: Text('Remove admin')));
+      }
+      // Admins can kick non-admins; only the owner can kick an admin.
+      if (!isAdmin || iAmOwner) {
+        items.add(const PopupMenuItem(value: 'kick', child: Text('Remove from group')));
+      }
+    }
+    final menu = items.isEmpty
+        ? null
+        : PopupMenuButton<String>(
+            itemBuilder: (_) => items,
+            onSelected: (v) {
+              if (v == 'promote') onPromote();
+              if (v == 'demote') onDemote();
+              if (v == 'kick') onKick();
+            },
+          );
+    if (badge == null) return menu;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(badge,
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.outline, fontSize: 12)),
+        if (menu != null) menu,
+      ],
     );
   }
 
@@ -3330,6 +3413,75 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Leaves the group. If the server says the last admin must hand off first,
+  /// prompt for a successor and retry.
+  Future<void> _leaveGroup() async {
+    try {
+      await api.messaging.leave(_convId);
+      if (mounted) {
+        showInfo(context, 'Left conversation');
+        Navigator.pop(context);
+      }
+    } on ApiException catch (e) {
+      if (e.code == 'choose_admin') {
+        final successor = await _pickSuccessor();
+        if (successor == null) return;
+        try {
+          await api.messaging.leave(_convId, newAdminId: successor);
+          if (mounted) {
+            showInfo(context, 'Left conversation');
+            Navigator.pop(context);
+          }
+        } catch (e2) {
+          if (mounted) showError(context, e2);
+        }
+      } else if (mounted) {
+        showError(context, e);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Asks the leaving admin to pick a member to become the new admin.
+  Future<String?> _pickSuccessor() async {
+    final me = currentUserId;
+    final candidates =
+        widget.conversation.members.where((u) => u.userId != me).toList();
+    if (candidates.isEmpty) return null;
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('Choose a new admin',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text('You\'re the last admin — pick who takes over '
+                  'before you leave.'),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final u in candidates)
+                    ListTile(
+                      leading: Avatar(url: u.picture, name: u.name),
+                      title: Text(u.name),
+                      subtitle: u.username != null ? Text(u.handle) : null,
+                      onTap: () => Navigator.pop(context, u.userId),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _run(Future<void> Function() op, [String? ok]) async {
     try {
       await op();
@@ -3730,10 +3882,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   title: const Text('Leave conversation'),
                   onTap: () {
                     Navigator.pop(menuCtx);
-                    _run(() => api.messaging.leave(_convId),
-                        'Left conversation').then((_) {
-                      if (mounted) Navigator.pop(context);
-                    });
+                    _leaveGroup();
                   },
                 ),
                 ListTile(
