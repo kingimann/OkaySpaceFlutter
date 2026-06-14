@@ -87,7 +87,12 @@ GAMES.tictactoe=function(){
 };
 
 // ===== Chess =====
-var CG={k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
+// Two Unicode series: the "white" set (U+2654..) for white pieces and the
+// "black" set (U+265A..) for black. This is essential on iOS/Safari, where
+// these render as emoji that IGNORE fillStyle — so the glyph itself must carry
+// the colour. The fill/stroke below is a fallback for text-presentation fonts.
+var CG_W={k:"♔",q:"♕",r:"♖",b:"♗",n:"♘",p:"♙"};
+var CG_B={k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
 GAMES.chess=function(){
   var st=null,amWhite=true,sel=null;
   function status(){if(st.status==="checkmate")return st.winner===you?"Checkmate — you win!":"Checkmate — you lost";if(st.status==="stalemate")return "Stalemate — draw";if(st.status==="draw")return "Draw";return (st.turn===you?"Your move":"Their move")+(st.inCheck?" · check!":"");}
@@ -96,14 +101,14 @@ GAMES.chess=function(){
     draw:function(){hud(status());var g=boardGeom();
       for(var sq=0;sq<64;sq++){var p=sqXY(sq,amWhite,g);var f=sq%8,r=Math.floor(sq/8);var light=((f+r)%2===0);
         ctx.fillStyle=(sel===sq)?"#86efac":(light?"#edd9b5":"#b48761");ctx.fillRect(p.x,p.y,g.cs,g.cs);
-        var c=st.board[sq];if(c!=="."){var wht=(c===c.toUpperCase()),ch=CG[c.toLowerCase()];var px2=p.x+g.cs/2,py2=p.y+g.cs/2+g.cs*0.04;ctx.font="700 "+Math.round(g.cs*0.84)+"px Georgia,serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";
-          // Fill the piece in its true colour first (with a soft shadow so it
-          // lifts off the square), then add only a thin edge for definition —
-          // so white reads clearly white and black clearly black.
-          ctx.shadowColor="rgba(0,0,0,0.5)";ctx.shadowBlur=g.cs*0.07;ctx.shadowOffsetY=g.cs*0.03;
-          ctx.fillStyle=wht?"#ffffff":"#0d1117";ctx.fillText(ch,px2,py2);
+        var c=st.board[sq];if(c!=="."){var wht=(c===c.toUpperCase()),ch=(wht?CG_W:CG_B)[c.toLowerCase()];var px2=p.x+g.cs/2,py2=p.y+g.cs/2+g.cs*0.04;ctx.font="700 "+Math.round(g.cs*0.84)+"px 'Segoe UI Symbol','Noto Sans Symbols2','DejaVu Sans',sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";
+          // A soft shadow lifts the piece off the square. On emoji platforms
+          // (iOS) the glyph series carries the colour; on text fonts the fill
+          // does — white pieces white, black pieces near-black, each edged.
+          ctx.shadowColor="rgba(0,0,0,0.5)";ctx.shadowBlur=g.cs*0.06;ctx.shadowOffsetY=g.cs*0.03;
+          ctx.lineWidth=Math.max(1.4,g.cs*0.04);ctx.strokeStyle=wht?"#0f172a":"#cbd5e1";ctx.strokeText(ch,px2,py2);
           ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
-          ctx.lineWidth=Math.max(1.3,g.cs*0.035);ctx.strokeStyle=wht?"#0f172a":"#e5e7eb";ctx.strokeText(ch,px2,py2);}}
+          ctx.fillStyle=wht?"#ffffff":"#0d1117";ctx.fillText(ch,px2,py2);}}
       if(st.status==="checkmate"||st.status==="stalemate"||st.status==="draw")overWith(status());else hideOver();},
     pick:function(cx,cy){if(st.turn!==you||st.status!=="active")return;var g=boardGeom();var sq=sqAt(cx,cy,amWhite,g);if(sq<0)return;var pc=st.board[sq],mine=pc!=="."&&(amWhite?pc===pc.toUpperCase():pc===pc.toLowerCase());if(sel===null){if(mine)sel=sq;return;}if(sq===sel){sel=null;return;}if(mine){sel=sq;return;}var from=sqName(sel),to=sqName(sq);sel=null;sendAction({from:from,to:to});}
   };
