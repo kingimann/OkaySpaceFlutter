@@ -5912,13 +5912,19 @@ class _ChessBoardState extends State<_ChessBoard> {
     }
     setState(() => _busy = true);
     try {
-      final nv = await api.messaging
+      var nv = await api.messaging
           .chessMove(widget.gameId, _sqName(_sel!), _sqName(sq));
       if (mounted) {
         setState(() {
           _v = nv;
           _sel = null;
         });
+      }
+      // Playing the computer: let it reply after a brief pause.
+      if (!nv.isOver && nv.turn == 'cpu') {
+        await Future.delayed(const Duration(milliseconds: 500));
+        nv = await api.messaging.chessCpuMove(widget.gameId);
+        if (mounted) setState(() => _v = nv);
       }
       if (nv.isOver) _poll?.cancel();
     } catch (e) {
@@ -6047,7 +6053,7 @@ class _CheckersBoardState extends State<_CheckersBoard> {
     }
     setState(() => _busy = true);
     try {
-      final nv = await api.messaging.checkersMove(widget.gameId, _sel!, sq);
+      var nv = await api.messaging.checkersMove(widget.gameId, _sel!, sq);
       if (mounted) {
         setState(() {
           _v = nv;
@@ -6055,6 +6061,12 @@ class _CheckersBoardState extends State<_CheckersBoard> {
           _sel =
               (nv.turn == currentUserId && nv.chain != null) ? nv.chain : null;
         });
+      }
+      // Playing the computer: let it reply after a brief pause.
+      if (!nv.isOver && nv.turn == 'cpu') {
+        await Future.delayed(const Duration(milliseconds: 500));
+        nv = await api.messaging.checkersCpuMove(widget.gameId);
+        if (mounted) setState(() => _v = nv);
       }
       if (nv.isOver) _poll?.cancel();
     } catch (e) {
