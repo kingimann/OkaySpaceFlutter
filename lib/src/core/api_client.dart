@@ -25,6 +25,9 @@ class ApiClient {
   final TokenStore tokenStore;
   final HttpSend _transport;
 
+  /// The configured API base URL (e.g. `https://…/api/v1`).
+  String get baseUrl => _config.baseUrl;
+
   /// Called once when a request is rejected with HTTP 401 (the stored
   /// credential has just been cleared). The app uses this to reset to login.
   void Function()? onUnauthorized;
