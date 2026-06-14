@@ -96,7 +96,14 @@ GAMES.chess=function(){
     draw:function(){hud(status());var g=boardGeom();
       for(var sq=0;sq<64;sq++){var p=sqXY(sq,amWhite,g);var f=sq%8,r=Math.floor(sq/8);var light=((f+r)%2===0);
         ctx.fillStyle=(sel===sq)?"#86efac":(light?"#edd9b5":"#b48761");ctx.fillRect(p.x,p.y,g.cs,g.cs);
-        var c=st.board[sq];if(c!=="."){var wht=(c===c.toUpperCase()),ch=CG[c.toLowerCase()];var px2=p.x+g.cs/2,py2=p.y+g.cs/2+g.cs*0.04;ctx.font="700 "+Math.round(g.cs*0.82)+"px Georgia,serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";ctx.lineWidth=Math.max(2.5,g.cs*0.07);ctx.strokeStyle=wht?"#1f2937":"#f8fafc";ctx.strokeText(ch,px2,py2);ctx.fillStyle=wht?"#ffffff":"#1a1a1a";ctx.fillText(ch,px2,py2);}}
+        var c=st.board[sq];if(c!=="."){var wht=(c===c.toUpperCase()),ch=CG[c.toLowerCase()];var px2=p.x+g.cs/2,py2=p.y+g.cs/2+g.cs*0.04;ctx.font="700 "+Math.round(g.cs*0.84)+"px Georgia,serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";
+          // Fill the piece in its true colour first (with a soft shadow so it
+          // lifts off the square), then add only a thin edge for definition —
+          // so white reads clearly white and black clearly black.
+          ctx.shadowColor="rgba(0,0,0,0.5)";ctx.shadowBlur=g.cs*0.07;ctx.shadowOffsetY=g.cs*0.03;
+          ctx.fillStyle=wht?"#ffffff":"#0d1117";ctx.fillText(ch,px2,py2);
+          ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+          ctx.lineWidth=Math.max(1.3,g.cs*0.035);ctx.strokeStyle=wht?"#0f172a":"#e5e7eb";ctx.strokeText(ch,px2,py2);}}
       if(st.status==="checkmate"||st.status==="stalemate"||st.status==="draw")overWith(status());else hideOver();},
     pick:function(cx,cy){if(st.turn!==you||st.status!=="active")return;var g=boardGeom();var sq=sqAt(cx,cy,amWhite,g);if(sq<0)return;var pc=st.board[sq],mine=pc!=="."&&(amWhite?pc===pc.toUpperCase():pc===pc.toLowerCase());if(sel===null){if(mine)sel=sq;return;}if(sq===sel){sel=null;return;}if(mine){sel=sq;return;}var from=sqName(sel),to=sqName(sq);sel=null;sendAction({from:from,to:to});}
   };
