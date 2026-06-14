@@ -189,6 +189,76 @@ class MessagingService {
   Future<GameView> game(String gameId) async => GameView.fromJson(
       asMapOrNull(await _client.getJson('/chat-games/$gameId')) ?? const {});
 
+  /// Plays the computer's pending tic-tac-toe move (called after a short pause).
+  Future<GameView> cpuMove(String gameId) async => GameView.fromJson(
+      asMapOrNull(await _client.postJson('/chat-games/$gameId/cpu-move')) ??
+          const {});
+
+  // Blackjack.
+  Future<BlackjackView> blackjackHit(String gameId) async =>
+      BlackjackView.fromJson(asMapOrNull(
+              await _client.postJson('/chat-games/$gameId/blackjack/hit')) ??
+          const {});
+  Future<BlackjackView> blackjackStand(String gameId) async =>
+      BlackjackView.fromJson(asMapOrNull(
+              await _client.postJson('/chat-games/$gameId/blackjack/stand')) ??
+          const {});
+  Future<BlackjackView> blackjack(String gameId) async =>
+      BlackjackView.fromJson(asMapOrNull(
+              await _client.getJson('/chat-games/$gameId/blackjack')) ??
+          const {});
+
+  // Chess.
+  Future<ChessView> chessMove(String gameId, String from, String to,
+          {String? promotion}) async =>
+      ChessView.fromJson(asMapOrNull(
+              await _client.postJson('/chat-games/$gameId/chess/move', body: {
+            'from_sq': from,
+            'to_sq': to,
+            if (promotion != null) 'promotion': promotion,
+          })) ??
+          const {});
+  Future<ChessView> chess(String gameId) async => ChessView.fromJson(
+      asMapOrNull(await _client.getJson('/chat-games/$gameId/chess')) ??
+          const {});
+
+  // Checkers.
+  Future<CheckersView> checkersMove(String gameId, int from, int to) async =>
+      CheckersView.fromJson(asMapOrNull(await _client.postJson(
+              '/chat-games/$gameId/checkers/move',
+              body: {'from_sq': from, 'to_sq': to})) ??
+          const {});
+  Future<CheckersView> checkers(String gameId) async => CheckersView.fromJson(
+      asMapOrNull(await _client.getJson('/chat-games/$gameId/checkers')) ??
+          const {});
+
+  // Poker.
+  Future<PokerView> pokerDraw(String gameId, List<int> holds) async =>
+      PokerView.fromJson(asMapOrNull(await _client
+              .postJson('/chat-games/$gameId/poker/draw', body: {'holds': holds})) ??
+          const {});
+  Future<PokerView> pokerReveal(String gameId) async => PokerView.fromJson(
+      asMapOrNull(
+              await _client.postJson('/chat-games/$gameId/poker/reveal')) ??
+          const {});
+  Future<PokerView> poker(String gameId) async => PokerView.fromJson(
+      asMapOrNull(await _client.getJson('/chat-games/$gameId/poker')) ??
+          const {});
+
+  /// A player's all-games win/loss/tie record.
+  Future<GameStats> gameStats(String userId) async => GameStats.fromJson(
+      asMapOrNull(await _client.getJson('/game-stats/$userId')) ?? const {});
+
+  /// Reports an arcade score (Pong/Snake); keeps the player's best.
+  Future<GameScores> reportScore(String gameId, int score) async =>
+      GameScores.fromJson(asMapOrNull(await _client
+              .postJson('/chat-games/$gameId/score', body: {'score': score})) ??
+          const {});
+
+  /// A player's best arcade scores per game type.
+  Future<GameScores> gameScores(String userId) async => GameScores.fromJson(
+      asMapOrNull(await _client.getJson('/game-scores/$userId')) ?? const {});
+
   Future<Message> editMessage(String convId, String msgId, String text) async =>
       _msg(await _client.patchJson('/conversations/$convId/messages/$msgId',
           body: {'text': text}));
