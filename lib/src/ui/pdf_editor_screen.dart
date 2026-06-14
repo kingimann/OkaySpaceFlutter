@@ -266,6 +266,28 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   Future<void> _applyTextEdit(_TextEdit edit) async {
     final src = _originalPdf;
     if (src == null) return;
+    if (edit.mode == 'redact') {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Redact text'),
+          content: const Text(
+              'This permanently removes the selected text. To guarantee it '
+              'can\'t be recovered, the document\'s selectable text layer is '
+              'flattened to an image — find, replace and extract will no longer '
+              'work afterwards. Continue?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Redact')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
     setState(() {
       _busy = true;
       _status = 'Replacing…';
@@ -312,6 +334,13 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       final outBytes = Uint8List.fromList(await doc.save());
       doc.dispose();
       await _applyEditedPdf(outBytes);
+      if (edit.mode == 'redact') {
+        // The black box now shows in the re-rendered page images. Replace the
+        // working PDF with a flattened, image-only copy so the covered text is
+        // truly gone (no recoverable text layer, and Extract returns nothing).
+        final flat = await _imagesToPdf();
+        if (mounted) _originalPdf = flat;
+      }
       if (mounted) {
         showInfo(
             context,
@@ -775,6 +804,25 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     final im = img.decodeImage(p.png);
     if (im == null) return p.png;
     return img.encodePng(img.copyRotate(im, angle: (p.quarter % 4) * 90));
+  }
+
+  /// Builds an image-only PDF from the current page previews (no text layer).
+  /// Used to truly flatten redacted content.
+  Future<Uint8List> _imagesToPdf() async {
+    final doc = pw.Document();
+    for (final p in _pages) {
+      final rotated = (p.quarter % 4) == 1 || (p.quarter % 4) == 3;
+      final aspect = rotated ? 1 / p.aspect : p.aspect;
+      const pageW = 595.0;
+      final pageH = pageW / (aspect <= 0 ? 0.7071 : aspect);
+      final image = pw.MemoryImage(_rotated(p));
+      doc.addPage(pw.Page(
+        pageFormat: PdfPageFormat(pageW, pageH),
+        margin: pw.EdgeInsets.zero,
+        build: (_) => pw.Image(image, fit: pw.BoxFit.fill),
+      ));
+    }
+    return Uint8List.fromList(await doc.save());
   }
 
   Future<void> _export() async {
