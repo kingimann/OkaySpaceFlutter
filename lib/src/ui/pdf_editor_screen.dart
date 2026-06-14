@@ -28,13 +28,40 @@ class _ImgAnno {
 }
 
 class _Page {
-  _Page(this.id, this.png, this.aspect);
+  _Page(this.id, this.png, this.aspect, [this.pdfPageIndex = -1]);
   final int id;
   final Uint8List png; // rendered page image
   final double aspect; // width / height
+  final int pdfPageIndex; // index in the source PDF, or -1 (image/merged)
   int quarter = 0; // rotation in quarter-turns
   final List<_Anno> annos = [];
   final List<_ImgAnno> imgs = [];
+}
+
+/// A word extracted from the PDF with its bounds (in PDF points) and its
+/// position as a fraction of the page (for tap selection).
+class _Word {
+  _Word(this.text, this.pdf, this.rel, this.fontSize, this.bold, this.italic);
+  final String text;
+  final Rect pdf;
+  final Rect rel;
+  final double fontSize; // matches the source, so replacements look the same
+  final bool bold;
+  final bool italic;
+}
+
+/// A select-and-replace edit: clear these word bounds, draw [text] in [draw]
+/// using the same size/style as the text it replaces.
+class _TextEdit {
+  _TextEdit(this.pageIndex, this.clear, this.draw, this.text, this.fontSize,
+      this.bold, this.italic);
+  final int pageIndex;
+  final List<Rect> clear;
+  final Rect draw;
+  final String text;
+  final double fontSize;
+  final bool bold;
+  final bool italic;
 }
 
 /// A page-level PDF editor: open a PDF (its pages are rendered to images),
@@ -68,7 +95,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       final added = <_Page>[];
       await for (final page in Printing.raster(bytes, dpi: 150)) {
         final aspect = page.height == 0 ? 0.7071 : page.width / page.height;
-        added.add(_Page(_seq++, await page.toPng(), aspect));
+        added.add(_Page(_seq++, await page.toPng(), aspect, added.length));
         if (mounted) {
           setState(() => _status = 'Rendered ${added.length} page(s)…');
         }
@@ -130,12 +157,146 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     final rebuilt = <_Page>[];
     await for (final pg in Printing.raster(out, dpi: 150)) {
       final aspect = pg.height == 0 ? 0.7071 : pg.width / pg.height;
-      rebuilt.add(_Page(_seq++, await pg.toPng(), aspect));
+      rebuilt.add(_Page(_seq++, await pg.toPng(), aspect, rebuilt.length));
     }
     if (mounted) {
       setState(() => _pages
         ..clear()
         ..addAll(rebuilt));
+    }
+  }
+
+  /// Opens a single page to edit; the page screen returns the chosen action.
+  Future<void> _openPage(_Page p, int number) async {
+    final action = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => _PageScreen(page: p, pageNumber: number)));
+    if (!mounted) return;
+    switch (action) {
+      case 'editText':
+        await _editPageText(p);
+      case 'find':
+        await _promptFindReplace();
+      case 'markup':
+        await Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => _AnnotateScreen(page: p)));
+        if (mounted) setState(() {});
+      case 'form':
+        await _fillForm();
+      case 'extract':
+        await _extractText();
+      default:
+        setState(() {}); // reflect any rotation done on the page
+    }
+  }
+
+  /// Extracts the words on a page and opens the select-and-replace editor.
+  Future<void> _editPageText(_Page page) async {
+    final src = _originalPdf;
+    if (src == null) return;
+    if (page.pdfPageIndex < 0) {
+      showInfo(context, 'Text editing isn\'t available for added/merged pages');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _status = 'Reading text…';
+    });
+    final words = <_Word>[];
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      final idx = page.pdfPageIndex;
+      final size = doc.pages[idx].size;
+      final lines = sf.PdfTextExtractor(doc)
+          .extractTextLines(startPageIndex: idx, endPageIndex: idx);
+      for (final line in lines) {
+        final styles = line.fontStyle;
+        final bold = styles.contains(sf.PdfFontStyle.bold);
+        final italic = styles.contains(sf.PdfFontStyle.italic);
+        for (final wd in line.wordCollection) {
+          if (wd.text.trim().isEmpty) continue;
+          final b = wd.bounds;
+          final fontSize =
+              line.fontSize > 0 ? line.fontSize : (b.height * 0.85);
+          words.add(_Word(
+            wd.text,
+            b,
+            Rect.fromLTWH(b.left / size.width, b.top / size.height,
+                b.width / size.width, b.height / size.height),
+            fontSize,
+            bold,
+            italic,
+          ));
+        }
+      }
+      doc.dispose();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
+      }
+    }
+    if (!mounted) return;
+    if (words.isEmpty) {
+      showInfo(context, 'No selectable text on this page');
+      return;
+    }
+    final edit = await Navigator.of(context).push<_TextEdit>(MaterialPageRoute(
+      builder: (_) => _TextSelectScreen(
+          pageImage: page.png,
+          aspect: page.aspect,
+          pageIndex: page.pdfPageIndex,
+          words: words),
+    ));
+    if (edit != null) await _applyTextEdit(edit);
+  }
+
+  Future<void> _applyTextEdit(_TextEdit edit) async {
+    final src = _originalPdf;
+    if (src == null) return;
+    setState(() {
+      _busy = true;
+      _status = 'Replacing…';
+    });
+    try {
+      final doc = sf.PdfDocument(inputBytes: src);
+      final page = doc.pages[edit.pageIndex];
+      for (final r in edit.clear) {
+        page.graphics.drawRectangle(
+            brush: sf.PdfSolidBrush(sf.PdfColor(255, 255, 255)), bounds: r);
+      }
+      if (edit.text.isNotEmpty) {
+        final styles = <sf.PdfFontStyle>[
+          if (edit.bold) sf.PdfFontStyle.bold,
+          if (edit.italic) sf.PdfFontStyle.italic,
+        ];
+        page.graphics.drawString(
+          edit.text,
+          sf.PdfStandardFont(
+            sf.PdfFontFamily.helvetica,
+            edit.fontSize.clamp(6.0, 72.0).toDouble(),
+            multiStyle: styles.isEmpty ? null : styles,
+          ),
+          brush: sf.PdfSolidBrush(sf.PdfColor(0, 0, 0)),
+          bounds: edit.draw,
+        );
+      }
+      final outBytes = Uint8List.fromList(await doc.save());
+      doc.dispose();
+      await _applyEditedPdf(outBytes);
+      if (mounted) showInfo(context, 'Replaced');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
+      }
     }
   }
 
@@ -463,22 +624,6 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       appBar: OkayAppBar(
         title: const Text('PDF editor'),
         actions: [
-          if (_originalPdf != null)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.edit_note),
-              tooltip: 'Edit document',
-              enabled: !_busy,
-              onSelected: (v) {
-                if (v == 'find') _promptFindReplace();
-                if (v == 'form') _fillForm();
-                if (v == 'text') _extractText();
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'find', child: Text('Find & replace text')),
-                PopupMenuItem(value: 'form', child: Text('Fill form fields')),
-                PopupMenuItem(value: 'text', child: Text('Extract text')),
-              ],
-            ),
           if (_pages.isNotEmpty)
             IconButton(
               tooltip: 'Merge another PDF',
@@ -559,6 +704,8 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       margin: const EdgeInsets.symmetric(vertical: 4),
       color: scheme.surfaceContainerHighest,
       child: ListTile(
+        // Click a page to open it and edit.
+        onTap: _busy ? null : () => _openPage(p, i + 1),
         leading: SizedBox(
           width: 44,
           height: 56,
@@ -568,23 +715,10 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           ),
         ),
         title: Text('Page ${i + 1}'),
+        subtitle: const Text('Tap to edit'),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: const Icon(Icons.text_fields),
-              tooltip: 'Add text',
-              onPressed: () async {
-                await Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => _AnnotateScreen(page: p)));
-                if (mounted) setState(() {});
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.rotate_right),
-              tooltip: 'Rotate',
-              onPressed: () => setState(() => p.quarter += 1),
-            ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
               tooltip: 'Delete',
@@ -1103,4 +1237,223 @@ class _SigPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SigPainter old) => true;
+}
+
+/// Tap or drag across the page to select words, then replace them. Returns the
+/// edit (which words to clear, the replacement text, and where to draw it).
+class _TextSelectScreen extends StatefulWidget {
+  const _TextSelectScreen(
+      {required this.pageImage,
+      required this.aspect,
+      required this.pageIndex,
+      required this.words});
+  final Uint8List pageImage;
+  final double aspect;
+  final int pageIndex;
+  final List<_Word> words;
+
+  @override
+  State<_TextSelectScreen> createState() => _TextSelectScreenState();
+}
+
+class _TextSelectScreenState extends State<_TextSelectScreen> {
+  final Set<int> _sel = {};
+  Offset? _dragStart;
+  Rect? _dragRect; // relative selection rectangle while dragging
+
+  void _selectIn(Rect rel) {
+    _sel.clear();
+    for (var i = 0; i < widget.words.length; i++) {
+      if (widget.words[i].rel.overlaps(rel)) _sel.add(i);
+    }
+  }
+
+  String get _selectedText {
+    final idx = _sel.toList()..sort();
+    return idx.map((i) => widget.words[i].text).join(' ');
+  }
+
+  Future<void> _replace() async {
+    if (_sel.isEmpty) return;
+    final controller = TextEditingController(text: _selectedText);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Replace selected text'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: null,
+          decoration: const InputDecoration(hintText: 'Replacement text'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text),
+              child: const Text('Replace')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    final idx = _sel.toList()..sort();
+    final first = widget.words[idx.first];
+    final clears = [for (final i in idx) widget.words[i].pdf];
+    var union = clears.first;
+    for (final r in clears) {
+      union = union.expandToInclude(r);
+    }
+    // Use the same size/style as the text being replaced.
+    Navigator.pop(
+        context,
+        _TextEdit(widget.pageIndex, clears, union, result, first.fontSize,
+            first.bold, first.italic));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: Text(_sel.isEmpty ? 'Select text' : '${_sel.length} selected'),
+        actions: [
+          TextButton(
+            onPressed: _sel.isEmpty ? null : _replace,
+            child: const Text('Replace'),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+                _sel.isEmpty
+                    ? 'Drag across the words you want to replace.'
+                    : '“$_selectedText”',
+                style: TextStyle(color: scheme.outline)),
+          ),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: AspectRatio(
+                  aspectRatio: widget.aspect <= 0 ? 0.7071 : widget.aspect,
+                  child: LayoutBuilder(
+                    builder: (context, c) {
+                      final w = c.maxWidth, h = c.maxHeight;
+                      return GestureDetector(
+                        onPanStart: (d) => _dragStart = d.localPosition,
+                        onPanUpdate: (d) {
+                          final s = _dragStart;
+                          if (s == null) return;
+                          final rect = Rect.fromPoints(s, d.localPosition);
+                          setState(() {
+                            _dragRect = Rect.fromLTRB(rect.left / w,
+                                rect.top / h, rect.right / w, rect.bottom / h);
+                            _selectIn(_dragRect!);
+                          });
+                        },
+                        onPanEnd: (_) => setState(() => _dragRect = null),
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: Container(
+                                color: Colors.white,
+                                child: Image.memory(widget.pageImage,
+                                    fit: BoxFit.fill),
+                              ),
+                            ),
+                            for (var i = 0; i < widget.words.length; i++)
+                              Positioned(
+                                left: widget.words[i].rel.left * w,
+                                top: widget.words[i].rel.top * h,
+                                width: widget.words[i].rel.width * w,
+                                height: widget.words[i].rel.height * h,
+                                child: GestureDetector(
+                                  onTap: () => setState(() {
+                                    _sel.contains(i)
+                                        ? _sel.remove(i)
+                                        : _sel.add(i);
+                                  }),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: _sel.contains(i)
+                                          ? Colors.blue.withValues(alpha: 0.35)
+                                          : Colors.transparent,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single page opened for editing. Returns the chosen action to the editor:
+/// 'editText', 'markup', 'form', 'extract', or null (just viewed / rotated).
+class _PageScreen extends StatefulWidget {
+  const _PageScreen({required this.page, required this.pageNumber});
+  final _Page page;
+  final int pageNumber;
+
+  @override
+  State<_PageScreen> createState() => _PageScreenState();
+}
+
+class _PageScreenState extends State<_PageScreen> {
+  _Page get p => widget.page;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: Text('Page ${widget.pageNumber}'),
+        actions: [
+          IconButton(
+            tooltip: 'Rotate',
+            icon: const Icon(Icons.rotate_right),
+            onPressed: () => setState(() => p.quarter += 1),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Edit',
+            onSelected: (v) => Navigator.pop(context, v),
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                  value: 'editText', child: Text('Edit text (select & replace)')),
+              PopupMenuItem(value: 'find', child: Text('Find & replace')),
+              PopupMenuItem(value: 'markup', child: Text('Add text / signature')),
+              PopupMenuItem(value: 'form', child: Text('Fill form fields')),
+              PopupMenuItem(value: 'extract', child: Text('Extract text')),
+            ],
+          ),
+        ],
+      ),
+      body: InteractiveViewer(
+        minScale: 1,
+        maxScale: 5,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: RotatedBox(
+              quarterTurns: p.quarter % 4,
+              child: Image.memory(p.png, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
