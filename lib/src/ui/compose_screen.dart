@@ -37,6 +37,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
   List<PublicUser> _mentions = const [];
   Timer? _mentionTimer;
 
+  // Thread composer: extra continuation posts published as replies to the
+  // first one, so a multi-part thought goes up as a single thread.
+  final List<TextEditingController> _threadParts = [];
+
   // Poll composer.
   bool _poll = false;
   final List<TextEditingController> _options = [
@@ -323,10 +327,19 @@ class _ComposeScreenState extends State<ComposeScreen> {
     for (final c in _options) {
       c.dispose();
     }
+    for (final c in _threadParts) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   void _togglePoll() => setState(() => _poll = !_poll);
+
+  void _addThreadPart() =>
+      setState(() => _threadParts.add(TextEditingController()));
+
+  void _removeThreadPart(int i) =>
+      setState(() => _threadParts.removeAt(i).dispose());
 
   /// Detects an `@token` at the caret and searches users for autocomplete.
   void _onTextChanged(String _) {
@@ -500,7 +513,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
             : PostMedia(type: 'image', base64: base64Encode(b)));
       }
 
-      await api.feed.createPost(PostCreate(
+      final first = await api.feed.createPost(PostCreate(
         text: _text.text.trim(),
         media: media,
         poll: poll,
@@ -512,6 +525,13 @@ class _ComposeScreenState extends State<ComposeScreen> {
         likesDisabled: _likesDisabled ? true : null,
         minSubTier: _subscribersOnly ? 1 : null,
       ));
+      // Publish each continuation as a reply to the first post — a flat
+      // self-thread. Done after the head is up so its id is the parent.
+      for (final c in _threadParts) {
+        final t = c.text.trim();
+        if (t.isEmpty) continue;
+        await api.feed.createPost(PostCreate(text: t, parentId: first.id));
+      }
       _clearDraft();
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
@@ -630,6 +650,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
               ),
             ),
           if (_poll) _buildPollEditor(context),
+          for (var i = 0; i < _threadParts.length; i++)
+            _threadPartEditor(context, i),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _posting ? null : _addThreadPart,
+                icon: const Icon(Icons.forum_outlined, size: 18),
+                label: Text(
+                    _threadParts.isEmpty ? 'Add to thread' : 'Add another post'),
+              ),
+            ),
+          ),
         ],
       ),
       ),
@@ -666,6 +700,41 @@ class _ComposeScreenState extends State<ComposeScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// One continuation post in the thread — a connector rail down the left
+  /// and a text field, with a control to drop it.
+  Widget _threadPartEditor(BuildContext context, int i) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 10, left: 4, right: 8),
+            child: Container(width: 2, height: 28, color: scheme.outlineVariant),
+          ),
+          Expanded(
+            child: TextField(
+              controller: _threadParts[i],
+              maxLines: null,
+              minLines: 1,
+              decoration: const InputDecoration(
+                hintText: 'Add another post…',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: 'Remove',
+            onPressed: () => _removeThreadPart(i),
+          ),
+        ],
       ),
     );
   }
