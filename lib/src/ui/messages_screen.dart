@@ -5255,6 +5255,8 @@ void _openGameDialog(
                   ),
                 ]),
                 Flexible(child: SingleChildScrollView(child: board)),
+                const SizedBox(height: 8),
+                const _GameStatsFooter(),
               ],
             ),
           ),
@@ -5262,6 +5264,52 @@ void _openGameDialog(
       );
     },
   );
+}
+
+/// Shows the current user's overall win/loss/tie record under a game board,
+/// refreshed periodically so it updates once a game finishes.
+class _GameStatsFooter extends StatefulWidget {
+  const _GameStatsFooter();
+  @override
+  State<_GameStatsFooter> createState() => _GameStatsFooterState();
+}
+
+class _GameStatsFooterState extends State<_GameStatsFooter> {
+  GameStats? _s;
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _poll = Timer.periodic(const Duration(seconds: 4), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final me = currentUserId;
+    if (me == null) return;
+    try {
+      final s = await api.messaging.gameStats(me);
+      if (mounted) setState(() => _s = s);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _s;
+    if (s == null) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Text(
+      'Your record · ${s.wins}W · ${s.losses}L · ${s.ties}T',
+      style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+    );
+  }
 }
 
 /// Compact game card shown in the chat bubble; tap to open the popup.

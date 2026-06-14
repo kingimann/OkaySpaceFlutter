@@ -245,6 +245,10 @@ class MessagingService {
       asMapOrNull(await _client.getJson('/chat-games/$gameId/poker')) ??
           const {});
 
+  /// A player's all-games win/loss/tie record.
+  Future<GameStats> gameStats(String userId) async => GameStats.fromJson(
+      asMapOrNull(await _client.getJson('/game-stats/$userId')) ?? const {});
+
   Future<Message> editMessage(String convId, String msgId, String text) async =>
       _msg(await _client.patchJson('/conversations/$convId/messages/$msgId',
           body: {'text': text}));

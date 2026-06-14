@@ -365,6 +365,24 @@ class PokerView {
       );
 }
 
+/// A player's all-games win/loss/tie record.
+class GameStats {
+  const GameStats(
+      {this.wins = 0, this.losses = 0, this.ties = 0, this.games = 0});
+
+  final int wins;
+  final int losses;
+  final int ties;
+  final int games;
+
+  factory GameStats.fromJson(Map<String, dynamic> json) => GameStats(
+        wins: asInt(json['wins']),
+        losses: asInt(json['losses']),
+        ties: asInt(json['ties']),
+        games: asInt(json['games']),
+      );
+}
+
 /// Request body for sending a message. Defaults to a plain text message.
 class MessageCreate {
   const MessageCreate({
