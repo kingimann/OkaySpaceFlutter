@@ -10,11 +10,20 @@ import 'package:printing/printing.dart';
 
 import 'common.dart';
 
+class _Anno {
+  _Anno(this.rel, this.text, this.size);
+  Offset rel; // position as a fraction (0..1) of the page
+  String text;
+  double size; // font size as a fraction of page width
+}
+
 class _Page {
-  _Page(this.id, this.png);
+  _Page(this.id, this.png, this.aspect);
   final int id;
   final Uint8List png; // rendered page image
+  final double aspect; // width / height
   int quarter = 0; // rotation in quarter-turns
+  final List<_Anno> annos = [];
 }
 
 /// A page-level PDF editor: open a PDF (its pages are rendered to images),
@@ -45,7 +54,8 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     try {
       final added = <_Page>[];
       await for (final page in Printing.raster(bytes, dpi: 150)) {
-        added.add(_Page(_seq++, await page.toPng()));
+        final aspect = page.height == 0 ? 0.7071 : page.width / page.height;
+        added.add(_Page(_seq++, await page.toPng(), aspect));
         if (mounted) {
           setState(() => _status = 'Rendered ${added.length} page(s)…');
         }
@@ -68,7 +78,9 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         .pickImage(source: ImageSource.gallery, maxWidth: 2000, imageQuality: 92);
     if (f == null) return;
     final bytes = await f.readAsBytes();
-    if (mounted) setState(() => _pages.add(_Page(_seq++, bytes)));
+    final im = img.decodeImage(bytes);
+    final aspect = (im == null || im.height == 0) ? 0.7071 : im.width / im.height;
+    if (mounted) setState(() => _pages.add(_Page(_seq++, bytes, aspect)));
   }
 
   static Uint8List _rotated(_Page p) {
@@ -87,11 +99,25 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     try {
       final doc = pw.Document();
       for (final p in _pages) {
+        final rotated = (p.quarter % 4) == 1 || (p.quarter % 4) == 3;
+        final aspect = rotated ? 1 / p.aspect : p.aspect;
+        const pageW = 595.0; // A4 width in points
+        final pageH = pageW / (aspect <= 0 ? 0.7071 : aspect);
         final image = pw.MemoryImage(_rotated(p));
         doc.addPage(pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(12),
-          build: (_) => pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain)),
+          pageFormat: PdfPageFormat(pageW, pageH),
+          margin: pw.EdgeInsets.zero,
+          build: (_) => pw.Stack(children: [
+            pw.Positioned.fill(child: pw.Image(image, fit: pw.BoxFit.fill)),
+            for (final a in p.annos)
+              pw.Positioned(
+                left: a.rel.dx * pageW,
+                top: a.rel.dy * pageH,
+                child: pw.Text(a.text,
+                    style: pw.TextStyle(
+                        fontSize: a.size * pageW, color: PdfColors.black)),
+              ),
+          ]),
         ));
       }
       final out = await doc.save();
@@ -203,6 +229,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
+              icon: const Icon(Icons.text_fields),
+              tooltip: 'Add text',
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => _AnnotateScreen(page: p)));
+                if (mounted) setState(() {});
+              },
+            ),
+            IconButton(
               icon: const Icon(Icons.rotate_right),
               tooltip: 'Rotate',
               onPressed: () => setState(() => p.quarter += 1),
@@ -220,6 +255,143 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Place and edit text overlays on a single page; changes are written back to
+/// the page's annotation list and burned into the exported PDF.
+class _AnnotateScreen extends StatefulWidget {
+  const _AnnotateScreen({required this.page});
+  final _Page page;
+
+  @override
+  State<_AnnotateScreen> createState() => _AnnotateScreenState();
+}
+
+class _AnnotateScreenState extends State<_AnnotateScreen> {
+  _Page get _p => widget.page;
+
+  Future<void> _editAnno(_Anno a) async {
+    final controller = TextEditingController(text: a.text);
+    var size = a.size;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Text'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(hintText: 'Type text…'),
+              ),
+              Row(children: [
+                const Text('Size'),
+                Expanded(
+                  child: Slider(
+                    value: size,
+                    min: 0.02,
+                    max: 0.12,
+                    onChanged: (v) => setLocal(() => size = v),
+                  ),
+                ),
+              ]),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, '__delete__'),
+                child: const Text('Delete')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, controller.text),
+                child: const Text('Done')),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+    setState(() {
+      if (result == '__delete__') {
+        _p.annos.remove(a);
+      } else {
+        a.text = result;
+        a.size = size;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: const Text('Add text'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done')),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          final a = _Anno(const Offset(0.3, 0.4), 'Text', 0.045);
+          setState(() => _p.annos.add(a));
+          _editAnno(a);
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Add text'),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: AspectRatio(
+            aspectRatio: _p.aspect <= 0 ? 0.7071 : _p.aspect,
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final w = c.maxWidth, h = c.maxHeight;
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.white,
+                        child: Image.memory(_p.png, fit: BoxFit.fill),
+                      ),
+                    ),
+                    for (final a in _p.annos)
+                      Positioned(
+                        left: a.rel.dx * w,
+                        top: a.rel.dy * h,
+                        child: GestureDetector(
+                          onTap: () => _editAnno(a),
+                          onPanUpdate: (d) => setState(() {
+                            a.rel = Offset(
+                              (a.rel.dx + d.delta.dx / w).clamp(0.0, 0.98),
+                              (a.rel.dy + d.delta.dy / h).clamp(0.0, 0.98),
+                            );
+                          }),
+                          child: Container(
+                            color: Colors.white70,
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: Text(
+                              a.text.isEmpty ? ' ' : a.text,
+                              style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: a.size * w,
+                                  height: 1.0),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
