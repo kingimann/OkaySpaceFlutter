@@ -365,6 +365,54 @@ class ConnectFourView {
       );
 }
 
+/// A snapshot of a Dots and Boxes game on a [dots]×[dots] grid.
+class DotsBoxesView {
+  const DotsBoxesView({
+    required this.gameId,
+    required this.h,
+    required this.v,
+    required this.owner,
+    required this.dots,
+    required this.redPlayer,
+    required this.yellowPlayer,
+    required this.turn,
+    this.redScore = 0,
+    this.yellowScore = 0,
+    this.status = 'active',
+    this.winner,
+  });
+
+  final String gameId;
+  final String h; // horizontal edges, '0'/'1'
+  final String v; // vertical edges, '0'/'1'
+  final String owner; // box owners, '.'/'R'/'Y'
+  final int dots;
+  final String redPlayer;
+  final String yellowPlayer;
+  final String turn;
+  final int redScore;
+  final int yellowScore;
+  final String status; // active | won | draw
+  final String? winner;
+
+  bool get isOver => status != 'active';
+
+  factory DotsBoxesView.fromJson(Map<String, dynamic> json) => DotsBoxesView(
+        gameId: asString(json['game_id']),
+        h: asString(json['h']),
+        v: asString(json['v']),
+        owner: asString(json['owner']),
+        dots: asInt(json['dots'], 4),
+        redPlayer: asString(json['red_player']),
+        yellowPlayer: asString(json['yellow_player']),
+        turn: asString(json['turn']),
+        redScore: asInt(json['red_score']),
+        yellowScore: asInt(json['yellow_score']),
+        status: asString(json['status'], 'active'),
+        winner: asStringOrNull(json['winner']),
+      );
+}
+
 /// A snapshot of a five-card draw poker hand (player vs dealer).
 class PokerView {
   const PokerView({
