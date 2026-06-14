@@ -115,8 +115,14 @@ class _ThreeGameViewState extends State<ThreeGameView> {
         final action = data['action'];
         if (handler != null && action is Map) {
           final next = await handler(Map<String, dynamic>.from(action));
-          if (next != null && mounted) {
+          if (!mounted) break;
+          if (next != null) {
             _sendToFrame({'type': 'state', 'state': next});
+          } else {
+            // The action produced no new state (e.g. a failed move that
+            // couldn't be recovered). Release the iframe's input lock so the
+            // board doesn't freeze on "…".
+            _sendToFrame({'type': 'unlock'});
           }
         }
         break;

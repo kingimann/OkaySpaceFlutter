@@ -49,7 +49,8 @@ function loop(){requestAnimationFrame(loop);if(!current)return;if(current.tick){
 
 Wd.addEventListener("message",function(e){var d=e.data;if(!d)return;
   if(d.type==="init")start(d.gameType,d.state||{});
-  else if(d.type==="state"){pending=false;if(current&&current.onState)current.onState(d.state||{});dirty=true;}});
+  else if(d.type==="state"){pending=false;if(current&&current.onState)current.onState(d.state||{});dirty=true;}
+  else if(d.type==="unlock"){pending=false;}});
 
 function start(gameType,state){you=state.you;pending=false;if(current&&current.dispose)current.dispose();setButtons(null);hideOver();current=GAMES[gameType]?GAMES[gameType]():null;if(current&&current.build)current.build(state);dirty=true;}
 
@@ -247,16 +248,18 @@ GAMES.snake=function(){
   function step(){dir=nd;var h={x:snake[0].x+dir.x,y:snake[0].y+dir.y};if(h.x<0||h.y<0||h.x>=N||h.y>=N){return die();}for(var i=0;i<snake.length;i++)if(snake[i].x===h.x&&snake[i].y===h.y)return die();snake.unshift(h);if(h.x===food.x&&h.y===food.y){score++;hud("Score: "+score);spawn();}else snake.pop();}
   function die(){dead=true;showOver("Game over · "+score);send("score",{score:score});}
   function key(e){var k=e.key;if(k==="ArrowUp")steer(0,-1);else if(k==="ArrowDown")steer(0,1);else if(k==="ArrowLeft")steer(-1,0);else if(k==="ArrowRight")steer(1,0);}
-  var sx=0,sy=0;function ts(e){sx=e.touches[0].clientX;sy=e.touches[0].clientY;}function te(e){var dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>Math.abs(dy))steer(dx>0?1:-1,0);else steer(0,dy>0?1:-1);}
-  function start2(){snake=[{x:8,y:8},{x:7,y:8},{x:6,y:8}];dir={x:1,y:0};nd={x:1,y:0};score=0;dead=false;acc=0;spawn();hud("Score: 0");}
+  function start2(){snake=[{x:8,y:8},{x:7,y:8},{x:6,y:8}];dir={x:1,y:0};nd={x:1,y:0};score=0;dead=false;acc=0;spawn();hud("Score: 0  ·  tap to steer");}
   D.getElementById("again").onclick=function(){start2();hideOver();};
   return {
-    build:function(s){var d=(s&&s.difficulty)||"medium";stepN=d==="easy"?14:d==="hard"?6:10;start2();Wd.addEventListener("keydown",key);canvas.addEventListener("touchstart",ts);canvas.addEventListener("touchend",te);},
+    build:function(s){var d=(s&&s.difficulty)||"medium";stepN=d==="easy"?14:d==="hard"?6:10;start2();Wd.addEventListener("keydown",key);},
+    // Tap (or click) anywhere: turn toward the tap relative to the head. Works
+    // on every platform, unlike arrow keys (need iframe focus) or swipes.
+    pick:function(cx,cy){if(dead)return;var g=geom();var hx=g.ox+(snake[0].x+0.5)*g.cs,hy=g.oy+(snake[0].y+0.5)*g.cs;var dx=cx-hx,dy=cy-hy;if(Math.abs(dx)>Math.abs(dy))steer(dx>0?1:-1,0);else steer(0,dy>0?1:-1);},
     tick:function(){if(dead)return;acc++;if(acc>=stepN){acc=0;step();}},
     draw:function(){var g=geom();ctx.fillStyle="#0b1626";ctx.fillRect(g.ox,g.oy,g.cs*N,g.cs*N);
       ctx.fillStyle="#ef4444";ctx.fillRect(g.ox+food.x*g.cs+1,g.oy+food.y*g.cs+1,g.cs-2,g.cs-2);
       for(var i=0;i<snake.length;i++){ctx.fillStyle=i===0?"#4ade80":"#22c55e";ctx.fillRect(g.ox+snake[i].x*g.cs+1,g.oy+snake[i].y*g.cs+1,g.cs-2,g.cs-2);}},
-    dispose:function(){Wd.removeEventListener("keydown",key);canvas.removeEventListener("touchstart",ts);canvas.removeEventListener("touchend",te);}
+    dispose:function(){Wd.removeEventListener("keydown",key);}
   };
 };
 
