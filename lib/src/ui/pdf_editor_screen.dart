@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +19,14 @@ class _Anno {
   double size; // font size as a fraction of page width
 }
 
+/// A placed image (e.g. a signature) on a page.
+class _ImgAnno {
+  _ImgAnno(this.rel, this.width, this.png);
+  Offset rel; // top-left as a fraction (0..1) of the page
+  double width; // width as a fraction of page width
+  final Uint8List png;
+}
+
 class _Page {
   _Page(this.id, this.png, this.aspect);
   final int id;
@@ -24,6 +34,7 @@ class _Page {
   final double aspect; // width / height
   int quarter = 0; // rotation in quarter-turns
   final List<_Anno> annos = [];
+  final List<_ImgAnno> imgs = [];
 }
 
 /// A page-level PDF editor: open a PDF (its pages are rendered to images),
@@ -83,6 +94,34 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     final im = img.decodeImage(bytes);
     final aspect = (im == null || im.height == 0) ? 0.7071 : im.width / im.height;
     if (mounted) setState(() => _pages.add(_Page(_seq++, bytes, aspect)));
+  }
+
+  /// Appends another PDF's pages to the current document.
+  Future<void> _mergePdf() async {
+    final res = await FilePicker.pickFiles(
+        type: FileType.custom, allowedExtensions: ['pdf'], withData: true);
+    final bytes = res?.files.single.bytes;
+    if (bytes == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _status = 'Merging…';
+    });
+    try {
+      await for (final pg in Printing.raster(bytes, dpi: 150)) {
+        final aspect = pg.height == 0 ? 0.7071 : pg.width / pg.height;
+        final page = _Page(_seq++, await pg.toPng(), aspect);
+        if (mounted) setState(() => _pages.add(page));
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
+      }
+    }
   }
 
   /// Adopt edited PDF bytes and re-render the page previews.
@@ -385,6 +424,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           margin: pw.EdgeInsets.zero,
           build: (_) => pw.Stack(children: [
             pw.Positioned.fill(child: pw.Image(image, fit: pw.BoxFit.fill)),
+            for (final im in p.imgs)
+              pw.Positioned(
+                left: im.rel.dx * pageW,
+                top: im.rel.dy * pageH,
+                child: pw.Image(pw.MemoryImage(im.png), width: im.width * pageW),
+              ),
             for (final a in p.annos)
               pw.Positioned(
                 left: a.rel.dx * pageW,
@@ -433,6 +478,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                 PopupMenuItem(value: 'form', child: Text('Fill form fields')),
                 PopupMenuItem(value: 'text', child: Text('Extract text')),
               ],
+            ),
+          if (_pages.isNotEmpty)
+            IconButton(
+              tooltip: 'Merge another PDF',
+              icon: const Icon(Icons.library_add_outlined),
+              onPressed: _busy ? null : _mergePdf,
             ),
           IconButton(
             tooltip: 'Add image page',
@@ -618,12 +669,64 @@ class _AnnotateScreenState extends State<_AnnotateScreen> {
     });
   }
 
+  Future<void> _addSignature() async {
+    final png = await Navigator.of(context)
+        .push<Uint8List>(MaterialPageRoute(builder: (_) => const _SignaturePad()));
+    if (png != null && mounted) {
+      setState(() => _p.imgs.add(_ImgAnno(const Offset(0.3, 0.5), 0.4, png)));
+    }
+  }
+
+  Future<void> _editImg(_ImgAnno im) async {
+    var width = im.width;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Signature'),
+          content: Row(children: [
+            const Text('Size'),
+            Expanded(
+              child: Slider(
+                value: width,
+                min: 0.1,
+                max: 0.9,
+                onChanged: (v) => setLocal(() => width = v),
+              ),
+            ),
+          ]),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, '__delete__'),
+                child: const Text('Delete')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, 'ok'),
+                child: const Text('Done')),
+          ],
+        ),
+      ),
+    );
+    if (result == null) return;
+    setState(() {
+      if (result == '__delete__') {
+        _p.imgs.remove(im);
+      } else {
+        im.width = width;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: OkayAppBar(
-        title: const Text('Add text'),
+        title: const Text('Markup'),
         actions: [
+          IconButton(
+            tooltip: 'Add signature',
+            icon: const Icon(Icons.draw_outlined),
+            onPressed: _addSignature,
+          ),
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Done')),
@@ -654,6 +757,21 @@ class _AnnotateScreenState extends State<_AnnotateScreen> {
                         child: Image.memory(_p.png, fit: BoxFit.fill),
                       ),
                     ),
+                    for (final im in _p.imgs)
+                      Positioned(
+                        left: im.rel.dx * w,
+                        top: im.rel.dy * h,
+                        child: GestureDetector(
+                          onTap: () => _editImg(im),
+                          onPanUpdate: (d) => setState(() {
+                            im.rel = Offset(
+                              (im.rel.dx + d.delta.dx / w).clamp(0.0, 0.98),
+                              (im.rel.dy + d.delta.dy / h).clamp(0.0, 0.98),
+                            );
+                          }),
+                          child: Image.memory(im.png, width: im.width * w),
+                        ),
+                      ),
                     for (final a in _p.annos)
                       Positioned(
                         left: a.rel.dx * w,
@@ -861,4 +979,128 @@ class _FormFillScreenState extends State<_FormFillScreen> {
       ),
     );
   }
+}
+
+/// A freehand signature pad. Returns the drawing as a transparent PNG.
+class _SignaturePad extends StatefulWidget {
+  const _SignaturePad();
+
+  @override
+  State<_SignaturePad> createState() => _SignaturePadState();
+}
+
+class _SignaturePadState extends State<_SignaturePad> {
+  final List<List<Offset>> _strokes = [];
+  Size _size = const Size(300, 200);
+
+  Future<void> _done() async {
+    if (_strokes.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (final s in _strokes) {
+      if (s.length == 1) {
+        canvas.drawPoints(ui.PointMode.points, s, paint);
+        continue;
+      }
+      final path = Path()..moveTo(s.first.dx, s.first.dy);
+      for (var i = 1; i < s.length; i++) {
+        path.lineTo(s[i].dx, s[i].dy);
+      }
+      canvas.drawPath(path, paint);
+    }
+    final image = await recorder
+        .endRecording()
+        .toImage(_size.width.ceil().clamp(1, 4000), _size.height.ceil().clamp(1, 4000));
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (!mounted) return;
+    Navigator.pop(context, data?.buffer.asUint8List());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: OkayAppBar(
+        title: const Text('Signature'),
+        actions: [
+          TextButton(
+              onPressed: () => setState(() => _strokes.clear()),
+              child: const Text('Clear')),
+          TextButton(onPressed: _done, child: const Text('Done')),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, c) {
+                  _size = Size(c.maxWidth, c.maxHeight);
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: GestureDetector(
+                      onPanStart: (d) =>
+                          setState(() => _strokes.add([d.localPosition])),
+                      onPanUpdate: (d) =>
+                          setState(() => _strokes.last.add(d.localPosition)),
+                      child: CustomPaint(
+                        painter: _SigPainter(_strokes),
+                        size: Size.infinite,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('Sign above', style: TextStyle(color: scheme.outline)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SigPainter extends CustomPainter {
+  _SigPainter(this.strokes);
+  final List<List<Offset>> strokes;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (final s in strokes) {
+      if (s.length == 1) {
+        canvas.drawPoints(ui.PointMode.points, s, paint);
+        continue;
+      }
+      final path = Path()..moveTo(s.first.dx, s.first.dy);
+      for (var i = 1; i < s.length; i++) {
+        path.lineTo(s[i].dx, s[i].dy);
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SigPainter old) => true;
 }
