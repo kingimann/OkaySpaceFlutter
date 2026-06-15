@@ -913,6 +913,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final ctrl = TextEditingController();
     var results = const <Map<String, dynamic>>[];
     var busy = false;
+    var aiBusy = false;
     var searchSeq = 0;
     Timer? debounce;
     setState(() => _searchOpen = true);
@@ -1006,6 +1007,48 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                 onPressed: run),
                         border: const OutlineInputBorder(),
                         isDense: true,
+                      ),
+                    ),
+                  ),
+                  // AI-assisted search: turn a plain-English request into a
+                  // clean place search via the local model.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ActionChip(
+                        avatar: aiBusy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.auto_awesome, size: 18),
+                        label: const Text('Smart search'),
+                        onPressed: aiBusy
+                            ? null
+                            : () async {
+                                final q = ctrl.text.trim();
+                                if (q.isEmpty) return;
+                                setSheet(() => aiBusy = true);
+                                try {
+                                  final res = await api.maps.aiSearch(q);
+                                  ctrl.text = '${res['search'] ?? q}';
+                                  if (c.mounted &&
+                                      res['ai'] == true &&
+                                      '${res['summary'] ?? ''}'.isNotEmpty) {
+                                    showInfo(
+                                        c, 'Searching: ${res['summary']}');
+                                  }
+                                  await run();
+                                } catch (e) {
+                                  if (c.mounted) showError(c, e);
+                                } finally {
+                                  if (c.mounted) {
+                                    setSheet(() => aiBusy = false);
+                                  }
+                                }
+                              },
                       ),
                     ),
                   ),

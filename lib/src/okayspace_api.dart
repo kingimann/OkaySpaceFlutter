@@ -13,6 +13,7 @@ import 'services/games_service.dart';
 import 'services/groups_service.dart';
 import 'services/guides_service.dart';
 import 'services/calendar_service.dart';
+import 'services/maps_service.dart';
 import 'services/marketplace_service.dart';
 import 'services/messaging_service.dart';
 import 'services/monetize_service.dart';
@@ -58,6 +59,7 @@ class OkaySpaceApi {
     auth = AuthService(this.client);
     feed = FeedService(this.client);
     forms = FormsService(this.client);
+    maps = MapsService(this.client);
     messaging = MessagingService(this.client);
     circles = CirclesService(this.client);
     communities = CommunitiesService(this.client);
@@ -94,6 +96,9 @@ class OkaySpaceApi {
 
   /// `/forms` — custom form builder and submissions.
   late final FormsService forms;
+
+  /// `/maps/*` — AI-assisted place search via the local model.
+  late final MapsService maps;
 
   /// `/conversations`, `/presence`, `/calls` — messaging.
   late final MessagingService messaging;
