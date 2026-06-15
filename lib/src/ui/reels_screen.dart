@@ -172,7 +172,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       extendBody: !widget.embedded,
-      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
+      bottomNavigationBar: null, // pushed screens use the global nav
       body: Stack(
         children: [
           Positioned.fill(

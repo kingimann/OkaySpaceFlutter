@@ -291,7 +291,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: !widget.embedded,
-      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
+      bottomNavigationBar: null, // pushed screens use the global nav
       appBar: OkayAppBar(
         title: const Text('Marketplace'),
         actions: [

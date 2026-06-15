@@ -533,7 +533,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
-      bottomNavigationBar: const OkayBottomNav(),
+      bottomNavigationBar: null, // pushed screen uses the global nav
       appBar: OkayAppBar(
         title: const Text('Profile'),
         actions: [
