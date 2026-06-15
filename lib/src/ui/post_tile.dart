@@ -339,7 +339,8 @@ class PostTile extends StatefulWidget {
       required this.post,
       this.onChanged,
       this.tappable = true,
-      this.card = false});
+      this.card = false,
+      this.onComment});
 
   final Post post;
 
@@ -349,6 +350,10 @@ class PostTile extends StatefulWidget {
 
   /// When true, render as a rounded surface card with margin (feed style).
   final bool card;
+
+  /// Overrides the comment button's default action (open the post's detail).
+  /// Used by the detail screen itself to focus its reply composer instead.
+  final VoidCallback? onComment;
 
   @override
   State<PostTile> createState() => _PostTileState();
@@ -611,7 +616,8 @@ class _PostTileState extends State<PostTile> {
               PostAction(
                 icon: Icons.mode_comment_outlined,
                 count: post.repliesCount,
-                onTap: () => PostDetailScreen.open(context, post),
+                onTap:
+                    widget.onComment ?? () => PostDetailScreen.open(context, post),
               ),
               const SizedBox(width: 8),
               PostAction(
