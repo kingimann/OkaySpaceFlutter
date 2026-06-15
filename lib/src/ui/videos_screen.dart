@@ -79,11 +79,6 @@ class _VideosScreenState extends State<VideosScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _upload,
-        icon: const Icon(Icons.upload),
-        label: const Text('Upload'),
-      ),
       body: MaxWidth(
         child: RefreshIndicator(
           onRefresh: _reload,
