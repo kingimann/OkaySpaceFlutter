@@ -73,11 +73,10 @@ void reportUserScroll(ScrollDirection direction, Axis axis) {}
 /// Forces the bars back into view (on navigation, tab switch, or reaching top).
 void showBars() => barsVisible.value = true;
 
-/// Bottom clearance for scrollable content so the last item sits above the
-/// floating pill nav. The shell uses `extendBody: true` (content paints behind
-/// the pill, so there's no bare strip / black box around it), which means lists
-/// that pad by this constant must reserve the pill's height themselves.
-const double kBottomNavInset = 80;
+/// Small bottom breathing room for scrollable content. The shell reserves the
+/// nav's own height (extendBody is off), so the body already ends above the
+/// nav; this is just a little extra margin so the last item isn't flush.
+const double kBottomNavInset = 12;
 
 /// Key to the home shell's [Scaffold] so any home-tab screen (each of which is
 /// its own inner Scaffold) can open the shared navigation drawer (sidebar).

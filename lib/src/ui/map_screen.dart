@@ -2188,9 +2188,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // Device bottom safe area. The floating controls anchor to it so they sit
-    // just above the bottom nav pill (≈64pt + safe area) on every device.
-    final safe = MediaQuery.of(context).viewPadding.bottom;
 
     // Mapbox is the sole provider: without the build-time token there is
     // nothing to render — say so instead of showing a gray map.
@@ -2568,7 +2565,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             Positioned(
               left: 12,
               right: 12,
-              bottom: safe + 74,
+              bottom: 12,
               child: Material(
                 color: scheme.primaryContainer,
                 borderRadius: BorderRadius.circular(14),
@@ -2681,7 +2678,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           // the search-result card when one is showing.
           Positioned(
             right: 12,
-            bottom: _searchPin != null ? safe + 250 : safe + 74,
+            bottom: _searchPin != null ? 170 : 12,
             child: FloatingActionButton.small(
               heroTag: 'locate-me',
               onPressed: _locating ? null : _recenterOnMe,
@@ -2719,7 +2716,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           if (_routing && _route.length >= 2)
             Positioned(
               left: 12,
-              bottom: safe + 250,
+              bottom: 170,
               child: FilledButton.tonalIcon(
                 icon: const Icon(Icons.route, size: 18),
                 label: Text('Drive route (${_route.length} stops)'),
@@ -2731,7 +2728,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             Positioned(
               left: 12,
               right: 12,
-              bottom: safe + 74,
+              bottom: 12,
               child: Material(
                 elevation: 8,
                 borderRadius: BorderRadius.circular(20),
