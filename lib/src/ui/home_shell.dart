@@ -15,6 +15,7 @@ import 'messages_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'reels_screen.dart';
+import 'right_sidebar.dart';
 import 'videos_screen.dart';
 import 'search_screen.dart';
 import 'wallet_screen.dart';
@@ -97,8 +98,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       key: homeScaffoldKey,
+      // Let the body paint behind the floating pill nav so content (not a bare
+      // reserved strip) shows around it — no "black box" behind the pill. With
+      // this on, the Scaffold also adds the bar's height to the body's bottom
+      // MediaQuery padding, so SafeArea-based content clears the pill, and
+      // kBottomNavInset covers the scroll lists that pad by a constant.
+      extendBody: true,
       // Shared sidebar, reachable from every screen's menu button.
       drawer: const AppDrawer(),
+      // Right-side quick-shortcuts sidebar: swipe from the right edge or tap the
+      // top-right menu button (which replaced the scattered header icons).
+      endDrawer: const RightSidebar(),
       // Scrolling the drawer can hide the bars; restore them when it closes.
       onDrawerChanged: (open) {
         if (!open) showBars();

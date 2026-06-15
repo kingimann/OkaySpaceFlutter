@@ -8,7 +8,6 @@ import 'app_drawer.dart';
 import 'business_screen.dart';
 import 'common.dart';
 import 'badges_screen.dart';
-import 'compose_screen.dart';
 import 'connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'friends_screen.dart';
@@ -1301,12 +1300,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
   /// A compact privacy summary card linking to Settings (§4 privacy card).
   /// Opens the post composer from the profile (§4 PostComposer).
-  Future<void> _compose() async {
-    final posted = await Navigator.of(context)
-        .push<bool>(MaterialPageRoute(builder: (_) => const ComposeScreen()));
-    if (posted == true && mounted) _reload();
-  }
-
   /// Shares the user's own profile as a contact card into a chosen chat.
   Future<void> _shareSelfToChat(User u) async {
     final conv = await pickConversation(context);
@@ -1344,20 +1337,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const AppDrawer(),
-      // Lift the compose button above the floating nav pill, and let it ride
-      // the nav-bar hide-on-scroll animation instead of sitting behind it.
-      floatingActionButton: ValueListenableBuilder<double>(
-        valueListenable: barsT,
-        builder: (context, t, child) => Padding(
-          padding: EdgeInsets.only(bottom: 72 * t),
-          child: child,
-        ),
-        child: FloatingActionButton(
-          tooltip: 'New post',
-          onPressed: _compose,
-          child: const Icon(Icons.edit_outlined),
-        ),
-      ),
       body: SafeArea(
         bottom: false,
         child: Column(
