@@ -345,6 +345,7 @@ class PostTile extends StatefulWidget {
       this.onChanged,
       this.tappable = true,
       this.card = false,
+      this.compact = false,
       this.onComment});
 
   final Post post;
@@ -359,6 +360,10 @@ class PostTile extends StatefulWidget {
   /// Overrides the comment button's default action (open the post's detail).
   /// Used by the detail screen itself to focus its reply composer instead.
   final VoidCallback? onComment;
+
+  /// Renders the same post layout at a smaller scale (tighter padding, smaller
+  /// avatar, slightly smaller text) — used for replies in a thread.
+  final bool compact;
 
   @override
   State<PostTile> createState() => _PostTileState();
@@ -467,12 +472,14 @@ class _PostTileState extends State<PostTile> {
   VoidCallback? get onChanged => widget.onChanged;
   bool get tappable => widget.tappable;
   bool get card => widget.card;
+  bool get compact => widget.compact;
 
   @override
   Widget build(BuildContext context) {
     final author = post.author;
     final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 16, vertical: compact ? 8 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -503,9 +510,12 @@ class _PostTileState extends State<PostTile> {
             children: [
               GestureDetector(
                 onTap: () => ProfileScreen.open(context, author.userId),
-                child: Avatar(url: author.picture, name: author.name),
+                child: Avatar(
+                    url: author.picture,
+                    name: author.name,
+                    radius: compact ? 16 : 20),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: compact ? 8 : 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -682,11 +692,13 @@ class _PostTileState extends State<PostTile> {
     );
 
     Widget result = content;
-    // Post text size (Customize feed): scale all text in the tile.
-    if (feedPrefs.textScale != 1.0) {
+    // Post text size (Customize feed) plus a slight reduction for compact
+    // (reply) tiles, scaled together so all text in the tile shrinks evenly.
+    final scale = feedPrefs.textScale * (compact ? 0.9 : 1.0);
+    if (scale != 1.0) {
       result = MediaQuery(
         data: MediaQuery.of(context)
-            .copyWith(textScaler: TextScaler.linear(feedPrefs.textScale)),
+            .copyWith(textScaler: TextScaler.linear(scale)),
         child: result,
       );
     }

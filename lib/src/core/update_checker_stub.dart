@@ -3,3 +3,6 @@
 Future<String?> fetchRemoteBuild() async => null;
 
 void reloadApp() {}
+
+/// No tab lifecycle off the web.
+void onForeground(void Function() callback) {}

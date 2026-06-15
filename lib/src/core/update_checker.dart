@@ -38,6 +38,9 @@ void startUpdateChecks() {
   if (kBuildStamp == 'dev' || _timer != null) return;
   _check();
   _timer = Timer.periodic(const Duration(minutes: 3), (_) => _check());
+  // Also re-check the moment the user returns to the tab, so a freshly shipped
+  // build is picked up right away instead of up to 3 minutes later.
+  impl.onForeground(_check);
 }
 
 Future<void> _check() async {
