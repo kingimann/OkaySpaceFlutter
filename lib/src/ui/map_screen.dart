@@ -82,9 +82,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   bool _showCrosshair = false;
   bool _cluster = false;
   bool _searchAsIMove = false;
-  // Hides the top "Search Maps" pill while the search sheet is open, so there's
-  // only ever one search field on screen at a time.
-  bool _searchOpen = false;
+  // Inline top search: type directly in the top bar; results drop down beneath
+  // it (no bottom sheet).
+  final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+  List<Map<String, dynamic>> _searchResults = const [];
+  bool _searchBusy = false;
+  bool _searchAiBusy = false;
+  bool _searchActive = false; // dropdown showing (field focused / has results)
+  int _searchSeq = 0;
+  Timer? _searchDebounce;
   bool _showGrid = false; // lat/lng graticule
   bool _showLabels = false; // marker title labels
   bool _rotationLocked = false;
@@ -265,6 +272,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _loadAll();
     // Live location is always on — start tracking the moment the map opens.
     _startLiveLocation();
+    // Show the results dropdown as soon as the top search field gains focus.
+    _searchFocus.addListener(() {
+      if (_searchFocus.hasFocus && !_searchActive) {
+        setState(() => _searchActive = true);
+      }
+    });
   }
 
   @override
@@ -274,6 +287,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _camAnim?.dispose();
     _etaSub?.cancel();
     _chromeTimer?.cancel();
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
+    _searchFocus.dispose();
     // Don't leave the bars hidden if we leave mid-pan.
     showBars();
     _controller.dispose();
@@ -907,221 +923,178 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     ));
   }
 
-  /// Search panel (opened from the app-bar icon): search field, recents,
-  /// geocode results and the layer toggles — replaces the on-map search bar.
-  void _openSearch() {
-    final ctrl = TextEditingController();
-    var results = const <Map<String, dynamic>>[];
-    var busy = false;
-    var aiBusy = false;
-    var searchSeq = 0;
-    Timer? debounce;
-    setState(() => _searchOpen = true);
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetCtx) => Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
-        child: StatefulBuilder(
-          builder: (c, setSheet) {
-            // [fromTyping] = a debounced type-ahead pass: it only populates the
-            // results list (never auto-navigates or pops error toasts).
-            Future<void> run({bool fromTyping = false}) async {
-              final q = ctrl.text.trim();
-              if (q.isEmpty) {
-                setSheet(() => results = const []);
-                return;
-              }
-              final coords = _parseCoords(q);
-              if (coords != null && !fromTyping) {
-                _addRecent(q);
-                Navigator.pop(c);
-                setState(() => _center = coords);
-                _controller.move(coords, 13);
-                _loadAll();
-                return;
-              }
-              // A slower older search must not overwrite a newer one.
-              final seq = ++searchSeq;
-              if (!fromTyping) setSheet(() => busy = true);
-              try {
-                // Bias to the user's real position when we have it, else centre.
-                final r = await geocodePlaces(q, near: _myLocation ?? _center);
-                if (!c.mounted || seq != searchSeq) return;
-                if (r.isEmpty) {
-                  if (!fromTyping) showInfo(c, 'No places found for “$q”.');
-                  setSheet(() => results = const []);
-                } else if (r.length == 1 && !fromTyping) {
-                  _addRecent(q);
-                  Navigator.pop(c);
-                  _gotoResult(r.first.cast<String, dynamic>());
-                } else {
-                  if (!fromTyping) _addRecent(q);
-                  setSheet(() => results = r.cast<Map<String, dynamic>>());
-                }
-              } catch (e) {
-                if (c.mounted && seq == searchSeq && !fromTyping) showError(c, e);
-              } finally {
-                if (c.mounted && seq == searchSeq && !fromTyping) {
-                  setSheet(() => busy = false);
-                }
-              }
-            }
+  /// Runs the place search for the current field text. [fromTyping] is a
+  /// debounced type-ahead pass (populates results only; never navigates).
+  Future<void> _runSearch({bool fromTyping = false}) async {
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) {
+      setState(() => _searchResults = const []);
+      return;
+    }
+    final coords = _parseCoords(q);
+    if (coords != null && !fromTyping) {
+      _addRecent(q);
+      _dismissSearch();
+      setState(() => _center = coords);
+      _controller.move(coords, 13);
+      _loadAll();
+      return;
+    }
+    final seq = ++_searchSeq;
+    if (!fromTyping) setState(() => _searchBusy = true);
+    try {
+      final r = await geocodePlaces(q, near: _myLocation ?? _center);
+      if (!mounted || seq != _searchSeq) return;
+      if (r.isEmpty) {
+        if (!fromTyping) showInfo(context, 'No places found for “$q”.');
+        setState(() => _searchResults = const []);
+      } else if (r.length == 1 && !fromTyping) {
+        _addRecent(q);
+        _pickSearchResult(r.first.cast<String, dynamic>());
+      } else {
+        if (!fromTyping) _addRecent(q);
+        setState(() => _searchResults = r.cast<Map<String, dynamic>>());
+      }
+    } catch (e) {
+      if (mounted && seq == _searchSeq && !fromTyping) showError(context, e);
+    } finally {
+      if (mounted && seq == _searchSeq && !fromTyping) {
+        setState(() => _searchBusy = false);
+      }
+    }
+  }
 
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                    child: TextField(
-                      controller: ctrl,
-                      autofocus: true,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => run(),
-                      // Apple-Maps-style type-ahead: search as you type, debounced.
-                      onChanged: (v) {
-                        debounce?.cancel();
-                        if (v.trim().length < 3) {
-                          setSheet(() => results = const []);
-                          return;
-                        }
-                        debounce = Timer(const Duration(milliseconds: 350),
-                            () => run(fromTyping: true));
-                      },
-                      decoration: InputDecoration(
-                        hintText: 'Search a place or address',
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: busy
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2)))
-                            : IconButton(
-                                icon: const Icon(Icons.arrow_forward),
-                                onPressed: run),
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  // AI-assisted search: turn a plain-English request into a
-                  // clean place search via the local model.
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: ActionChip(
-                        avatar: aiBusy
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.auto_awesome, size: 18),
-                        label: const Text('Smart search'),
-                        onPressed: aiBusy
-                            ? null
-                            : () async {
-                                final q = ctrl.text.trim();
-                                if (q.isEmpty) return;
-                                setSheet(() => aiBusy = true);
-                                try {
-                                  final res = await api.maps.aiSearch(q);
-                                  ctrl.text = '${res['search'] ?? q}';
-                                  if (c.mounted &&
-                                      res['ai'] == true &&
-                                      '${res['summary'] ?? ''}'.isNotEmpty) {
-                                    showInfo(
-                                        c, 'Searching: ${res['summary']}');
-                                  }
-                                  await run();
-                                } catch (e) {
-                                  if (c.mounted) showError(c, e);
-                                } finally {
-                                  if (c.mounted) {
-                                    setSheet(() => aiBusy = false);
-                                  }
-                                }
-                              },
-                      ),
-                    ),
-                  ),
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        if (results.isNotEmpty)
-                          for (final r in results.take(8))
-                            Builder(builder: (context) {
-                              final name =
-                                  '${r['name'] ?? r['display_name'] ?? r['label'] ?? 'Result'}';
-                              final addr =
-                                  (r['full_address'] ?? r['display_name'])
-                                      ?.toString();
-                              return ListTile(
-                                dense: true,
-                                leading: const Icon(Icons.place_outlined),
-                                title: Text(name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis),
-                                subtitle: (addr != null &&
-                                        addr.isNotEmpty &&
-                                        addr != name)
-                                    ? Text(addr,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis)
-                                    : null,
-                                onTap: () {
-                                  Navigator.pop(c);
-                                  _gotoResult(r);
-                                },
-                              );
-                            })
-                        else ...[
-                          if (_recent.isNotEmpty)
-                            ListTile(
-                              dense: true,
-                              title: const Text('Recent',
-                                  style: TextStyle(fontWeight: FontWeight.bold)),
-                              trailing: TextButton(
-                                  onPressed: () {
-                                    _clearRecents();
-                                    setSheet(() {});
-                                  },
-                                  child: const Text('Clear')),
-                            ),
-                          for (final q in _recent)
-                            ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.history),
-                              title: Text(q),
-                              onTap: () {
-                                ctrl.text = q;
-                                run();
-                              },
-                            ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            );
-          },
-        ),
+  void _onSearchChanged(String v) {
+    _searchDebounce?.cancel();
+    if (!_searchActive) setState(() => _searchActive = true);
+    if (v.trim().length < 3) {
+      setState(() => _searchResults = const []);
+      return;
+    }
+    _searchDebounce = Timer(
+        const Duration(milliseconds: 350), () => _runSearch(fromTyping: true));
+  }
+
+  /// Closes the search dropdown and drops keyboard focus.
+  void _dismissSearch() {
+    _searchDebounce?.cancel();
+    _searchFocus.unfocus();
+    if (mounted) setState(() => _searchActive = false);
+  }
+
+  void _pickSearchResult(Map<String, dynamic> r) {
+    _dismissSearch();
+    _gotoResult(r);
+  }
+
+  /// AI-assisted: turn the plain-English field text into a clean place search.
+  Future<void> _smartMapSearch() async {
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) return;
+    setState(() => _searchAiBusy = true);
+    try {
+      final res = await api.maps.aiSearch(q);
+      _searchCtrl.text = '${res['search'] ?? q}';
+      if (mounted &&
+          res['ai'] == true &&
+          '${res['summary'] ?? ''}'.isNotEmpty) {
+        showInfo(context, 'Searching: ${res['summary']}');
+      }
+      await _runSearch();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _searchAiBusy = false);
+    }
+  }
+
+  /// The results / recents panel shown beneath the top search bar.
+  Widget _searchDropdown(ColorScheme scheme) {
+    final hasResults = _searchResults.isNotEmpty;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+      constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, 4)),
+        ],
       ),
-    ).whenComplete(() {
-      debounce?.cancel();
-      ctrl.dispose();
-      if (mounted) setState(() => _searchOpen = false);
-    });
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // AI-assisted: turn plain-English text into a clean place search.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ActionChip(
+                avatar: _searchAiBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Smart search'),
+                onPressed: _searchAiBusy ? null : _smartMapSearch,
+              ),
+            ),
+          ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              children: [
+                if (hasResults)
+                  for (final r in _searchResults.take(8)) _searchResultTile(r)
+                else ...[
+                  if (_recent.isNotEmpty)
+                    ListTile(
+                      dense: true,
+                      title: const Text('Recent',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      trailing: TextButton(
+                        onPressed: () {
+                          _clearRecents();
+                          setState(() {});
+                        },
+                        child: const Text('Clear'),
+                      ),
+                    ),
+                  for (final q in _recent)
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.history),
+                      title: Text(q),
+                      onTap: () {
+                        _searchCtrl.text = q;
+                        _runSearch();
+                      },
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchResultTile(Map<String, dynamic> r) {
+    final name = '${r['name'] ?? r['display_name'] ?? r['label'] ?? 'Result'}';
+    final addr = (r['full_address'] ?? r['display_name'])?.toString();
+    return ListTile(
+      dense: true,
+      leading: const Icon(Icons.place_outlined),
+      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: (addr != null && addr.isNotEmpty && addr != name)
+          ? Text(addr, maxLines: 1, overflow: TextOverflow.ellipsis)
+          : null,
+      onTap: () => _pickSearchResult(r),
+    );
   }
 
   void _toggle(void Function() change) {
@@ -1764,6 +1737,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   void _onTap(LatLng p) {
+    // A tap on the map first closes the search dropdown.
+    if (_searchActive) {
+      _dismissSearch();
+      return;
+    }
     if (_measuring) {
       setState(() => _measurePoints.add(p));
     } else if (_routing) {
@@ -2438,63 +2416,90 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 child: Center(
                     child: Icon(Icons.add, size: 30, color: Colors.black54))),
 
-          // Pinned top search bar (menu + search + map options). Stays put (no
-          // hide-on-pan); hidden only while the search sheet is open so there's
-          // never two search bars at once.
-          if (!_searchOpen)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                  padding: const EdgeInsets.fromLTRB(6, 4, 8, 4),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.menu),
-                        tooltip: 'Menu',
-                        onPressed: () => openSidebar(context),
-                      ),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _openSearch,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: scheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.search,
-                                    size: 20, color: scheme.outline),
-                                const SizedBox(width: 8),
-                                Text('Search Maps',
-                                    style: TextStyle(
-                                        color: scheme.outline, fontSize: 15)),
-                              ],
+          // Pinned top search bar — type directly here; results drop down just
+          // below it (no bottom sheet). Stays put (no hide-on-pan).
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                              _searchActive ? Icons.arrow_back : Icons.menu),
+                          tooltip: _searchActive ? 'Close search' : 'Menu',
+                          onPressed: _searchActive
+                              ? () {
+                                  _searchCtrl.clear();
+                                  _dismissSearch();
+                                  setState(() => _searchResults = const []);
+                                }
+                              : () => openSidebar(context),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _searchCtrl,
+                            focusNode: _searchFocus,
+                            textInputAction: TextInputAction.search,
+                            onChanged: _onSearchChanged,
+                            onSubmitted: (_) => _runSearch(),
+                            onTap: () =>
+                                setState(() => _searchActive = true),
+                            decoration: const InputDecoration(
+                              hintText: 'Search Maps',
+                              border: InputBorder.none,
+                              isCollapsed: true,
                             ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.tune),
-                        tooltip: 'Map options & layers',
-                        onPressed: _mapOptionsMenu,
-                      ),
-                    ],
+                        if (_searchBusy)
+                          const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2)),
+                          )
+                        else if (_searchCtrl.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            tooltip: 'Clear',
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _searchResults = const []);
+                            },
+                          )
+                        else
+                          IconButton(
+                            icon: const Icon(Icons.tune),
+                            tooltip: 'Map options & layers',
+                            onPressed: _mapOptionsMenu,
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                  if (_searchActive &&
+                      (_searchResults.isNotEmpty ||
+                          _recent.isNotEmpty ||
+                          _searchCtrl.text.isNotEmpty))
+                    _searchDropdown(scheme),
+                ],
               ),
             ),
+          ),
 
           if (_loading)
             Positioned(
