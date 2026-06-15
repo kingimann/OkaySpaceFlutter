@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
@@ -27,6 +29,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final _inputFocus = FocusNode();
   bool _sending = false;
 
+  // @mention autocomplete for the reply box.
+  List<PublicUser> _mentions = const [];
+  Timer? _mentionTimer;
+
   @override
   void initState() {
     super.initState();
@@ -40,9 +46,50 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   void dispose() {
+    _mentionTimer?.cancel();
     _input.dispose();
     _inputFocus.dispose();
     super.dispose();
+  }
+
+  /// Detects an `@token` at the caret and searches users for autocomplete.
+  void _onReplyChanged(String _) {
+    final sel = _input.selection;
+    final pos = sel.baseOffset;
+    if (pos < 0) {
+      if (_mentions.isNotEmpty) setState(() => _mentions = const []);
+      return;
+    }
+    final before = _input.text.substring(0, pos);
+    final m = RegExp(r'@(\w{1,30})$').firstMatch(before);
+    _mentionTimer?.cancel();
+    if (m == null) {
+      if (_mentions.isNotEmpty) setState(() => _mentions = const []);
+      return;
+    }
+    final query = m.group(1)!;
+    _mentionTimer = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final users = await api.users.search(query);
+        if (mounted) setState(() => _mentions = users.take(5).toList());
+      } catch (_) {/* ignore */}
+    });
+  }
+
+  /// Replaces the `@token` at the caret with the chosen @username.
+  void _insertMention(PublicUser u) {
+    final handle = u.username ?? u.name;
+    final pos = _input.selection.baseOffset;
+    if (pos < 0) return;
+    final before = _input.text.substring(0, pos);
+    final after = _input.text.substring(pos);
+    final replaced = before.replaceFirst(RegExp(r'@\w*$'), '@$handle ');
+    final next = '$replaced$after';
+    setState(() {
+      _input.text = next;
+      _input.selection = TextSelection.collapsed(offset: replaced.length);
+      _mentions = const [];
+    });
   }
 
   Future<void> _reloadReplies() async {
@@ -67,7 +114,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     try {
       await api.feed.reply(_post.id, text);
       _input.clear();
-      if (mounted) FocusScope.of(context).unfocus();
+      if (mounted) {
+        setState(() => _mentions = const []);
+        FocusScope.of(context).unfocus();
+      }
       await _reloadReplies();
       // Bump the local reply count.
       api.feed.getPost(_post.id).then((p) {
@@ -191,31 +241,58 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
           SafeArea(
             top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      focusNode: _inputFocus,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _sendReply(),
-                      decoration: const InputDecoration(
-                        hintText: 'Post your reply',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // @mention suggestions for the reply box.
+                if (_mentions.isNotEmpty)
+                  SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      children: [
+                        for (final u in _mentions)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ActionChip(
+                              avatar: Avatar(
+                                  url: u.picture, name: u.name, radius: 11),
+                              label: Text('@${u.username ?? u.name}'),
+                              onPressed: () => _insertMention(u),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: _sending ? null : _sendReply,
-                    icon: const Icon(Icons.send),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _input,
+                          focusNode: _inputFocus,
+                          minLines: 1,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.send,
+                          onChanged: _onReplyChanged,
+                          onSubmitted: (_) => _sendReply(),
+                          decoration: const InputDecoration(
+                            hintText: 'Post your reply',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _sending ? null : _sendReply,
+                        icon: const Icon(Icons.send),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],

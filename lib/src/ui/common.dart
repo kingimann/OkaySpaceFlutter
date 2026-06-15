@@ -94,6 +94,12 @@ const double kBottomNavInset = 8;
 /// its own inner Scaffold) can open the shared navigation drawer (sidebar).
 final GlobalKey<ScaffoldState> homeScaffoldKey = GlobalKey<ScaffoldState>();
 
+/// The app's root [Navigator]. The bottom nav lives in an overlay *above* the
+/// Navigator (so it shows on every screen), which means `Navigator.of(context)`
+/// from inside it can't reach the app's routes — tab taps must pop through this
+/// key instead.
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
 /// Route name tagged on top-level destinations opened from the sidebar, so
 /// their app bar shows the sidebar menu instead of a back button. Deeper
 /// screens (pushed without this name) keep the back button.
@@ -373,7 +379,10 @@ class OkayBottomNav extends StatelessWidget {
   final String? currentId;
 
   void _go(BuildContext context, String id) {
-    Navigator.of(context).popUntil((r) => r.isFirst);
+    // Pop through the root navigator (this widget lives in an overlay above the
+    // Navigator, so Navigator.of(context) can't reach the app's routes) — this
+    // returns to the home shell from any pushed feature screen before switching.
+    rootNavigatorKey.currentState?.popUntil((r) => r.isFirst);
     if (id == 'feed' && homeTabSignal.value == 'feed') {
       feedScrollSignal.value++;
     }

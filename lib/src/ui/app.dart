@@ -17,7 +17,6 @@ class OkaySpaceApp extends StatefulWidget {
 }
 
 class _OkaySpaceAppState extends State<OkaySpaceApp> {
-  final _navKey = GlobalKey<NavigatorState>();
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   final _barsNavObserver = _BarsNavObserver();
   bool _resetting = false;
@@ -37,7 +36,7 @@ class _OkaySpaceAppState extends State<OkaySpaceApp> {
       _resetting = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _resetting = false;
-        _navKey.currentState?.pushAndRemoveUntil(
+        rootNavigatorKey.currentState?.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const RootGate()),
           (route) => false,
         );
@@ -308,16 +307,17 @@ class _OkaySpaceAppState extends State<OkaySpaceApp> {
         builder: (context, accent, _) => MaterialApp(
           title: 'OkaySpace',
           debugShowCheckedModeBanner: false,
-          navigatorKey: _navKey,
+          navigatorKey: rootNavigatorKey,
           scaffoldMessengerKey: _messengerKey,
           navigatorObservers: [_barsNavObserver],
           theme: _theme(Brightness.light, accent),
           darkTheme: _theme(Brightness.dark, accent),
           themeMode: mode,
-          // The top bar and bottom nav are pinned (they never hide on scroll).
-          // The global bottom nav floats above every route while signed in;
-          // `_NavInset` reserves matching space below the content so it never
-          // covers anything.
+          // One persistent bottom nav for the whole signed-in app. It lives in
+          // an overlay above every route (so it shows on every screen and never
+          // animates during page transitions), and `_NavInset` reserves matching
+          // space below the content so it never covers anything. The only things
+          // that hide it are the keyboard and a real dialog/sheet on top.
           builder: (context, child) => Stack(
             children: [_NavInset(child: child!), const _GlobalBottomNav()],
           ),
@@ -336,10 +336,10 @@ class _BarsNavObserver extends NavigatorObserver {
   // ordinary pushed pages — even after odd push/pop sequences.
   Route<dynamic>? _top;
 
-  // Modal-like = a dialog/menu/bottom sheet (PopupRoute) OR a full-screen
-  // dialog (a self-contained editor/viewer that shouldn't be overlaid).
-  static bool _isModalLike(Route<dynamic>? r) =>
-      r is PopupRoute || (r is ModalRoute && r.fullscreenDialog);
+  // Modal-like = a dialog/menu/bottom sheet (PopupRoute). Only these hide the
+  // bottom nav. Ordinary pushed pages — including full-screen-dialog editors —
+  // keep the nav visible, so it shows on every screen as intended.
+  static bool _isModalLike(Route<dynamic>? r) => r is PopupRoute;
 
   void _sync() {
     navModalOpen.value = _isModalLike(_top);
@@ -373,10 +373,12 @@ class _BarsNavObserver extends NavigatorObserver {
   }
 }
 
-/// Reserves bottom space for the floating global nav whenever it's shown, so the
-/// nav never covers screen content. The condition mirrors `_GlobalBottomNav`:
-/// signed in, on a pushed route, no modal/sheet, no keyboard. When the nav isn't
-/// shown the inset collapses to zero and the body uses the full height.
+/// Reserves a fixed strip of bottom space for the floating global nav while
+/// signed in, so it never covers content. Crucially this does NOT depend on
+/// navCanPop or on a modal being open — only on the keyboard — so pushing/popping
+/// routes and opening/closing dialogs & sheets never reflows the content behind
+/// them (which was the source of the nav "glitches"). The keyboard is the one
+/// case we collapse for, so content can use that space while typing.
 class _NavInset extends StatelessWidget {
   const _NavInset({required this.child});
 
@@ -390,22 +392,16 @@ class _NavInset extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: appSignedIn,
-      builder: (context, signedIn, _) => ValueListenableBuilder<bool>(
-        valueListenable: navModalOpen,
-        builder: (context, modal, _) {
-          final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
-          // Constant whenever the nav is shown (no dependence on navCanPop), so
-          // pushing/popping never reflows the content behind the transition.
-          final navShowing = signedIn && !modal && !keyboard;
-          final inset = navShowing
-              ? _pillHeight + MediaQuery.of(context).viewPadding.bottom
-              : 0.0;
-          return Padding(
-            padding: EdgeInsets.only(bottom: inset),
-            child: child,
-          );
-        },
-      ),
+      builder: (context, signedIn, _) {
+        final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
+        final inset = (signedIn && !keyboard)
+            ? _pillHeight + MediaQuery.of(context).viewPadding.bottom
+            : 0.0;
+        return Padding(
+          padding: EdgeInsets.only(bottom: inset),
+          child: child,
+        );
+      },
     );
   }
 }

@@ -52,11 +52,24 @@ class _FeedScreenState extends State<FeedScreen> {
     _load();
     feedPrefs.addListener(_onPrefsChanged);
     feedScrollSignal.addListener(_onScrollToTop);
+    homeTabSignal.addListener(_onHomeTab);
     // Poll for newer posts so a "new posts" pill can appear.
     _poll = Timer.periodic(const Duration(seconds: 45), (_) => _checkNew());
   }
 
   bool _appliedDefaultTab = false;
+  String _lastTab = homeTabSignal.value;
+
+  /// Refetch when the user switches back to the Feed tab from another tab, so
+  /// posts that were removed (e.g. by AI moderation) drop out of the cached
+  /// list instead of lingering. Re-tapping Feed while already on it is handled
+  /// by [feedScrollSignal] (scroll-to-top + reload).
+  void _onHomeTab() {
+    final tab = homeTabSignal.value;
+    final switchedToFeed = tab == 'feed' && _lastTab != 'feed';
+    _lastTab = tab;
+    if (switchedToFeed && mounted) _reload();
+  }
 
   void _onPrefsChanged() {
     if (!mounted) return;
@@ -85,6 +98,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _poll?.cancel();
     feedPrefs.removeListener(_onPrefsChanged);
     feedScrollSignal.removeListener(_onScrollToTop);
+    homeTabSignal.removeListener(_onHomeTab);
     _scrollController.dispose();
     super.dispose();
   }
