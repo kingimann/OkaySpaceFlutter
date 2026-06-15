@@ -153,9 +153,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 : const SizedBox.shrink(),
         ],
       ),
-      // No bottomNavigationBar here — the single global nav (see app.dart) is
-      // shown on every signed-in screen, including the home tabs, so it never
-      // doubles up or slides during page transitions.
+      // The home tabs render the nav as a real bottomNavigationBar so it's
+      // guaranteed to show (the overlay in app.dart only covers *pushed*
+      // feature screens, gated on navCanPop, so the two never double up).
+      // Hidden while the keyboard is up so it doesn't sit on top of it.
+      bottomNavigationBar:
+          MediaQuery.of(context).viewInsets.bottom > 0
+              ? null
+              : OkayBottomNav(currentId: _currentId),
     );
   }
 }
