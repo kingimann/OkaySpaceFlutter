@@ -18,7 +18,6 @@ class OkaySpaceApp extends StatefulWidget {
 
 class _OkaySpaceAppState extends State<OkaySpaceApp> {
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
-  final _barsNavObserver = _BarsNavObserver();
   bool _resetting = false;
 
   @override
@@ -309,147 +308,12 @@ class _OkaySpaceAppState extends State<OkaySpaceApp> {
           debugShowCheckedModeBanner: false,
           navigatorKey: rootNavigatorKey,
           scaffoldMessengerKey: _messengerKey,
-          navigatorObservers: [_barsNavObserver],
           theme: _theme(Brightness.light, accent),
           darkTheme: _theme(Brightness.dark, accent),
           themeMode: mode,
-          // One persistent bottom nav for the whole signed-in app. It lives in
-          // an overlay above every route (so it shows on every screen and never
-          // animates during page transitions), and `_NavInset` reserves matching
-          // space below the content so it never covers anything. The only things
-          // that hide it are the keyboard and a real dialog/sheet on top.
-          builder: (context, child) => Stack(
-            children: [_NavInset(child: child!), const _GlobalBottomNav()],
-          ),
           home: const RootGate(),
         ),
       ),
-    );
-  }
-}
-
-/// Re-shows the top/bottom bars whenever a route is pushed or popped, so a new
-/// screen never opens with its bars hidden from the previous screen's scroll.
-class _BarsNavObserver extends NavigatorObserver {
-  // Track the actual top-most route (instead of a fragile counter) so the
-  // global bottom nav reliably hides behind anything modal-like and shows on
-  // ordinary pushed pages — even after odd push/pop sequences.
-  Route<dynamic>? _top;
-
-  // Modal-like = a dialog/menu/bottom sheet (PopupRoute). Only these hide the
-  // bottom nav. Ordinary pushed pages — including full-screen-dialog editors —
-  // keep the nav visible, so it shows on every screen as intended.
-  static bool _isModalLike(Route<dynamic>? r) => r is PopupRoute;
-
-  void _sync() {
-    navModalOpen.value = _isModalLike(_top);
-    navCanPop.value = navigator?.canPop() ?? false;
-  }
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    showBars();
-    _top = route;
-    _sync();
-  }
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    showBars();
-    _top = previousRoute;
-    _sync();
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    _top = newRoute;
-    _sync();
-  }
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _top = previousRoute;
-    _sync();
-  }
-}
-
-/// Reserves a fixed strip of bottom space for the floating global nav while
-/// signed in, so it never covers content. Crucially this does NOT depend on
-/// navCanPop or on a modal being open — only on the keyboard — so pushing/popping
-/// routes and opening/closing dialogs & sheets never reflows the content behind
-/// them (which was the source of the nav "glitches"). The keyboard is the one
-/// case we collapse for, so content can use that space while typing.
-class _NavInset extends StatelessWidget {
-  const _NavInset({required this.child});
-
-  final Widget child;
-
-  // The floating nav pill's height above the device's bottom safe area (pill
-  // content + its bottom margin), with a few px of breathing room.
-  static const double _pillHeight = 92;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: appSignedIn,
-      builder: (context, signedIn, _) => ValueListenableBuilder<bool>(
-        valueListenable: navCanPop,
-        builder: (context, canPop, _) {
-          final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
-          // Only reserve space on *pushed* screens (where the overlay nav
-          // shows). On the home tabs the shell's own bottomNavigationBar
-          // already reserves room, so no extra inset — and never any reflow
-          // when dialogs/sheets open (we only collapse for the keyboard).
-          final inset = (signedIn && canPop && !keyboard)
-              ? _pillHeight + MediaQuery.of(context).viewPadding.bottom
-              : 0.0;
-          return Padding(
-            padding: EdgeInsets.only(bottom: inset),
-            child: child,
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// A floating bottom nav shown on *every* screen while signed in — it overlays
-/// pushed feature screens too, not just the home tabs. Hidden when signed out,
-/// when the keyboard is open, or when a dialog/sheet is on top.
-class _GlobalBottomNav extends StatelessWidget {
-  const _GlobalBottomNav();
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: appSignedIn,
-      builder: (context, signedIn, _) {
-        if (!signedIn) return const SizedBox.shrink();
-        // Overlay nav for *pushed* feature screens only (canPop). The home tabs
-        // render their own bottomNavigationBar (see home_shell.dart), so gating
-        // on canPop keeps the two from doubling up. Hidden behind a dialog/sheet
-        // (PopupRoute) or the keyboard.
-        return ValueListenableBuilder<bool>(
-          valueListenable: navCanPop,
-          builder: (context, canPop, _) {
-            if (!canPop) return const SizedBox.shrink();
-            return ValueListenableBuilder<bool>(
-              valueListenable: navModalOpen,
-              builder: (context, modal, _) {
-                final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
-                if (modal || keyboard) return const SizedBox.shrink();
-                return ValueListenableBuilder<String>(
-                  valueListenable: homeTabSignal,
-                  builder: (context, tab, _) => Align(
-                    alignment: Alignment.bottomCenter,
-                    child: OkayBottomNav(currentId: tab),
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
     );
   }
 }
