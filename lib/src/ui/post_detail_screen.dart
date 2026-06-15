@@ -152,14 +152,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           .toList();
                       return Column(
                         children: [
-                          for (final r in threadParts) ...[
-                            PostTile(post: r),
-                            const Divider(height: 1),
-                          ],
+                          const SizedBox(height: 4),
+                          for (final r in threadParts)
+                            PostTile(post: r, compact: true, card: true),
                           if (others.isNotEmpty) ...[
                             if (threadParts.isNotEmpty)
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                                 child: Align(
                                   alignment: Alignment.centerLeft,
                                   child: Text('Replies',
@@ -170,10 +169,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                               .outline)),
                                 ),
                               ),
-                            for (final r in others) ...[
-                              PostTile(post: r),
-                              const Divider(height: 1),
-                            ],
+                            for (final r in others)
+                              PostTile(post: r, compact: true, card: true),
                           ],
                         ],
                       );

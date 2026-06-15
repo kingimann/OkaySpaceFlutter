@@ -21,6 +21,16 @@ void reloadApp() {
   _purgeCachesAndReload();
 }
 
+/// Calls [callback] whenever the tab returns to the foreground (becomes visible
+/// or regains focus), so the app can re-check for a new build immediately
+/// instead of waiting for the next poll tick.
+void onForeground(void Function() callback) {
+  html.document.addEventListener('visibilitychange', (_) {
+    if (html.document.visibilityState == 'visible') callback();
+  });
+  html.window.addEventListener('focus', (_) => callback());
+}
+
 Future<void> _purgeCachesAndReload() async {
   try {
     final caches = html.window.caches;
