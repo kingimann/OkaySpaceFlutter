@@ -306,6 +306,46 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
   }
 
+  /// Unlinks the connected Stripe account from this OkaySpace account. Asks for
+  /// confirmation first; the backend refuses if a Stripe balance remains.
+  Future<void> _unlinkStripe() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Unlink Stripe account?'),
+        content: const Text(
+            'This disconnects your Stripe account from OkaySpace. Your saved '
+            'payout destinations stop working until you set up payouts again. '
+            'Cash out any remaining Stripe balance first.\n\n'
+            'Your Stripe account itself isn’t deleted — you can reconnect it '
+            'later.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Unlink')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busy = true);
+    try {
+      await api.payments.stripeDisconnect();
+      if (!mounted) return;
+      showInfo(context, 'Stripe account unlinked.');
+      await _load();
+      await _loadMethods();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _verifyIdentity() async {
     setState(() => _busy = true);
     try {
@@ -946,6 +986,19 @@ class _CashOutScreenState extends State<CashOutScreen> {
                               ),
                             ],
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Unlink the connected Stripe account.
+                      Card(
+                        child: ListTile(
+                          leading: Icon(Icons.link_off,
+                              color: scheme.error),
+                          title: Text('Unlink Stripe account',
+                              style: TextStyle(color: scheme.error)),
+                          subtitle: const Text(
+                              'Disconnect Stripe from this account'),
+                          onTap: _busy ? null : _unlinkStripe,
                         ),
                       ),
                     ],
