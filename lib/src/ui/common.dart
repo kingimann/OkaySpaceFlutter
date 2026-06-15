@@ -69,10 +69,11 @@ void reportUserScroll(ScrollDirection direction, Axis axis) {}
 /// Forces the bars back into view (on navigation, tab switch, or reaching top).
 void showBars() => barsVisible.value = true;
 
-/// Small bottom breathing room for scrollable content. The home shell's
-/// bottomNavigationBar already reserves the nav's own height, so this is just a
-/// little extra margin above it.
-const double kBottomNavInset = 8;
+/// Bottom clearance for scrollable content so the last item sits above the
+/// floating pill nav. The shell uses `extendBody: true` (content paints behind
+/// the pill, so there's no bare strip / black box around it), which means lists
+/// that pad by this constant must reserve the pill's height themselves.
+const double kBottomNavInset = 80;
 
 /// Key to the home shell's [Scaffold] so any home-tab screen (each of which is
 /// its own inner Scaffold) can open the shared navigation drawer (sidebar).
@@ -385,12 +386,12 @@ class OkayBottomNav extends StatelessWidget {
       builder: (context, ids, _) => SafeArea(
         top: false,
         child: Container(
-          height: 64,
-          margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          height: 52,
+          margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 5),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(color: scheme.outlineVariant),
             boxShadow: [
               BoxShadow(
@@ -435,7 +436,7 @@ class _NavItem extends StatelessWidget {
     Widget icon = Icon(
       active ? dest.activeIcon : dest.icon,
       color: active ? Colors.white : scheme.onSurfaceVariant,
-      size: 24,
+      size: 22,
     );
     if (id == 'market') {
       icon = ValueListenableBuilder<int>(
@@ -452,12 +453,12 @@ class _NavItem extends StatelessWidget {
       child: Center(
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
-          height: 44,
+          height: 38,
           margin: const EdgeInsets.symmetric(horizontal: 4),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: active ? scheme.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: icon,
         ),

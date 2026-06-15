@@ -8,10 +8,7 @@ import 'common.dart';
 import 'feed_prefs.dart';
 import 'compose_screen.dart';
 import 'hashtag_screen.dart';
-import 'messages_screen.dart';
-import 'notifications_screen.dart';
 import 'post_tile.dart';
-import 'search_screen.dart';
 
 /// Home feed: a post list with a composer.
 class FeedScreen extends StatefulWidget {
@@ -237,14 +234,6 @@ class _FeedScreenState extends State<FeedScreen> {
     });
   }
 
-  Future<void> _openNotifications() async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const NotificationsScreen(),
-    ));
-    final count = await api.notifications.unreadCount().catchError((_) => 0);
-    if (mounted) setState(() => _unread = count);
-  }
-
   Future<void> _reload() async {
     setState(_load);
     await _feed;
@@ -457,13 +446,6 @@ class _FeedScreenState extends State<FeedScreen> {
                       .titleLarge
                       ?.copyWith(fontWeight: FontWeight.bold, fontSize: 22)),
               const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.search),
-                tooltip: 'Search',
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const SearchScreen(),
-                )),
-              ),
               GestureDetector(
                 onTap: _compose,
                 child: Container(
@@ -476,21 +458,15 @@ class _FeedScreenState extends State<FeedScreen> {
                   child: const Icon(Icons.add, color: Colors.white, size: 22),
                 ),
               ),
+              // Messages, Notifications, Search etc. now live in the right
+              // sidebar — open it from here (keeps the unread badge).
               IconButton(
-                tooltip: 'Notifications',
-                onPressed: _openNotifications,
+                tooltip: 'Shortcuts',
+                onPressed: () => homeScaffoldKey.currentState?.openEndDrawer(),
                 icon: _unread > 0
                     ? Badge(
-                        label: Text('$_unread'),
-                        child: const Icon(Icons.notifications_none))
-                    : const Icon(Icons.notifications_none),
-              ),
-              IconButton(
-                tooltip: 'Messages',
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const MessagesScreen(),
-                )),
-                icon: const Icon(Icons.forum_outlined),
+                        label: Text('$_unread'), child: const Icon(Icons.apps))
+                    : const Icon(Icons.apps),
               ),
             ],
           ),
