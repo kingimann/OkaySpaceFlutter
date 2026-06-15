@@ -78,14 +78,21 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           child: Column(
             children: [
-              // Display
+              // Display — a styled "screen" showing the live expression above
+              // and the result (or current entry) large below.
               Expanded(
+                flex: 2,
                 child: Container(
-                  alignment: Alignment.bottomRight,
-                  padding: const EdgeInsets.all(16),
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -102,8 +109,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                         child: Text(
                           _result ?? (_expr.isEmpty ? '0' : _expr),
                           maxLines: 1,
-                          style: const TextStyle(
-                              fontSize: 56, fontWeight: FontWeight.w300),
+                          style: TextStyle(
+                              fontSize: 56,
+                              fontWeight: FontWeight.w300,
+                              color: scheme.onSurface),
                         ),
                       ),
                     ],

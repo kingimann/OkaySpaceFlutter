@@ -272,8 +272,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _signOut() async {
     await api.auth.logout();
     if (!mounted) return;
-    // Replace the stack with a fresh gate; it re-checks auth and shows login.
-    Navigator.of(context).pushAndRemoveUntil(
+    // Reset through the ROOT navigator — this screen is pushed inside the
+    // shell's nested navigator, so a local reset would leave the shell (and its
+    // bottom nav) in place with the gate rendered inside it.
+    rootNavigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const RootGate()),
       (route) => false,
     );
