@@ -78,11 +78,15 @@ const double kBottomNavInset = 8;
 /// its own inner Scaffold) can open the shared navigation drawer (sidebar).
 final GlobalKey<ScaffoldState> homeScaffoldKey = GlobalKey<ScaffoldState>();
 
-/// The app's root [Navigator]. The bottom nav lives in an overlay *above* the
-/// Navigator (so it shows on every screen), which means `Navigator.of(context)`
-/// from inside it can't reach the app's routes — tab taps must pop through this
-/// key instead.
+/// The app's root [Navigator]. Used for app-level resets (e.g. dropping back to
+/// the login gate when a credential is rejected).
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// The signed-in shell's nested content [Navigator]. Feature screens push into
+/// it (it sits in the shell body, below the persistent bottom nav), so the nav
+/// stays visible on every screen. Tab taps pop it back to the home tabs.
+final GlobalKey<NavigatorState> contentNavigatorKey =
+    GlobalKey<NavigatorState>();
 
 /// Route name tagged on top-level destinations opened from the sidebar, so
 /// their app bar shows the sidebar menu instead of a back button. Deeper
@@ -362,12 +366,11 @@ class OkayBottomNav extends StatelessWidget {
   /// Highlighted destination id when this screen *is* a home tab.
   final String? currentId;
 
-  /// Switches the home shell to destination [id]. Re-tapping the active Feed
-  /// tab scrolls it to the top. `popUntil` is a harmless no-op here (the nav
-  /// only renders inside the home shell, the first route) but keeps the home
-  /// tab in view if the nav is ever shown above a pushed route.
+  /// Switches the home shell to destination [id]. The shell listens to
+  /// [homeTabSignal] and pops the nested content navigator back to the home
+  /// tabs, so this works from any pushed feature screen. Re-tapping the active
+  /// Feed tab scrolls it to the top.
   void _go(String id) {
-    rootNavigatorKey.currentState?.popUntil((r) => r.isFirst);
     if (id == 'feed' && homeTabSignal.value == 'feed') {
       feedScrollSignal.value++;
     }

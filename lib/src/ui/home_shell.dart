@@ -19,8 +19,10 @@ import 'videos_screen.dart';
 import 'search_screen.dart';
 import 'wallet_screen.dart';
 
-/// The signed-in app shell: a customizable floating pill bottom navigation
-/// over the selected destinations.
+/// The signed-in app shell: a persistent [Scaffold] whose bottom navigation bar
+/// stays put on EVERY screen. Feature screens are pushed into a nested
+/// [Navigator] in the body (below the bar), so the bar never disappears and is
+/// never an overlay that could glitch or show a black backdrop.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.onSignedOut});
 
@@ -31,8 +33,8 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
-  late String _currentId = navController.value.first;
-  final Set<String> _visited = {};
+  // Highlighted nav destination, kept in sync with the visible home tab.
+  String _currentId = navController.value.first;
 
   // Banks foreground time as points (small, daily-capped) while signed in.
   Timer? _onlineTimer;
@@ -40,13 +42,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    appSignedIn.value = true; // drives the global bottom nav on pushed screens
+    appSignedIn.value = true;
     loadCurrentUserId();
     refreshMarketplaceOffersBadge();
-    _visited.add(_currentId);
     homeTabSignal.addListener(_onTabSignal);
     navController.addListener(_onNavChanged);
-    // Start banking online-time points.
     WidgetsBinding.instance.addObserver(this);
     pointsLedger.noteActive();
     _onlineTimer =
@@ -77,6 +77,88 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _onTabSignal() {
     final id = homeTabSignal.value;
     if (!navController.value.contains(id)) return;
+    // Selecting a destination returns to the home tabs: pop any pushed feature
+    // screen off the nested navigator, then show the chosen tab.
+    contentNavigatorKey.currentState?.popUntil((r) => r.isFirst);
+    setState(() => _currentId = id);
+  }
+
+  void _onNavChanged() {
+    // If the current destination was removed from the bar, fall back to the
+    // first item.
+    if (!navController.value.contains(_currentId)) {
+      setState(() => _currentId = navController.value.first);
+    } else {
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: homeScaffoldKey,
+      // Shared sidebar, reachable from every screen's menu button.
+      drawer: const AppDrawer(),
+      // Scrolling the drawer can hide the bars; restore them when it closes.
+      onDrawerChanged: (open) {
+        if (!open) showBars();
+      },
+      // Feature screens push into this nested Navigator, which lives in the body
+      // BELOW the bottom nav — so the bar shows on every screen with no overlay.
+      // NavigatorPopHandler forwards the system back gesture to it.
+      body: NavigatorPopHandler(
+        onPopWithResult: (_) => contentNavigatorKey.currentState?.maybePop(),
+        child: Navigator(
+          key: contentNavigatorKey,
+          onGenerateRoute: (settings) => MaterialPageRoute(
+            settings: settings,
+            builder: (_) => _HomeTabs(onSignedOut: widget.onSignedOut),
+          ),
+        ),
+      ),
+      // The one and only bottom nav: a real Scaffold bottomNavigationBar.
+      // Hidden while the keyboard is up so it never sits on top of it.
+      bottomNavigationBar: MediaQuery.of(context).viewInsets.bottom > 0
+          ? null
+          : OkayBottomNav(currentId: _currentId),
+    );
+  }
+}
+
+/// The home tabs themselves — the first route in the shell's nested navigator.
+/// Holds an [IndexedStack] of the user's chosen destinations and switches
+/// between them in response to [homeTabSignal].
+class _HomeTabs extends StatefulWidget {
+  const _HomeTabs({required this.onSignedOut});
+
+  final VoidCallback onSignedOut;
+
+  @override
+  State<_HomeTabs> createState() => _HomeTabsState();
+}
+
+class _HomeTabsState extends State<_HomeTabs> {
+  late String _currentId = navController.value.first;
+  final Set<String> _visited = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _visited.add(_currentId);
+    homeTabSignal.addListener(_onTabSignal);
+    navController.addListener(_onNavChanged);
+  }
+
+  @override
+  void dispose() {
+    homeTabSignal.removeListener(_onTabSignal);
+    navController.removeListener(_onNavChanged);
+    super.dispose();
+  }
+
+  void _onTabSignal() {
+    final id = homeTabSignal.value;
+    if (!navController.value.contains(id)) return;
     setState(() {
       _currentId = id;
       _visited.add(id);
@@ -84,7 +166,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   void _onNavChanged() {
-    // If the current destination was removed, fall back to the first item.
     if (!navController.value.contains(_currentId)) {
       setState(() => _currentId = navController.value.first);
     } else {
@@ -135,31 +216,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final ids = navController.value;
     final index = ids.indexOf(_currentId).clamp(0, ids.length - 1);
-    return Scaffold(
-      key: homeScaffoldKey,
-      // Shared sidebar, reachable from every home-tab screen's menu button.
-      drawer: const AppDrawer(),
-      // Scrolling the drawer can hide the bars; restore them when it closes.
-      onDrawerChanged: (open) {
-        if (!open) showBars();
-      },
-      body: IndexedStack(
-        index: index,
-        children: [
-          for (final id in ids)
-            // Lazy: build only visited destinations (and reels only when active).
-            (_visited.contains(id) || id == _currentId)
-                ? _screenFor(id)
-                : const SizedBox.shrink(),
-        ],
-      ),
-      // The one and only bottom nav: a real Scaffold bottomNavigationBar, so the
-      // framework lays it out and reserves its space (content always clears it,
-      // and there's no external overlay strip to show through as a black box).
-      // Hidden while the keyboard is up so it never sits on top of it.
-      bottomNavigationBar: MediaQuery.of(context).viewInsets.bottom > 0
-          ? null
-          : OkayBottomNav(currentId: _currentId),
+    return IndexedStack(
+      index: index,
+      children: [
+        for (final id in ids)
+          // Lazy: build only visited destinations (and reels only when active).
+          (_visited.contains(id) || id == _currentId)
+              ? _screenFor(id)
+              : const SizedBox.shrink(),
+      ],
     );
   }
 }
