@@ -108,8 +108,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
       length: 2,
       child: Scaffold(
         extendBody: !widget.embedded,
-        bottomNavigationBar:
-            widget.embedded ? null : const OkayBottomNav(),
+        bottomNavigationBar: null, // pushed screens use the global nav
         appBar: OkayAppBar(
           title: const Text('Communities'),
           actions: [

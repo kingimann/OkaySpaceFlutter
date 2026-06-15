@@ -2194,7 +2194,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (!_hasMapbox) {
       return Scaffold(
         extendBody: !widget.embedded,
-        bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
+        bottomNavigationBar: null, // pushed screens use the global nav
         body: const CenteredMessage(
             message:
                 'Maps are powered by Mapbox.\nThis build is missing the MAPBOX_TOKEN — add the secret and redeploy.',
@@ -2272,7 +2272,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
     return Scaffold(
       extendBody: !widget.embedded,
-      bottomNavigationBar: widget.embedded ? null : const OkayBottomNav(),
+      bottomNavigationBar: null, // pushed screens use the global nav
       body: Stack(
         children: [
           FlutterMap(
