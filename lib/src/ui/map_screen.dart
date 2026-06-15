@@ -2438,39 +2438,63 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 child: Center(
                     child: Icon(Icons.add, size: 30, color: Colors.black54))),
 
-          // Pinned top bar (menu + map options). Search lives at the bottom now;
-          // this bar stays put and no longer hides while panning.
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              bottom: false,
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.menu),
-                      tooltip: 'Menu',
-                      onPressed: () => openSidebar(context),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.tune),
-                      tooltip: 'Map options & layers',
-                      onPressed: _mapOptionsMenu,
-                    ),
-                  ],
+          // Pinned top search bar (menu + search + map options). Stays put (no
+          // hide-on-pan); hidden only while the search sheet is open so there's
+          // never two search bars at once.
+          if (!_searchOpen)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  padding: const EdgeInsets.fromLTRB(6, 4, 8, 4),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.menu),
+                        tooltip: 'Menu',
+                        onPressed: () => openSidebar(context),
+                      ),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _openSearch,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.search,
+                                    size: 20, color: scheme.outline),
+                                const SizedBox(width: 8),
+                                Text('Search Maps',
+                                    style: TextStyle(
+                                        color: scheme.outline, fontSize: 15)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.tune),
+                        tooltip: 'Map options & layers',
+                        onPressed: _mapOptionsMenu,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
           if (_loading)
             Positioned(
@@ -2612,59 +2636,24 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       : () => setState(_areaPoints.clear)),
             ),
 
-          // Bottom search bar + GPS recenter, grouped at the very bottom (above
-          // the nav). Search opens from here so it never jumps top→bottom. Both
-          // hide while the search sheet is open (so there's only one search bar)
-          // and while a result card is showing (the card owns the bottom then).
-          if (!_searchOpen && _searchPin == null)
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: widget.embedded ? 96 : 104,
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Material(
-                        color: scheme.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(24),
-                        elevation: 4,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(24),
-                          onTap: _openSearch,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 14),
-                            child: Row(
-                              children: [
-                                Icon(Icons.search,
-                                    size: 20, color: scheme.outline),
-                                const SizedBox(width: 10),
-                                Text('Search Maps',
-                                    style: TextStyle(
-                                        color: scheme.outline, fontSize: 15)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    FloatingActionButton.small(
-                      heroTag: 'locate-me',
-                      onPressed: _locating ? null : _recenterOnMe,
-                      child: _locating
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.my_location),
-                    ),
-                  ],
-                ),
-              ),
+          // GPS recenter button — sits low (just above the nav), and lifts above
+          // the search-result card when one is showing.
+          Positioned(
+            right: 12,
+            bottom: _searchPin != null
+                ? (widget.embedded ? 160 : 170)
+                : (widget.embedded ? 100 : 108),
+            child: FloatingActionButton.small(
+              heroTag: 'locate-me',
+              onPressed: _locating ? null : _recenterOnMe,
+              child: _locating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.my_location),
             ),
+          ),
           // Live speed chip while moving (Apple Maps drive style).
           if (_gpsSpeedKmh > 1)
             Positioned(
