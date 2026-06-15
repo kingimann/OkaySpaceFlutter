@@ -13,6 +13,17 @@ class AdminService {
 
   // --- Users & moderation -------------------------------------------------
 
+  /// Runs the post-moderation AI on arbitrary text and returns its verdict
+  /// ({ai_enabled, allow, category, reason, note}) — an admin diagnostic.
+  Future<Map<String, dynamic>> moderationTest(String text, {String? title}) async =>
+      _map(await _client.postJson('/admin/posts/moderation-test',
+          body: {'text': text, if (title != null) 'title': title}));
+
+  /// Scans existing posts through the moderation AI (background). Returns
+  /// {ok, scanning, note}.
+  Future<Map<String, dynamic>> moderationScan() async =>
+      _map(await _client.postJson('/admin/posts/moderation-scan'));
+
   /// Searches/paginates users.
   Future<dynamic> users({String? query, int? limit, int? offset}) =>
       _client.getJson('/admin/users',
