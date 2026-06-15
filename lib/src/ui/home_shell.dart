@@ -143,8 +143,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       onDrawerChanged: (open) {
         if (!open) showBars();
       },
-      // Let the body show behind the floating nav pill instead of a dark strip.
-      extendBody: true,
       body: IndexedStack(
         index: index,
         children: [
@@ -155,7 +153,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 : const SizedBox.shrink(),
         ],
       ),
-      bottomNavigationBar: OkayBottomNav(currentId: _currentId),
+      // No bottomNavigationBar here — the single global nav (see app.dart) is
+      // shown on every signed-in screen, including the home tabs, so it never
+      // doubles up or slides during page transitions.
     );
   }
 }
