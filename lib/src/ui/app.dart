@@ -392,16 +392,23 @@ class _NavInset extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: appSignedIn,
-      builder: (context, signedIn, _) {
-        final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
-        final inset = (signedIn && !keyboard)
-            ? _pillHeight + MediaQuery.of(context).viewPadding.bottom
-            : 0.0;
-        return Padding(
-          padding: EdgeInsets.only(bottom: inset),
-          child: child,
-        );
-      },
+      builder: (context, signedIn, _) => ValueListenableBuilder<bool>(
+        valueListenable: navCanPop,
+        builder: (context, canPop, _) {
+          final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
+          // Only reserve space on *pushed* screens (where the overlay nav
+          // shows). On the home tabs the shell's own bottomNavigationBar
+          // already reserves room, so no extra inset — and never any reflow
+          // when dialogs/sheets open (we only collapse for the keyboard).
+          final inset = (signedIn && canPop && !keyboard)
+              ? _pillHeight + MediaQuery.of(context).viewPadding.bottom
+              : 0.0;
+          return Padding(
+            padding: EdgeInsets.only(bottom: inset),
+            child: child,
+          );
+        },
+      ),
     );
   }
 }
@@ -418,21 +425,27 @@ class _GlobalBottomNav extends StatelessWidget {
       valueListenable: appSignedIn,
       builder: (context, signedIn, _) {
         if (!signedIn) return const SizedBox.shrink();
-        // The single nav for the whole app: shown on every signed-in screen
-        // (home tabs and pushed routes alike), hidden only behind a dialog/sheet
-        // or the keyboard. No navCanPop gating — that's what kept it from being
-        // doubled or flickering during page transitions.
+        // Overlay nav for *pushed* feature screens only (canPop). The home tabs
+        // render their own bottomNavigationBar (see home_shell.dart), so gating
+        // on canPop keeps the two from doubling up. Hidden behind a dialog/sheet
+        // (PopupRoute) or the keyboard.
         return ValueListenableBuilder<bool>(
-          valueListenable: navModalOpen,
-          builder: (context, modal, _) {
-            final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
-            if (modal || keyboard) return const SizedBox.shrink();
-            return ValueListenableBuilder<String>(
-              valueListenable: homeTabSignal,
-              builder: (context, tab, _) => Align(
-                alignment: Alignment.bottomCenter,
-                child: OkayBottomNav(currentId: tab),
-              ),
+          valueListenable: navCanPop,
+          builder: (context, canPop, _) {
+            if (!canPop) return const SizedBox.shrink();
+            return ValueListenableBuilder<bool>(
+              valueListenable: navModalOpen,
+              builder: (context, modal, _) {
+                final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
+                if (modal || keyboard) return const SizedBox.shrink();
+                return ValueListenableBuilder<String>(
+                  valueListenable: homeTabSignal,
+                  builder: (context, tab, _) => Align(
+                    alignment: Alignment.bottomCenter,
+                    child: OkayBottomNav(currentId: tab),
+                  ),
+                );
+              },
             );
           },
         );
