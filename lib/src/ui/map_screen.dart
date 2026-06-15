@@ -280,15 +280,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  /// Hides the top/bottom bars (animated, via [barsVisible]) while panning;
-  /// restores them shortly after the gesture settles.
-  void _onMapGesture() {
-    if (barsVisible.value) barsVisible.value = false;
-    _chromeTimer?.cancel();
-    _chromeTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (mounted) showBars();
-    });
-  }
+  /// The top bar and bottom nav now stay pinned on the map (they no longer
+  /// hide while panning), matching the rest of the app.
+  void _onMapGesture() {}
 
   Future<void> _loadPrefs() async {
     try {
@@ -2401,71 +2395,35 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 child: Center(
                     child: Icon(Icons.add, size: 30, color: Colors.black54))),
 
-          // Floating header styled like the newsfeed's: a rounded pill that
-          // collapses with the global bars while panning (driven by [barsT]).
-          // Hidden while the search sheet is open so only one search bar shows.
-          if (!_searchOpen)
-            Positioned(
+          // Pinned top bar (menu + map options). Search lives at the bottom now;
+          // this bar stays put and no longer hides while panning.
+          Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: ValueListenableBuilder<double>(
-              valueListenable: barsT,
-              builder: (context, t, child) => ClipRect(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  heightFactor: t.clamp(0.0, 1.0),
-                  child: child,
+            child: SafeArea(
+              bottom: false,
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(24),
                 ),
-              ),
-              child: SafeArea(
-                bottom: false,
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                  padding: const EdgeInsets.fromLTRB(6, 4, 8, 4),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.menu),
-                        tooltip: 'Menu',
-                        onPressed: () => openSidebar(context),
-                      ),
-                      // Apple-Maps-style always-visible search field: tap to
-                      // open the search sheet (no hunting for an icon).
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _openSearch,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: scheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.search,
-                                    size: 20, color: scheme.outline),
-                                const SizedBox(width: 8),
-                                Text('Search Maps',
-                                    style: TextStyle(
-                                        color: scheme.outline, fontSize: 15)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.tune),
-                        tooltip: 'Map options & layers',
-                        onPressed: _mapOptionsMenu,
-                      ),
-                    ],
-                  ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.menu),
+                      tooltip: 'Menu',
+                      onPressed: () => openSidebar(context),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.tune),
+                      tooltip: 'Map options & layers',
+                      onPressed: _mapOptionsMenu,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2611,22 +2569,59 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       : () => setState(_areaPoints.clear)),
             ),
 
-          // GPS recenter button — the live dot is always tracking; this just
-          // re-centers the camera on it.
-          Positioned(
-            right: 12,
-            bottom: widget.embedded ? 160 : 170,
-            child: FloatingActionButton.small(
-              heroTag: 'locate-me',
-              onPressed: _locating ? null : _recenterOnMe,
-              child: _locating
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.my_location),
+          // Bottom search bar + GPS recenter, grouped at the very bottom (above
+          // the nav). Search opens from here so it never jumps top→bottom. Both
+          // hide while the search sheet is open (so there's only one search bar)
+          // and while a result card is showing (the card owns the bottom then).
+          if (!_searchOpen && _searchPin == null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: widget.embedded ? 96 : 104,
+              child: SafeArea(
+                top: false,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Material(
+                        color: scheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(24),
+                        elevation: 4,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(24),
+                          onTap: _openSearch,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                            child: Row(
+                              children: [
+                                Icon(Icons.search,
+                                    size: 20, color: scheme.outline),
+                                const SizedBox(width: 10),
+                                Text('Search Maps',
+                                    style: TextStyle(
+                                        color: scheme.outline, fontSize: 15)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    FloatingActionButton.small(
+                      heroTag: 'locate-me',
+                      onPressed: _locating ? null : _recenterOnMe,
+                      child: _locating
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.my_location),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
           // Live speed chip while moving (Apple Maps drive style).
           if (_gpsSpeedKmh > 1)
             Positioned(
