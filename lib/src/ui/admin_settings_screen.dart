@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../okayspace_api.dart';
 import 'admin_legal_screen.dart';
+import 'admin_moderation_screen.dart';
 import 'admin_money_screen.dart';
 import 'admin_staff_screen.dart';
 import 'admin_stripe_reconcile_screen.dart';
@@ -204,6 +205,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   'Audit log',
                   'Every admin action, newest first',
                   const AdminAuditScreen()
+                ),
+                (
+                  Icons.smart_toy_outlined,
+                  'AI moderation',
+                  'Auto-takedown rules, scan posts, test the moderator',
+                  const AdminModerationScreen()
                 ),
               ]),
               group('Money & growth', [
