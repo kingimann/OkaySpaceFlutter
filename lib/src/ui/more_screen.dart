@@ -122,33 +122,47 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sections = _sections();
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: const OkayAppBar(title: Text('More')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
         children: [
-          for (final s in sections) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-              child: Text(s.title.toUpperCase(),
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.6,
-                      color: Theme.of(context).colorScheme.outline)),
-            ),
-            for (final item in s.items)
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: item.color.withValues(alpha: 0.15),
-                  child: Icon(item.icon, color: item.color),
+          for (var i = 0; i < sections.length; i++)
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              clipBehavior: Clip.antiAlias,
+              child: Theme(
+                // Drop the default ExpansionTile dividers for a cleaner card.
+                data: Theme.of(context)
+                    .copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  // Open the first category by default; the rest start folded.
+                  initiallyExpanded: i == 0,
+                  tilePadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  title: Text(sections[i].title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  subtitle: Text('${sections[i].items.length} items',
+                      style: TextStyle(color: scheme.outline, fontSize: 12)),
+                  childrenPadding: const EdgeInsets.only(bottom: 8),
+                  children: [
+                    for (final item in sections[i].items)
+                      ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: item.color.withValues(alpha: 0.15),
+                          child: Icon(item.icon, color: item.color),
+                        ),
+                        title: Text(item.label),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => item.builder())),
+                      ),
+                  ],
                 ),
-                title: Text(item.label),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => item.builder())),
               ),
-          ],
+            ),
         ],
       ),
     );
