@@ -138,6 +138,11 @@ class PaymentsService {
   Future<Map<String, dynamic>> stripeBalance() async =>
       _map(await _client.getJson('/stripe/balance'));
 
+  /// Unlinks the user's Stripe connected account. Refuses server-side while a
+  /// Stripe balance remains so funds can't be orphaned.
+  Future<Map<String, dynamic>> stripeDisconnect() async =>
+      _map(await _client.deleteJson('/stripe/account'));
+
   /// The user's Stripe balance transactions.
   Future<dynamic> stripeTransactions() =>
       _client.getJson('/stripe/transactions');
