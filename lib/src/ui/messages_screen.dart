@@ -550,7 +550,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             onLongPress: () => _convActions(c),
                             onTap: () async {
                               _clearUnreadMark(c.id);
-                              await Navigator.of(context).push(MaterialPageRoute(
+                              await rootNavigatorKey.currentState
+                                  ?.push(MaterialPageRoute(
                                 builder: (_) =>
                                     ChatScreen(conversation: c, title: title),
                               ));
@@ -5427,7 +5428,8 @@ class _NewChatScreenState extends State<_NewChatScreen> {
     try {
       final conv = await api.messaging.startDirect(u.userId);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
+      Navigator.of(context).pop(); // close the new-chat screen
+      rootNavigatorKey.currentState?.push(MaterialPageRoute(
         builder: (_) => ChatScreen(conversation: conv, title: u.name),
       ));
     } catch (e) {
@@ -5442,7 +5444,8 @@ class _NewChatScreenState extends State<_NewChatScreen> {
     try {
       final conv = await api.messaging.startDirect(me);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
+      Navigator.of(context).pop(); // close the new-chat screen
+      rootNavigatorKey.currentState?.push(MaterialPageRoute(
         builder: (_) =>
             ChatScreen(conversation: conv, title: 'Notes to self'),
       ));
@@ -5571,7 +5574,8 @@ class _NewGroupScreenState extends State<_NewGroupScreen> {
       final title = name.isNotEmpty
           ? name
           : _selected.values.map((u) => u.name).join(', ');
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
+      Navigator.of(context).pop(); // close the new-chat screen
+      rootNavigatorKey.currentState?.push(MaterialPageRoute(
         builder: (_) => ChatScreen(conversation: conv, title: title),
       ));
     } catch (e) {
