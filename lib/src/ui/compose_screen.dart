@@ -568,7 +568,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
         ],
       ),
       body: MaxWidth(
-        child: ListView(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           TextField(
@@ -666,39 +669,53 @@ class _ComposeScreenState extends State<ComposeScreen> {
           ),
         ],
       ),
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              IconButton(
-                onPressed: _addPhotos,
-                icon: const Icon(Icons.image_outlined),
-                tooltip: 'Add photos',
+            ),
+            // Composer toolbar — placed in the body (not bottomNavigationBar) so
+            // the keyboard lifts it above instead of covering it.
+            SafeArea(
+              top: false,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                      top: BorderSide(
+                          color: Theme.of(context).colorScheme.outlineVariant)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: _addPhotos,
+                        icon: const Icon(Icons.image_outlined),
+                        tooltip: 'Add photos',
+                      ),
+                      IconButton(
+                        onPressed: _togglePoll,
+                        icon: const Icon(Icons.poll_outlined),
+                        tooltip: 'Poll',
+                        color:
+                            _poll ? Theme.of(context).colorScheme.primary : null,
+                      ),
+                      IconButton(
+                        onPressed: _addLocation,
+                        icon: const Icon(Icons.place_outlined),
+                        tooltip: 'Tag location',
+                        color: _placeName != null
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: _options2,
+                        icon: const Icon(Icons.tune),
+                        tooltip: 'Post options',
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              IconButton(
-                onPressed: _togglePoll,
-                icon: const Icon(Icons.poll_outlined),
-                tooltip: 'Poll',
-                color: _poll ? Theme.of(context).colorScheme.primary : null,
-              ),
-              IconButton(
-                onPressed: _addLocation,
-                icon: const Icon(Icons.place_outlined),
-                tooltip: 'Tag location',
-                color: _placeName != null
-                    ? Theme.of(context).colorScheme.primary
-                    : null,
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: _options2,
-                icon: const Icon(Icons.tune),
-                tooltip: 'Post options',
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

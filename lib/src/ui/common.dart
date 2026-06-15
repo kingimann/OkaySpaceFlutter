@@ -362,31 +362,6 @@ class SidebarController extends ValueNotifier<List<String>> {
 
 final SidebarController sidebarController = SidebarController();
 
-/// Whether the stories row is hidden on the feed. Persisted locally.
-class HideStoriesController extends ValueNotifier<bool> {
-  HideStoriesController() : super(false) {
-    _load();
-  }
-
-  static const _key = 'okayspace.hide_stories';
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
-
-  Future<void> _load() async {
-    try {
-      value = (await _storage.read(key: _key)) == '1';
-    } catch (_) {/* keep default */}
-  }
-
-  Future<void> set(bool hidden) async {
-    value = hidden;
-    try {
-      await _storage.write(key: _key, value: hidden ? '1' : '0');
-    } catch (_) {/* best effort */}
-  }
-}
-
-final HideStoriesController hideStoriesController = HideStoriesController();
-
 /// The floating, customizable pill bottom navigation shown on every screen.
 /// Tapping an item returns to the home shell and selects that destination.
 class OkayBottomNav extends StatelessWidget {

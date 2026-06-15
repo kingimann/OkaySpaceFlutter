@@ -323,14 +323,6 @@ class FeedPrefsScreen extends StatelessWidget {
                 value: feedPrefs.showTrending,
                 onChanged: (v) => feedPrefs.update(showTrending: v),
               ),
-              ValueListenableBuilder<bool>(
-                valueListenable: hideStoriesController,
-                builder: (context, hidden, _) => SwitchListTile(
-                  title: const Text('Show stories'),
-                  value: !hidden,
-                  onChanged: (v) => hideStoriesController.set(!v),
-                ),
-              ),
               if (feedPrefs.mutedAuthors.isNotEmpty) ...[
                 const Divider(),
                 Padding(

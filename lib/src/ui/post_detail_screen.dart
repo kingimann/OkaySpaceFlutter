@@ -103,8 +103,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     onChanged: _refreshPost,
                   ),
                   if (_post.userId == currentUserId)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                    Container(
+                      margin:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant),
+                      ),
+                      clipBehavior: Clip.antiAlias,
                       child: ListTile(
                         leading: Icon(Icons.bar_chart,
                             color: Theme.of(context).colorScheme.outline),
@@ -116,7 +125,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         onTap: () => showPostInsightsSheet(context, _post.id),
                       ),
                     ),
-                  const Divider(height: 1, thickness: 6),
+                  const SizedBox(height: 2),
                   FutureBuilder<List<Post>>(
                     future: _replies,
                     builder: (context, snapshot) {

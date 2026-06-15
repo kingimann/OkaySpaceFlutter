@@ -23,7 +23,6 @@ import 'services/oauth_service.dart';
 import 'services/payments_service.dart';
 import 'services/roadside_service.dart';
 import 'services/hazards_service.dart';
-import 'services/stories_service.dart';
 import 'services/support_service.dart';
 import 'services/users_service.dart';
 import 'services/wallet_service.dart';
@@ -59,7 +58,6 @@ class OkaySpaceApi {
     auth = AuthService(this.client);
     feed = FeedService(this.client);
     forms = FormsService(this.client);
-    stories = StoriesService(this.client);
     messaging = MessagingService(this.client);
     circles = CirclesService(this.client);
     communities = CommunitiesService(this.client);
@@ -96,9 +94,6 @@ class OkaySpaceApi {
 
   /// `/forms` — custom form builder and submissions.
   late final FormsService forms;
-
-  /// `/stories` — the stories tray, viewing, posting and replies.
-  late final StoriesService stories;
 
   /// `/conversations`, `/presence`, `/calls` — messaging.
   late final MessagingService messaging;
