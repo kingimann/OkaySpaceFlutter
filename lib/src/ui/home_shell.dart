@@ -98,12 +98,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       key: homeScaffoldKey,
-      // Let the body paint behind the floating pill nav so content (not a bare
-      // reserved strip) shows around it — no "black box" behind the pill. With
-      // this on, the Scaffold also adds the bar's height to the body's bottom
-      // MediaQuery padding, so SafeArea-based content clears the pill, and
-      // kBottomNavInset covers the scroll lists that pad by a constant.
-      extendBody: true,
+      // extendBody stays OFF: the Scaffold reserves the nav's height and the
+      // body (every nested screen) ends above it, so no screen's content, FABs
+      // or bottom bars can ever sit under the nav. The pill floats over the
+      // reserved strip, which is the same colour as the content background.
       // Shared sidebar, reachable from every screen's menu button.
       drawer: const AppDrawer(),
       // Right-side quick-shortcuts sidebar: swipe from the right edge or tap the
