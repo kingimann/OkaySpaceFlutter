@@ -12,10 +12,8 @@ import 'messages_screen.dart';
 import 'notifications_screen.dart';
 import 'post_tile.dart';
 import 'search_screen.dart';
-import 'story_composer.dart';
-import 'story_viewer.dart';
 
-/// Home feed: a story tray followed by the post list, with a composer.
+/// Home feed: a post list with a composer.
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
@@ -30,7 +28,6 @@ class _FeedScreenState extends State<FeedScreen> {
   // locally instead of refetching (and re-billing an ad impression).
   List<Post> _rawPosts = const [];
   Post? _ad;
-  late Future<List<StoryTrayItem>> _stories;
   late Future<List<Map<String, dynamic>>> _trending;
   int _unread = 0;
   int _tab = 0; // 0 = Explore, 1 = Following, 2 = Popular
@@ -180,7 +177,6 @@ class _FeedScreenState extends State<FeedScreen> {
       }
       return _applyPrefs();
     });
-    _stories = api.stories.tray();
     _trending = api.feed.trendingHashtags();
     api.notifications.unreadCount().then((count) {
       if (mounted) setState(() => _unread = count);
@@ -225,13 +221,6 @@ class _FeedScreenState extends State<FeedScreen> {
       _tab = t;
       _load();
     });
-  }
-
-  Future<void> _addStory() async {
-    final posted = await StoryComposer.start(context);
-    if (posted && mounted) {
-      setState(() => _stories = api.stories.tray());
-    }
   }
 
   Future<void> _openNotifications() async {
@@ -305,13 +294,6 @@ class _FeedScreenState extends State<FeedScreen> {
                         if (i == 0) {
                           return Column(
                             children: [
-                              ValueListenableBuilder<bool>(
-                                valueListenable: hideStoriesController,
-                                builder: (context, hidden, _) => hidden
-                                    ? const SizedBox.shrink()
-                                    : _StoryTray(
-                                        future: _stories, onAdd: _addStory),
-                              ),
                               if (feedPrefs.showTrending)
                                 _TrendingStrip(future: _trending),
                               if (posts.isEmpty)
@@ -629,155 +611,6 @@ class _TrendingStrip extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _StoryTray extends StatelessWidget {
-  const _StoryTray({required this.future, required this.onAdd});
-
-  final Future<List<StoryTrayItem>> future;
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<StoryTrayItem>>(
-      future: future,
-      builder: (context, snapshot) {
-        final items = snapshot.data ?? const <StoryTrayItem>[];
-        return Container(
-          height: 104,
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: Theme.of(context).dividerColor),
-            ),
-          ),
-          child: Stack(
-            children: [
-              ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(8, 8, 36, 8),
-                // First cell is the "add your story" button.
-                itemCount: items.length + 1,
-                itemBuilder: (context, i) {
-                  if (i == 0) return _AddStoryTile(onTap: onAdd);
-                  return _StoryTrayTile(item: items[i - 1]);
-                },
-              ),
-              // Lets the user hide the story tray from the feed (persisted;
-              // re-enable from Settings).
-              Positioned(
-                top: 2,
-                right: 2,
-                child: IconButton(
-                  iconSize: 18,
-                  visualDensity: VisualDensity.compact,
-                  tooltip: 'Hide stories',
-                  icon: const Icon(Icons.close),
-                  onPressed: () => hideStoriesController.set(true),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _AddStoryTile extends StatelessWidget {
-  const _AddStoryTile({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Column(
-          children: [
-            Container(
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: scheme.surfaceContainerHighest,
-                border: Border.all(color: scheme.outlineVariant),
-              ),
-              child: Icon(Icons.add, color: scheme.primary),
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: 64,
-              child: Text('Your story',
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StoryTrayTile extends StatelessWidget {
-  const _StoryTrayTile({required this.item});
-
-  final StoryTrayItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: GestureDetector(
-        onTap: () => StoryViewerScreen.open(context, item.userId, item.userName),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(2.5),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                // Unviewed stories get a vivid gradient ring; viewed ones a
-                // flat muted ring.
-                gradient: item.hasUnviewed
-                    ? SweepGradient(colors: [
-                        Theme.of(context).colorScheme.primary,
-                        const Color(0xFFA855F7),
-                        const Color(0xFFF97316),
-                        Theme.of(context).colorScheme.primary,
-                      ])
-                    : null,
-                color: item.hasUnviewed
-                    ? null
-                    : Theme.of(context).colorScheme.outlineVariant,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(2.5),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                ),
-                child: Avatar(
-                    url: item.userPicture, name: item.userName, radius: 26),
-              ),
-            ),
-            const SizedBox(height: 4),
-            SizedBox(
-              width: 64,
-              child: Text(
-                item.userName,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -443,7 +443,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Notifications', 'How we reach you'),
           const Divider(height: 1, indent: 56),
           _categoryTile('appearance', Icons.brightness_6_outlined,
-              'Appearance', 'Theme, accent & stories'),
+              'Appearance', 'Theme & accent'),
         ]),
         _card([
           _categoryTile('navigation', Icons.dashboard_customize_outlined,
@@ -722,19 +722,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             onTap: _pickAccent,
-          ),
-          ValueListenableBuilder<bool>(
-            valueListenable: hideStoriesController,
-            builder: (context, hidden, _) => SwitchListTile(
-              secondary: const Icon(Icons.auto_stories_outlined),
-              title: const Text('Hide stories'),
-              subtitle: const Text('Hide the stories row on your feed'),
-              value: hidden,
-              onChanged: (v) {
-                hideStoriesController.set(v);
-                api.auth.updateProfile({'hide_stories_row': v}).ignore();
-              },
-            ),
           ),
           ListTile(
             leading: const Icon(Icons.volume_off_outlined),

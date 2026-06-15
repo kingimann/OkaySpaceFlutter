@@ -555,7 +555,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
           final u = snapshot.data!;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, kBottomNavInset),
             children: [
               MaxWidth(child: _profileCard(u)),
               const SizedBox(height: 12),
@@ -1379,7 +1379,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   return RefreshIndicator(
                     onRefresh: _reload,
                     child: ListView(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, kBottomNavInset),
                       children: [
                         AnimatedBuilder(
                           animation: profileDecor,
