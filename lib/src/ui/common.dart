@@ -65,44 +65,21 @@ final ValueNotifier<bool> navModalOpen = ValueNotifier<bool>(false);
 /// pushed feature screens without doubling up on the home tabs.
 final ValueNotifier<bool> navCanPop = ValueNotifier<bool>(false);
 
-/// Wraps a screen's floating action button so it lifts above the global
-/// floating bottom nav ONLY when that nav is actually visible (signed in, on a
-/// pushed screen, no modal/keyboard). On screens where the nav isn't shown the
-/// FAB keeps its normal bottom position instead of floating too high.
-Widget liftedFab(Widget fab) {
-  return ValueListenableBuilder<bool>(
-    valueListenable: appSignedIn,
-    builder: (context, signedIn, _) => ValueListenableBuilder<bool>(
-      valueListenable: navCanPop,
-      builder: (context, pushed, _) => ValueListenableBuilder<bool>(
-        valueListenable: navModalOpen,
-        builder: (context, modal, _) {
-          final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
-          final navShowing = signedIn && pushed && !modal && !keyboard;
-          return Padding(
-            padding: EdgeInsets.only(bottom: navShowing ? 72 : 0),
-            child: fab,
-          );
-        },
-      ),
-    ),
-  );
-}
+/// Previously lifted a screen's FAB above the floating bottom nav. The app now
+/// reserves real layout space for the nav on pushed screens (see `_NavInset`),
+/// so the Scaffold already positions the FAB above it — no extra lift needed.
+/// Kept as a passthrough so call sites don't have to change.
+Widget liftedFab(Widget fab) => fab;
 
 /// Target visibility of the bars. Scrolling down requests hide; scrolling up,
 /// reaching the top, or navigating requests show.
 final ValueNotifier<bool> barsVisible = ValueNotifier<bool>(true);
 
-/// Reports a scroll gesture so the bars can hide/show. Only vertical scrolls
-/// count — horizontal carousels (stories, tab swipes) never toggle the bars.
-void reportUserScroll(ScrollDirection direction, Axis axis) {
-  if (axis != Axis.vertical) return;
-  if (direction == ScrollDirection.reverse) {
-    barsVisible.value = false;
-  } else if (direction == ScrollDirection.forward) {
-    barsVisible.value = true;
-  }
-}
+/// Reports a scroll gesture. The bars used to auto-hide on scroll-down; that's
+/// disabled now — the top bar and bottom nav stay pinned in view, and the body
+/// reserves space for them (see `_NavInset` / `liftedFab`), so they never cover
+/// content. Kept as a no-op so existing scroll listeners don't need rewiring.
+void reportUserScroll(ScrollDirection direction, Axis axis) {}
 
 /// Forces the bars back into view (on navigation, tab switch, or reaching top).
 void showBars() => barsVisible.value = true;

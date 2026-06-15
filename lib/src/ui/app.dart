@@ -351,8 +351,10 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
               return false;
             },
             // The global bottom nav floats above every route while signed in.
+            // `_NavInset` reserves matching space below the content so the nav
+            // never covers anything.
             child: Stack(
-              children: [child!, const _GlobalBottomNav()],
+              children: [_NavInset(child: child!), const _GlobalBottomNav()],
             ),
           ),
           home: const RootGate(),
@@ -404,6 +406,44 @@ class _BarsNavObserver extends NavigatorObserver {
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _top = previousRoute;
     _sync();
+  }
+}
+
+/// Reserves bottom space for the floating global nav whenever it's shown, so the
+/// nav never covers screen content. The condition mirrors `_GlobalBottomNav`:
+/// signed in, on a pushed route, no modal/sheet, no keyboard. When the nav isn't
+/// shown the inset collapses to zero and the body uses the full height.
+class _NavInset extends StatelessWidget {
+  const _NavInset({required this.child});
+
+  final Widget child;
+
+  // The floating nav pill's height above the device's bottom safe area (pill
+  // content + its bottom margin), with a few px of breathing room.
+  static const double _pillHeight = 92;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: appSignedIn,
+      builder: (context, signedIn, _) => ValueListenableBuilder<bool>(
+        valueListenable: navCanPop,
+        builder: (context, pushed, _) => ValueListenableBuilder<bool>(
+          valueListenable: navModalOpen,
+          builder: (context, modal, _) {
+            final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
+            final navShowing = signedIn && pushed && !modal && !keyboard;
+            final inset = navShowing
+                ? _pillHeight + MediaQuery.of(context).viewPadding.bottom
+                : 0.0;
+            return Padding(
+              padding: EdgeInsets.only(bottom: inset),
+              child: child,
+            );
+          },
+        ),
+      ),
+    );
   }
 }
 
