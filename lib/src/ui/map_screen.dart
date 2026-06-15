@@ -82,6 +82,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   bool _showCrosshair = false;
   bool _cluster = false;
   bool _searchAsIMove = false;
+  // Hides the top "Search Maps" pill while the search sheet is open, so there's
+  // only ever one search field on screen at a time.
+  bool _searchOpen = false;
   bool _showGrid = false; // lat/lng graticule
   bool _showLabels = false; // marker title labels
   bool _rotationLocked = false;
@@ -918,6 +921,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     var busy = false;
     var searchSeq = 0;
     Timer? debounce;
+    setState(() => _searchOpen = true);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1079,6 +1083,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     ).whenComplete(() {
       debounce?.cancel();
       ctrl.dispose();
+      if (mounted) setState(() => _searchOpen = false);
     });
   }
 
@@ -2398,7 +2403,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
           // Floating header styled like the newsfeed's: a rounded pill that
           // collapses with the global bars while panning (driven by [barsT]).
-          Positioned(
+          // Hidden while the search sheet is open so only one search bar shows.
+          if (!_searchOpen)
+            Positioned(
             top: 0,
             left: 0,
             right: 0,
