@@ -490,7 +490,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                               : Icons.search_off);
                     }
                     return ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 88),
+                      padding: const EdgeInsets.only(bottom: kBottomNavInset),
                       itemCount: filtered.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, i) {

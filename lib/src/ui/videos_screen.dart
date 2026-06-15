@@ -104,7 +104,7 @@ class _VideosScreenState extends State<VideosScreen> {
                 );
               }
               return ListView.builder(
-                padding: const EdgeInsets.only(bottom: 96),
+                padding: const EdgeInsets.only(bottom: kBottomNavInset),
                 itemCount: videos.length,
                 itemBuilder: (context, i) => _VideoCard(
                   post: videos[i],
