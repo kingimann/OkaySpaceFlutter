@@ -46,13 +46,13 @@ class _AppDrawerState extends State<AppDrawer> {
   /// (MyProfileScreen: edit, customize, view-as-visitor), never the public
   /// visitor view of yourself.
   void _openMyProfile() {
-    final nav = Navigator.of(context);
-    final rootNav = Navigator.of(context, rootNavigator: true);
-    nav.pop(); // close the drawer
-    nav.push(MaterialPageRoute(
+    Navigator.of(context).pop(); // close the drawer/modal
+    // Push into the shell's nested content navigator so the bottom nav stays
+    // visible on the destination (the drawer lives outside that navigator).
+    contentNavigatorKey.currentState?.push(MaterialPageRoute(
       settings: const RouteSettings(name: kPrimaryRouteName),
       builder: (_) => MyProfileScreen(
-        onSignedOut: () => rootNav.pushAndRemoveUntil(
+        onSignedOut: () => rootNavigatorKey.currentState?.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const RootGate()),
           (route) => false,
         ),
@@ -61,13 +61,11 @@ class _AppDrawerState extends State<AppDrawer> {
   }
 
   void _push(Widget screen) {
-    // Capture the navigator before popping: when the drawer is shown as a
-    // modal (on pushed routes), the pop deactivates this context.
-    final nav = Navigator.of(context);
-    nav.pop();
+    Navigator.of(context).pop(); // close the drawer/modal
     // Tagged primary so the destination's app bar shows the sidebar menu
-    // (not a back button).
-    nav.push(MaterialPageRoute(
+    // (not a back button). Pushed into the nested content navigator so the
+    // bottom nav stays visible.
+    contentNavigatorKey.currentState?.push(MaterialPageRoute(
       settings: const RouteSettings(name: kPrimaryRouteName),
       builder: (_) => screen,
     ));
@@ -77,9 +75,8 @@ class _AppDrawerState extends State<AppDrawer> {
   Future<void> _pushWithUser(Widget Function(User) builder) async {
     final u = await _me;
     if (!mounted) return;
-    final nav = Navigator.of(context);
-    nav.pop();
-    nav.push(MaterialPageRoute(
+    Navigator.of(context).pop();
+    contentNavigatorKey.currentState?.push(MaterialPageRoute(
       settings: const RouteSettings(name: kPrimaryRouteName),
       builder: (_) => builder(u),
     ));
@@ -192,7 +189,7 @@ class _AppDrawerState extends State<AppDrawer> {
     if (ok != true) return;
     await api.auth.logout();
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
+    rootNavigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const RootGate()),
       (route) => false,
     );
