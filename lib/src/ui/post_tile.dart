@@ -255,7 +255,10 @@ Future<void> _promotePost(BuildContext context, Post post) async {
 
 /// Long-press the like button to react — including 👎 to dislike (the dislike
 /// lives here so like + dislike are one button: tap to like, hold to dislike).
-Future<void> reactToPost(BuildContext context, Post post) async {
+/// Returns the server's updated post so the caller can refresh its state in
+/// place (otherwise a 👎/reaction wouldn't visibly change the like button until
+/// the next refresh). Null if cancelled or the call failed.
+Future<Post?> reactToPost(BuildContext context, Post post) async {
   const emojis = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🔥'];
   final emoji = await showModalBottomSheet<String>(
     context: context,
@@ -280,12 +283,14 @@ Future<void> reactToPost(BuildContext context, Post post) async {
       ),
     ),
   );
-  if (emoji == null || !context.mounted) return;
+  if (emoji == null || !context.mounted) return null;
   try {
-    await api.feed.react(post.id, emoji);
+    final updated = await api.feed.react(post.id, emoji);
     if (context.mounted) showInfo(context, 'Reacted $emoji');
+    return updated;
   } catch (e) {
     if (context.mounted) showError(context, e);
+    return null;
   }
 }
 
@@ -610,7 +615,20 @@ class _PostTileState extends State<PostTile> {
                 count: _likes,
                 color: _liked ? OkayColors.danger : null,
                 onTap: _like,
-                onLongPress: () => reactToPost(context, post),
+                onLongPress: () async {
+                  // Reacting (e.g. 👎) switches/clears the like server-side, so
+                  // re-sync from the returned post to reflect it immediately.
+                  final updated = await reactToPost(context, post);
+                  if (updated != null && mounted) {
+                    setState(() {
+                      _liked = updated.likedByMe;
+                      _likes = updated.likesCount;
+                      _bookmarked = updated.bookmarkedByMe;
+                      _reposted = updated.repostedByMe;
+                      _reposts = updated.repostsCount;
+                    });
+                  }
+                },
               ),
               const SizedBox(width: 8),
               PostAction(
