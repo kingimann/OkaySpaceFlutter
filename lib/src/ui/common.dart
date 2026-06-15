@@ -427,19 +427,8 @@ class OkayBottomNav extends StatelessWidget {
       ),
     );
 
-    // Collapse downward as the bars hide: the slot shrinks to the measured
-    // height, so the Scaffold body extends down to reclaim the space.
-    return ValueListenableBuilder<double>(
-      valueListenable: barsT,
-      builder: (context, t, child) => ClipRect(
-        child: Align(
-          alignment: Alignment.topCenter,
-          heightFactor: t.clamp(0.0, 1.0),
-          child: child,
-        ),
-      ),
-      child: nav,
-    );
+    // The bottom nav stays pinned — it never collapses/hides on scroll.
+    return nav;
   }
 }
 
@@ -837,19 +826,8 @@ class OkayAppBar extends StatelessWidget implements PreferredSizeWidget {
       ),
     );
 
-    // Collapse upward as the bars hide: the slot shrinks to the measured
-    // height, so the Scaffold body slides up to reclaim the space.
-    return ValueListenableBuilder<double>(
-      valueListenable: barsT,
-      builder: (context, t, child) => ClipRect(
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          heightFactor: t.clamp(0.0, 1.0),
-          child: child,
-        ),
-      ),
-      child: bar,
-    );
+    // The top bar stays pinned — it never collapses/hides on scroll.
+    return bar;
   }
 }
 

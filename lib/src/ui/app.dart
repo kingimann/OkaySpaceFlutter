@@ -16,29 +16,17 @@ class OkaySpaceApp extends StatefulWidget {
   State<OkaySpaceApp> createState() => _OkaySpaceAppState();
 }
 
-class _OkaySpaceAppState extends State<OkaySpaceApp>
-    with SingleTickerProviderStateMixin {
+class _OkaySpaceAppState extends State<OkaySpaceApp> {
   final _navKey = GlobalKey<NavigatorState>();
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   final _barsNavObserver = _BarsNavObserver();
   bool _resetting = false;
-
-  // Drives the top/bottom bar hide-on-scroll animation (1 = shown, 0 = hidden).
-  late final AnimationController _bars = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 220),
-    value: 1.0,
-  )..addListener(() => barsT.value = _bars.value);
 
   @override
   void initState() {
     super.initState();
     // Lets openSidebar() present the drawer as a modal on pushed routes.
     sidebarModalBuilder = (_) => const AppDrawer();
-    // Animate the bars whenever the requested visibility changes, and snap them
-    // back into view whenever the user switches home tabs.
-    barsVisible.addListener(_animateBars);
-    homeTabSignal.addListener(showBars);
     // Show a banner when a newer build is deployed while the app is open.
     updateAvailable.addListener(_onUpdateAvailable);
     mobileWebGate.addListener(_onMobileGate);
@@ -56,8 +44,6 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
       });
     };
   }
-
-  void _animateBars() => barsVisible.value ? _bars.forward() : _bars.reverse();
 
   void _onUpdateAvailable() {
     if (!updateAvailable.value) return;
@@ -119,11 +105,8 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
 
   @override
   void dispose() {
-    barsVisible.removeListener(_animateBars);
-    homeTabSignal.removeListener(showBars);
     updateAvailable.removeListener(_onUpdateAvailable);
     mobileWebGate.removeListener(_onMobileGate);
-    _bars.dispose();
     super.dispose();
   }
 
@@ -331,31 +314,12 @@ class _OkaySpaceAppState extends State<OkaySpaceApp>
           theme: _theme(Brightness.light, accent),
           darkTheme: _theme(Brightness.dark, accent),
           themeMode: mode,
-          // App-wide hide-on-scroll: any vertical scroll hides the bars;
-          // scrolling back up or reaching the top reveals them again.
-          builder: (context, child) => NotificationListener<ScrollNotification>(
-            onNotification: (n) {
-              if (n.metrics.axis != Axis.vertical) return false;
-              if (n is UserScrollNotification) {
-                // Content that can't actually scroll (short/empty screens, or
-                // a bounce overscroll) must never hide the bars.
-                if (n.metrics.maxScrollExtent <= 0) {
-                  showBars();
-                } else {
-                  reportUserScroll(n.direction, n.metrics.axis);
-                }
-              } else if (n is ScrollUpdateNotification &&
-                  n.metrics.pixels <= n.metrics.minScrollExtent + 8) {
-                showBars();
-              }
-              return false;
-            },
-            // The global bottom nav floats above every route while signed in.
-            // `_NavInset` reserves matching space below the content so the nav
-            // never covers anything.
-            child: Stack(
-              children: [_NavInset(child: child!), const _GlobalBottomNav()],
-            ),
+          // The top bar and bottom nav are pinned (they never hide on scroll).
+          // The global bottom nav floats above every route while signed in;
+          // `_NavInset` reserves matching space below the content so it never
+          // covers anything.
+          builder: (context, child) => Stack(
+            children: [_NavInset(child: child!), const _GlobalBottomNav()],
           ),
           home: const RootGate(),
         ),
