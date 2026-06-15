@@ -14,11 +14,15 @@ import 'common.dart';
 /// Compose and publish a new post with optional photo attachments.
 /// Returns `true` via [Navigator] when a post was created.
 class ComposeScreen extends StatefulWidget {
-  const ComposeScreen({super.key, this.quoteOf, this.quotedPreview});
+  const ComposeScreen(
+      {super.key, this.quoteOf, this.quotedPreview, this.editPost});
 
   /// When set, the new post quotes this post id (with [quotedPreview] shown).
   final String? quoteOf;
   final Post? quotedPreview;
+
+  /// When set, this screen edits the given post instead of creating one.
+  final Post? editPost;
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -60,8 +64,13 @@ class _ComposeScreenState extends State<ComposeScreen> {
   @override
   void initState() {
     super.initState();
-    _text.addListener(_saveDraft);
-    _loadDraft();
+    if (widget.editPost != null) {
+      // Editing: prefill the existing text; drafts don't apply.
+      _text.text = widget.editPost!.text;
+    } else {
+      _text.addListener(_saveDraft);
+      _loadDraft();
+    }
   }
 
   Widget _quotedPreview(Post p) {
@@ -484,6 +493,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
   }
 
   Future<void> _post() async {
+    // Edit mode: update the existing post's text and return.
+    if (widget.editPost != null) {
+      setState(() => _posting = true);
+      try {
+        await api.feed
+            .editPost(widget.editPost!.id, {'text': _text.text.trim()});
+        if (mounted) Navigator.of(context).pop(true);
+      } catch (e) {
+        if (mounted) showError(context, e);
+      } finally {
+        if (mounted) setState(() => _posting = false);
+      }
+      return;
+    }
     setState(() => _posting = true);
     try {
       // Validate the poll before any uploads start.
@@ -545,13 +568,14 @@ class _ComposeScreenState extends State<ComposeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: OkayAppBar(
-        title: const Text('New post'),
+        title: Text(widget.editPost != null ? 'Edit post' : 'New post'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.drafts_outlined),
-            tooltip: 'Drafts',
-            onPressed: _openDrafts,
-          ),
+          if (widget.editPost == null)
+            IconButton(
+              icon: const Icon(Icons.drafts_outlined),
+              tooltip: 'Drafts',
+              onPressed: _openDrafts,
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: FilledButton(
@@ -562,7 +586,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Post'),
+                  : Text(widget.editPost != null ? 'Save' : 'Post'),
             ),
           ),
         ],

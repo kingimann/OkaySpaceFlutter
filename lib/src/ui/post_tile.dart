@@ -202,11 +202,9 @@ Future<void> _showPostMenu(BuildContext context, Post post,
         }
       case 'edit':
         if (!context.mounted) return;
-        final text = await promptText(context,
-            title: 'Edit post', hint: 'Update your post', action: 'Save');
-        if (text == null) return;
-        await api.feed.editPost(post.id, {'text': text});
-        onChanged?.call();
+        final edited = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(builder: (_) => ComposeScreen(editPost: post)));
+        if (edited == true) onChanged?.call();
     }
   } catch (e) {
     if (context.mounted) showError(context, e);

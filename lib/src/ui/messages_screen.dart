@@ -2786,8 +2786,12 @@ class _ChatScreenState extends State<ChatScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      // Scrollable so every section (incl. Play › Games) is reachable even when
+      // the content is taller than the sheet's default height.
+      isScrollControlled: true,
       builder: (_) => SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
+          child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2831,6 +2835,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ],
           ),
+        ),
         ),
       ),
     );
