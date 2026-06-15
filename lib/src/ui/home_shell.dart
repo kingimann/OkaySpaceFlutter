@@ -153,14 +153,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 : const SizedBox.shrink(),
         ],
       ),
-      // The home tabs render the nav as a real bottomNavigationBar so it's
-      // guaranteed to show (the overlay in app.dart only covers *pushed*
-      // feature screens, gated on navCanPop, so the two never double up).
-      // Hidden while the keyboard is up so it doesn't sit on top of it.
-      bottomNavigationBar:
-          MediaQuery.of(context).viewInsets.bottom > 0
-              ? null
-              : OkayBottomNav(currentId: _currentId),
+      // The one and only bottom nav: a real Scaffold bottomNavigationBar, so the
+      // framework lays it out and reserves its space (content always clears it,
+      // and there's no external overlay strip to show through as a black box).
+      // Hidden while the keyboard is up so it never sits on top of it.
+      bottomNavigationBar: MediaQuery.of(context).viewInsets.bottom > 0
+          ? null
+          : OkayBottomNav(currentId: _currentId),
     );
   }
 }

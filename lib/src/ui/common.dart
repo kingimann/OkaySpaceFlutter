@@ -46,48 +46,32 @@ String conditionLabel(String? c) {
   }
 }
 
-/// Animated progress of the top & bottom bars: 1.0 = fully shown, 0.0 = fully
-/// hidden. The root app animates this toward [barsVisible]; [OkayAppBar] and
-/// [OkayBottomNav] listen and collapse their reserved space accordingly, so the
-/// body reclaims the room as they slide away.
+/// Legacy bars-visibility progress (1.0 = shown). The bars no longer hide on
+/// scroll, so this stays at 1.0; kept so existing listeners don't need rewiring.
 final ValueNotifier<double> barsT = ValueNotifier<double>(1.0);
 
-/// Whether the signed-in app shell is active. Drives the global bottom nav so
-/// it shows on every screen (not just the home tabs) while signed in.
+/// Whether the signed-in app shell is active. (No longer gates a global overlay
+/// — the nav lives in the home shell's Scaffold — but other code reads it.)
 final ValueNotifier<bool> appSignedIn = ValueNotifier<bool>(false);
 
-/// Whether a modal route (dialog, menu or bottom sheet) is on top — the global
-/// bottom nav hides so it never floats over a dialog or sheet.
-final ValueNotifier<bool> navModalOpen = ValueNotifier<bool>(false);
-
-/// Whether a route is pushed above the home shell. The global bottom nav shows
-/// only then (on the home tabs the shell renders its own nav), so it appears on
-/// pushed feature screens without doubling up on the home tabs.
-final ValueNotifier<bool> navCanPop = ValueNotifier<bool>(false);
-
-/// Previously lifted a screen's FAB above the floating bottom nav. The app now
-/// reserves real layout space for the nav on pushed screens (see `_NavInset`),
-/// so the Scaffold already positions the FAB above it — no extra lift needed.
-/// Kept as a passthrough so call sites don't have to change.
+/// Legacy no-op: the FAB sits above the home shell's bottomNavigationBar
+/// naturally now, so no manual lift is needed. Kept as a passthrough.
 Widget liftedFab(Widget fab) => fab;
 
 /// Target visibility of the bars. Scrolling down requests hide; scrolling up,
 /// reaching the top, or navigating requests show.
 final ValueNotifier<bool> barsVisible = ValueNotifier<bool>(true);
 
-/// Reports a scroll gesture. The bars used to auto-hide on scroll-down; that's
-/// disabled now — the top bar and bottom nav stay pinned in view, and the body
-/// reserves space for them (see `_NavInset` / `liftedFab`), so they never cover
-/// content. Kept as a no-op so existing scroll listeners don't need rewiring.
+/// Legacy no-op: the bars no longer auto-hide on scroll. Kept so existing
+/// scroll listeners don't need rewiring.
 void reportUserScroll(ScrollDirection direction, Axis axis) {}
 
 /// Forces the bars back into view (on navigation, tab switch, or reaching top).
 void showBars() => barsVisible.value = true;
 
-/// Extra breathing room for scrollable content. The app-wide `_NavInset`
-/// (app.dart) already reserves space for the floating nav on every signed-in
-/// screen, so this is just a small bottom margin — not the full nav height —
-/// to avoid double-padding.
+/// Small bottom breathing room for scrollable content. The home shell's
+/// bottomNavigationBar already reserves the nav's own height, so this is just a
+/// little extra margin above it.
 const double kBottomNavInset = 8;
 
 /// Key to the home shell's [Scaffold] so any home-tab screen (each of which is
@@ -378,58 +362,49 @@ class OkayBottomNav extends StatelessWidget {
   /// Highlighted destination id when this screen *is* a home tab.
   final String? currentId;
 
-  void _go(BuildContext context, String id) {
-    // Pop through the root navigator (this widget lives in an overlay above the
-    // Navigator, so Navigator.of(context) can't reach the app's routes) — this
-    // returns to the home shell from any pushed feature screen before switching.
+  /// Switches the home shell to destination [id]. Re-tapping the active Feed
+  /// tab scrolls it to the top. `popUntil` is a harmless no-op here (the nav
+  /// only renders inside the home shell, the first route) but keeps the home
+  /// tab in view if the nav is ever shown above a pushed route.
+  void _go(String id) {
     rootNavigatorKey.currentState?.popUntil((r) => r.isFirst);
     if (id == 'feed' && homeTabSignal.value == 'feed') {
       feedScrollSignal.value++;
     }
-    homeTabSignal.select(id); // re-fires even if unchanged
+    homeTabSignal.select(id);
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final nav = ValueListenableBuilder<List<String>>(
+    return ValueListenableBuilder<List<String>>(
       valueListenable: navController,
       builder: (context, ids, _) => SafeArea(
+        top: false,
         child: Container(
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          height: 64,
+          margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(28),
             border: Border.all(color: scheme.outlineVariant),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               for (final id in ids)
                 Expanded(
-                  child: GestureDetector(
-                    onTap: () => _go(context, id),
-                    behavior: HitTestBehavior.opaque,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: id == currentId
-                            ? scheme.primary
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: _NavIcon(id: id, active: id == currentId, scheme: scheme),
-                    ),
+                  child: _NavItem(
+                    id: id,
+                    active: id == currentId,
+                    onTap: () => _go(id),
                   ),
                 ),
             ],
@@ -437,36 +412,53 @@ class OkayBottomNav extends StatelessWidget {
         ),
       ),
     );
-
-    // The bottom nav stays pinned — it never collapses/hides on scroll.
-    return nav;
   }
 }
 
-/// A bottom-nav destination icon, with an unread badge on the Marketplace tab
-/// (offers needing the user's action).
-class _NavIcon extends StatelessWidget {
-  const _NavIcon({required this.id, required this.active, required this.scheme});
+/// A single tappable destination in [OkayBottomNav]: an icon (with an unread
+/// badge on Market) inside a rounded highlight when active.
+class _NavItem extends StatelessWidget {
+  const _NavItem(
+      {required this.id, required this.active, required this.onTap});
 
   final String id;
   final bool active;
-  final ColorScheme scheme;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final dest = navDestById(id);
-    final icon = Icon(
+    Widget icon = Icon(
       active ? dest.activeIcon : dest.icon,
-      color: active ? Colors.white : scheme.outline,
+      color: active ? Colors.white : scheme.onSurfaceVariant,
       size: 24,
     );
-    if (id != 'market') return icon;
-    return ValueListenableBuilder<int>(
-      valueListenable: marketplaceOffersBadge,
-      builder: (context, count, child) => count > 0
-          ? Badge(label: Text(count > 99 ? '99+' : '$count'), child: child)
-          : child!,
-      child: icon,
+    if (id == 'market') {
+      icon = ValueListenableBuilder<int>(
+        valueListenable: marketplaceOffersBadge,
+        builder: (context, count, child) => count > 0
+            ? Badge(label: Text(count > 99 ? '99+' : '$count'), child: child)
+            : child!,
+        child: icon,
+      );
+    }
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 44,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? scheme.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: icon,
+        ),
+      ),
     );
   }
 }
