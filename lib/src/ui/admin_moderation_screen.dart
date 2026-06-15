@@ -84,8 +84,24 @@ class _AdminModerationScreenState extends State<AdminModerationScreen> {
           'AI is off', '${v['note'] ?? 'Set GROQ_API_KEY to enable moderation.'}');
     }
     if (v['allow'] == null) {
-      return _banner(Icons.error_outline, scheme.error, 'No verdict',
-          '${v['note'] ?? 'The AI did not return a usable verdict.'}');
+      final lines = <String>['${v['note'] ?? 'The AI did not return a usable verdict.'}'];
+      final diag = v['diagnostics'];
+      if (diag is Map) {
+        lines.add('');
+        lines.add('Model: ${diag['text_model'] ?? '?'}');
+        if (diag['error'] != null) lines.add('Error: ${diag['error']}');
+        String fmt(dynamic m) {
+          if (m is! Map) return '?';
+          if (m['error'] != null) return 'failed: ${m['error']}';
+          final detail = '${m['detail'] ?? ''}';
+          return 'HTTP ${m['status']}${detail.isNotEmpty ? ' — $detail' : ''}';
+        }
+
+        if (diag['json_mode'] != null) lines.add('JSON mode: ${fmt(diag['json_mode'])}');
+        if (diag['plain'] != null) lines.add('Plain call: ${fmt(diag['plain'])}');
+      }
+      return _banner(
+          Icons.error_outline, scheme.error, 'No verdict', lines.join('\n'));
     }
     final removed = v['allow'] == false;
     return _banner(
