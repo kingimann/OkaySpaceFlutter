@@ -21,87 +21,116 @@ Future<void> _showPostMenu(BuildContext context, Post post,
   final mine = currentUserId != null && post.author.userId == currentUserId;
   final action = await showModalBottomSheet<String>(
     context: context,
-    builder: (_) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.link),
-            title: const Text('Copy link'),
-            onTap: () => Navigator.pop(context, 'copy'),
-          ),
-          if (post.text.trim().isNotEmpty)
-            ListTile(
-              leading: const Icon(Icons.content_copy),
-              title: const Text('Copy text'),
-              onTap: () => Navigator.pop(context, 'copytext'),
-            ),
-          ListTile(
-            leading: const Icon(Icons.forward_to_inbox_outlined),
-            title: const Text('Share to a chat'),
-            onTap: () => Navigator.pop(context, 'share'),
-          ),
-          ListTile(
-            leading: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border),
-            title: Text(bookmarked ? 'Remove bookmark' : 'Bookmark'),
-            onTap: () => Navigator.pop(context, 'bookmark'),
-          ),
-          if (mine) ...[
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit'),
-              onTap: () => Navigator.pop(context, 'edit'),
-            ),
-            ListTile(
-              leading: Icon(post.pinned ? Icons.push_pin : Icons.push_pin_outlined),
-              title: Text(post.pinned ? 'Unpin' : 'Pin'),
-              onTap: () => Navigator.pop(context, 'pin'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.campaign_outlined),
-              title: const Text('Promote'),
-              onTap: () => Navigator.pop(context, 'promote'),
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error),
-              title: Text('Delete',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              onTap: () => Navigator.pop(context, 'delete'),
-            ),
-          ] else ...[
-            ListTile(
-              leading: const Icon(Icons.not_interested),
-              title: const Text('Not interested'),
-              onTap: () => Navigator.pop(context, 'not_interested'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.volume_off_outlined),
-              title: Text(feedPrefs.isAuthorMuted(post.author.userId)
-                  ? 'Unmute ${post.author.name}'
-                  : 'Mute ${post.author.name}'),
-              onTap: () => Navigator.pop(context, 'mute_author'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.flag_outlined),
-              title: const Text('Report'),
-              onTap: () => Navigator.pop(context, 'report'),
-            ),
-            // Moderators can remove anyone's post; the backend re-checks the
-            // role, so this only surfaces the action.
-            if (currentUserIsStaff)
-              ListTile(
-                leading: Icon(Icons.gavel_outlined,
-                    color: Theme.of(context).colorScheme.error),
-                title: Text('Delete post (admin)',
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.error)),
-                onTap: () => Navigator.pop(context, 'admin_delete'),
+    showDragHandle: true,
+    builder: (sheetCtx) {
+      final scheme = Theme.of(sheetCtx).colorScheme;
+      Widget label(String t) => Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+            child: Text(t.toUpperCase(),
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                    color: scheme.outline)),
+          );
+      Widget tile(IconData icon, String text, String value,
+          {bool danger = false}) {
+        return SizedBox(
+          width: 80,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => Navigator.pop(sheetCtx, value),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Column(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: danger
+                          ? scheme.errorContainer
+                          : scheme.surfaceContainerHighest,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon,
+                        color: danger ? scheme.error : scheme.primary),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12)),
+                ],
               ),
-          ],
-        ],
-      ),
-    ),
+            ),
+          ),
+        );
+      }
+
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              label('Post'),
+              Wrap(
+                children: [
+                  tile(Icons.link, 'Copy link', 'copy'),
+                  if (post.text.trim().isNotEmpty)
+                    tile(Icons.content_copy, 'Copy text', 'copytext'),
+                  tile(Icons.forward_to_inbox_outlined, 'Share', 'share'),
+                  tile(bookmarked ? Icons.bookmark : Icons.bookmark_border,
+                      bookmarked ? 'Unsave' : 'Bookmark', 'bookmark'),
+                ],
+              ),
+              if (mine) ...[
+                const SizedBox(height: 8),
+                label('Manage'),
+                Wrap(
+                  children: [
+                    tile(Icons.edit_outlined, 'Edit', 'edit'),
+                    tile(
+                        post.pinned
+                            ? Icons.push_pin
+                            : Icons.push_pin_outlined,
+                        post.pinned ? 'Unpin' : 'Pin',
+                        'pin'),
+                    tile(Icons.campaign_outlined, 'Promote', 'promote'),
+                    tile(Icons.delete_outline, 'Delete', 'delete',
+                        danger: true),
+                  ],
+                ),
+              ] else ...[
+                const SizedBox(height: 8),
+                label('Actions'),
+                Wrap(
+                  children: [
+                    tile(Icons.not_interested, 'Not interested',
+                        'not_interested'),
+                    tile(
+                        Icons.volume_off_outlined,
+                        feedPrefs.isAuthorMuted(post.author.userId)
+                            ? 'Unmute'
+                            : 'Mute',
+                        'mute_author'),
+                    tile(Icons.flag_outlined, 'Report', 'report'),
+                    // Moderators can remove anyone's post; the backend
+                    // re-checks the role, so this only surfaces the action.
+                    if (currentUserIsStaff)
+                      tile(Icons.gavel_outlined, 'Remove', 'admin_delete',
+                          danger: true),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    },
   );
   if (action == null || !context.mounted) return;
   try {

@@ -89,9 +89,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Set<String> _pinned = {};
   Set<String> _archived = {};
   Set<String> _markedUnread = {};
-  _ConvFilter _filter = _ConvFilter.all;
+  final _ConvFilter _filter = _ConvFilter.all;
   _ConvSort _sort = _ConvSort.recent;
   bool _showArchived = false;
+  bool _searching = false;
   int _unreadTotal = 0;
   // convId -> unsent draft text (read from per-chat draft keys).
   Map<String, String> _drafts = {};
@@ -378,6 +379,27 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
+  /// Handles a pick from the message-settings menu (the gear icon).
+  void _onSettingsAction(String v) {
+    switch (v) {
+      case 'new_chat':
+        _newChat();
+      case 'new_group':
+        _newGroup();
+      case 'starred':
+        Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const StarredMessagesScreen()));
+      case 'archived':
+        setState(() => _showArchived = !_showArchived);
+      case 'sort_recent':
+        _setSort(_ConvSort.recent);
+      case 'sort_unread':
+        _setSort(_ConvSort.unread);
+      case 'sort_name':
+        _setSort(_ConvSort.name);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -387,87 +409,67 @@ class _MessagesScreenState extends State<MessagesScreen> {
             : (_unreadTotal > 0 ? 'Messages ($_unreadTotal)' : 'Messages')),
         actions: [
           IconButton(
-            icon: Icon(_showArchived ? Icons.unarchive_outlined : Icons.archive_outlined),
-            tooltip: _showArchived ? 'Back to inbox' : 'Archived',
-            onPressed: () => setState(() => _showArchived = !_showArchived),
+            icon: Icon(_searching ? Icons.close : Icons.search),
+            tooltip: _searching ? 'Close search' : 'Search',
+            onPressed: () => setState(() {
+              _searching = !_searching;
+              if (!_searching) {
+                _search.clear();
+                _query = '';
+              }
+            }),
           ),
-          PopupMenuButton<_ConvSort>(
-            icon: const Icon(Icons.sort),
-            tooltip: 'Sort',
-            initialValue: _sort,
-            onSelected: _setSort,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: _ConvSort.recent, child: Text('Most recent')),
-              PopupMenuItem(value: _ConvSort.unread, child: Text('Unread first')),
-              PopupMenuItem(value: _ConvSort.name, child: Text('Name (A–Z)')),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Message settings',
+            onSelected: _onSettingsAction,
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'new_chat', child: Text('New chat')),
+              const PopupMenuItem(value: 'new_group', child: Text('New group')),
+              const PopupMenuItem(
+                  value: 'starred', child: Text('Starred messages')),
+              PopupMenuItem(
+                  value: 'archived',
+                  child: Text(_showArchived ? 'Back to inbox' : 'Archived')),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                  value: 'sort_recent', child: Text('Sort: Most recent')),
+              const PopupMenuItem(
+                  value: 'sort_unread', child: Text('Sort: Unread first')),
+              const PopupMenuItem(
+                  value: 'sort_name', child: Text('Sort: Name (A–Z)')),
             ],
           ),
-          IconButton(
-            icon: const Icon(Icons.star_outline),
-            tooltip: 'Starred messages',
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const StarredMessagesScreen())),
-          ),
-          IconButton(
-            icon: const Icon(Icons.group_add_outlined),
-            tooltip: 'New group',
-            onPressed: _newGroup,
-          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _newChat,
-        child: const Icon(Icons.edit_square),
       ),
       body: MaxWidth(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: TextField(
-                controller: _search,
-                onChanged: (v) =>
-                    setState(() => _query = v.trim().toLowerCase()),
-                decoration: InputDecoration(
-                  hintText: 'Search conversations',
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: _query.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            _search.clear();
-                            setState(() => _query = '');
-                          },
-                        ),
+            if (_searching)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: TextField(
+                  controller: _search,
+                  autofocus: true,
+                  onChanged: (v) =>
+                      setState(() => _query = v.trim().toLowerCase()),
+                  decoration: InputDecoration(
+                    hintText: 'Search conversations',
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              _search.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                  ),
                 ),
               ),
-            ),
-            SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                children: [
-                  for (final f in _ConvFilter.values)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text(switch (f) {
-                          _ConvFilter.all => 'All',
-                          _ConvFilter.unread => 'Unread',
-                          _ConvFilter.groups => 'Groups',
-                          _ConvFilter.people => 'People',
-                        }),
-                        selected: _filter == f,
-                        onSelected: (_) => setState(() => _filter = f),
-                      ),
-                    ),
-                ],
-              ),
-            ),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _reload,
