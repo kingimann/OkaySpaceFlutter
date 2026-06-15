@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
 
 import 'common.dart';
-import 'activity_screen.dart';
-import 'bookmarks_screen.dart';
+import 'compose_screen.dart';
 import 'messages_screen.dart';
 import 'notifications_screen.dart';
 import 'search_screen.dart';
-import 'settings_screen.dart';
-import 'wallet_screen.dart';
 
 /// A right-side navigation drawer (the Scaffold `endDrawer`) with quick access
 /// to the destinations that aren't on the bottom bar. Opens by swiping from the
-/// right edge or via the top-right menu button. Destinations push into the
-/// shell's nested content navigator so the bottom nav stays visible.
+/// right edge or via the top-right button. Destinations push into the shell's
+/// nested content navigator so the bottom nav stays visible.
 class RightSidebar extends StatelessWidget {
   const RightSidebar({super.key});
 
@@ -22,17 +19,6 @@ class RightSidebar extends StatelessWidget {
       settings: const RouteSettings(name: kPrimaryRouteName),
       builder: (_) => screen,
     ));
-  }
-
-  Future<void> _openSettings(BuildContext context) async {
-    Navigator.of(context).pop();
-    try {
-      final u = await api.auth.me();
-      contentNavigatorKey.currentState?.push(MaterialPageRoute(
-        settings: const RouteSettings(name: kPrimaryRouteName),
-        builder: (_) => SettingsScreen(user: u),
-      ));
-    } catch (_) {/* ignore — couldn't load the user */}
   }
 
   @override
@@ -58,21 +44,14 @@ class RightSidebar extends StatelessWidget {
                     ?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
+            tile(Icons.edit_outlined, 'Create post',
+                () => _open(context, const ComposeScreen())),
             tile(Icons.forum_outlined, 'Messages',
                 () => _open(context, const MessagesScreen())),
             tile(Icons.notifications_none, 'Notifications',
                 () => _open(context, const NotificationsScreen())),
             tile(Icons.search, 'Search',
                 () => _open(context, const SearchScreen())),
-            tile(Icons.bolt_outlined, 'Activity',
-                () => _open(context, const ActivityScreen())),
-            tile(Icons.bookmark_border, 'Bookmarks',
-                () => _open(context, const BookmarksScreen())),
-            tile(Icons.account_balance_wallet_outlined, 'Wallet',
-                () => _open(context, const WalletScreen())),
-            const Divider(height: 12),
-            tile(Icons.settings_outlined, 'Settings',
-                () => _openSettings(context)),
           ],
         ),
       ),

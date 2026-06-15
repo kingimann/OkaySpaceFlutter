@@ -424,74 +424,55 @@ class _FeedScreenState extends State<FeedScreen> {
     return SafeArea(
       bottom: false,
       child: Container(
-      margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      padding: const EdgeInsets.fromLTRB(6, 4, 8, 10),
+      margin: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(22),
       ),
-      child: Column(
+      // Single compact line: menu · Feed · tabs · filter · shortcuts.
+      child: Row(
         children: [
-          Row(
-            children: [
-              Builder(
-                builder: (ctx) => IconButton(
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => Scaffold.of(ctx).openDrawer(),
-                ),
-              ),
-              Text('Feed',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold, fontSize: 22)),
-              const Spacer(),
-              GestureDetector(
-                onTap: _compose,
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: scheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.add, color: Colors.white, size: 22),
-                ),
-              ),
-              // Messages, Notifications, Search etc. now live in the right
-              // sidebar — open it from here (keeps the unread badge).
-              IconButton(
-                tooltip: 'Shortcuts',
-                onPressed: () => homeScaffoldKey.currentState?.openEndDrawer(),
-                icon: _unread > 0
-                    ? Badge(
-                        label: Text('$_unread'), child: const Icon(Icons.apps))
-                    : const Icon(Icons.apps),
-              ),
-            ],
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.menu),
+              visualDensity: VisualDensity.compact,
+              onPressed: () => Scaffold.of(ctx).openDrawer(),
+            ),
           ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8),
+          Text('Feed',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold, fontSize: 18)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   _tabChip('Explore', 0),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   _tabChip('Following', 1),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.tune, size: 20),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: 'Customize feed',
-                    onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const FeedPrefsScreen())),
-                  ),
                 ],
               ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.tune, size: 20),
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Customize feed',
+            onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const FeedPrefsScreen())),
+          ),
+          IconButton(
+            tooltip: 'Shortcuts',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => homeScaffoldKey.currentState?.openEndDrawer(),
+            icon: _unread > 0
+                ? Badge(
+                    label: Text('$_unread'), child: const Icon(Icons.apps))
+                : const Icon(Icons.apps),
           ),
         ],
       ),
