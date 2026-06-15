@@ -27,6 +27,7 @@ export 'src/services/games_service.dart';
 export 'src/services/groups_service.dart';
 export 'src/services/guides_service.dart';
 export 'src/services/calendar_service.dart';
+export 'src/services/maps_service.dart';
 export 'src/services/marketplace_service.dart';
 export 'src/services/messaging_service.dart';
 export 'src/services/monetize_service.dart';
