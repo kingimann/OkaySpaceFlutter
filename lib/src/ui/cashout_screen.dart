@@ -306,19 +306,46 @@ class _CashOutScreenState extends State<CashOutScreen> {
     }
   }
 
-  /// Unlinks the connected Stripe account from this OkaySpace account. Asks for
-  /// confirmation first; the backend refuses if a Stripe balance remains.
+  /// Unlinks the connected Stripe account from this OkaySpace account, after a
+  /// confirmation that warns about any remaining Stripe balance.
   Future<void> _unlinkStripe() async {
+    final hasBalance = _stripeAvail > 0 || _stripePending > 0;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Unlink Stripe account?'),
-        content: const Text(
-            'This disconnects your Stripe account from OkaySpace. Your saved '
-            'payout destinations stop working until you set up payouts again. '
-            'Cash out any remaining Stripe balance first.\n\n'
-            'Your Stripe account itself isn’t deleted — you can reconnect it '
-            'later.'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+                'This disconnects your Stripe account from OkaySpace. Your '
+                'saved payout destinations stop working until you set up '
+                'payouts again.\n\n'
+                'Your Stripe account itself isn’t deleted — the money stays on '
+                'it and you can reconnect to access it.'),
+            if (hasBalance) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .errorContainer
+                      .withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                    'You still have '
+                    '$_symbol${(_stripeAvail + _stripePending).toStringAsFixed(2)} '
+                    'on Stripe. Consider cashing it out first.',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -336,6 +363,19 @@ class _CashOutScreenState extends State<CashOutScreen> {
     try {
       await api.payments.stripeDisconnect();
       if (!mounted) return;
+      // Flip the screen to the disconnected state immediately so the change is
+      // visible even before the status reload lands.
+      setState(() {
+        _status = {
+          'enabled': true,
+          'connected': false,
+          'payouts_enabled': false,
+          'details_submitted': false,
+        };
+        _methods = [];
+        _stripeAvail = 0;
+        _stripePending = 0;
+      });
       showInfo(context, 'Stripe account unlinked.');
       await _load();
       await _loadMethods();
