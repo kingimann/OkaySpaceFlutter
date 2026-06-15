@@ -538,6 +538,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
                         ],
                       ),
                     ),
+                    // Always-visible exit, so navigation can be ended even if the
+                    // bottom bar's End button is off-screen on small devices.
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      tooltip: _arrived ? 'Done' : 'End navigation',
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
                   ],
                 ),
               ),
