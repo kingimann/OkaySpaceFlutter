@@ -84,9 +84,11 @@ void reportUserScroll(ScrollDirection direction, Axis axis) {}
 /// Forces the bars back into view (on navigation, tab switch, or reaching top).
 void showBars() => barsVisible.value = true;
 
-/// Bottom inset for scrollable content so the last item clears the floating
-/// nav pill (which overlays the body via `extendBody`).
-const double kBottomNavInset = 96;
+/// Extra breathing room for scrollable content. The app-wide `_NavInset`
+/// (app.dart) already reserves space for the floating nav on every signed-in
+/// screen, so this is just a small bottom margin — not the full nav height —
+/// to avoid double-padding.
+const double kBottomNavInset = 8;
 
 /// Key to the home shell's [Scaffold] so any home-tab screen (each of which is
 /// its own inner Scaffold) can open the shared navigation drawer (sidebar).
