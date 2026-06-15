@@ -2188,6 +2188,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // Device bottom safe area. The floating controls anchor to it so they sit
+    // just above the bottom nav pill (≈64pt + safe area) on every device.
+    final safe = MediaQuery.of(context).viewPadding.bottom;
 
     // Mapbox is the sole provider: without the build-time token there is
     // nothing to render — say so instead of showing a gray map.
@@ -2458,15 +2461,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Container(
-                    margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                    margin: const EdgeInsets.fromLTRB(10, 6, 10, 0),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(22),
                     ),
                     child: Row(
                       children: [
                         IconButton(
+                          visualDensity: VisualDensity.compact,
                           icon: Icon(
                               _searchActive ? Icons.arrow_back : Icons.menu),
                           tooltip: _searchActive ? 'Close search' : 'Menu',
@@ -2505,6 +2509,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           )
                         else if (_searchCtrl.text.isNotEmpty)
                           IconButton(
+                            visualDensity: VisualDensity.compact,
                             icon: const Icon(Icons.close),
                             tooltip: 'Clear',
                             onPressed: () {
@@ -2514,6 +2519,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           )
                         else
                           IconButton(
+                            visualDensity: VisualDensity.compact,
                             icon: const Icon(Icons.tune),
                             tooltip: 'Map options & layers',
                             onPressed: _mapOptionsMenu,
@@ -2562,7 +2568,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             Positioned(
               left: 12,
               right: 12,
-              bottom: 64,
+              bottom: safe + 74,
               child: Material(
                 color: scheme.primaryContainer,
                 borderRadius: BorderRadius.circular(14),
@@ -2675,9 +2681,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           // the search-result card when one is showing.
           Positioned(
             right: 12,
-            bottom: _searchPin != null
-                ? (widget.embedded ? 160 : 170)
-                : (widget.embedded ? 100 : 108),
+            bottom: _searchPin != null ? safe + 250 : safe + 74,
             child: FloatingActionButton.small(
               heroTag: 'locate-me',
               onPressed: _locating ? null : _recenterOnMe,
@@ -2715,7 +2719,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           if (_routing && _route.length >= 2)
             Positioned(
               left: 12,
-              bottom: widget.embedded ? 160 : 170,
+              bottom: safe + 250,
               child: FilledButton.tonalIcon(
                 icon: const Icon(Icons.route, size: 18),
                 label: Text('Drive route (${_route.length} stops)'),
@@ -2727,7 +2731,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             Positioned(
               left: 12,
               right: 12,
-              bottom: widget.embedded ? 90 : 100,
+              bottom: safe + 74,
               child: Material(
                 elevation: 8,
                 borderRadius: BorderRadius.circular(20),
