@@ -49,6 +49,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _load();
     feedPrefs.addListener(_onPrefsChanged);
     feedScrollSignal.addListener(_onScrollToTop);
+    feedTabSignal.addListener(_onFeedTabSignal);
     homeTabSignal.addListener(_onHomeTab);
     // Poll for newer posts so a "new posts" pill can appear.
     _poll = Timer.periodic(const Duration(seconds: 45), (_) => _checkNew());
@@ -66,6 +67,11 @@ class _FeedScreenState extends State<FeedScreen> {
     final switchedToFeed = tab == 'feed' && _lastTab != 'feed';
     _lastTab = tab;
     if (switchedToFeed && mounted) _reload();
+  }
+
+  /// The right sidebar selected Explore (0) or Following (1).
+  void _onFeedTabSignal() {
+    if (mounted) _setTab(feedTabSignal.value);
   }
 
   void _onPrefsChanged() {
@@ -95,6 +101,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _poll?.cancel();
     feedPrefs.removeListener(_onPrefsChanged);
     feedScrollSignal.removeListener(_onScrollToTop);
+    feedTabSignal.removeListener(_onFeedTabSignal);
     homeTabSignal.removeListener(_onHomeTab);
     _scrollController.dispose();
     super.dispose();
@@ -430,7 +437,8 @@ class _FeedScreenState extends State<FeedScreen> {
         color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(22),
       ),
-      // Single compact line: menu · Feed · tabs · filter · shortcuts.
+      // Compact centered title row: menu · Feed · shortcuts. Explore/Following
+      // and Customize feed live in the right sidebar now.
       child: Row(
         children: [
           Builder(
@@ -440,30 +448,12 @@ class _FeedScreenState extends State<FeedScreen> {
               onPressed: () => Scaffold.of(ctx).openDrawer(),
             ),
           ),
-          Text('Feed',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold, fontSize: 18)),
-          const SizedBox(width: 10),
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _tabChip('Explore', 0),
-                  const SizedBox(width: 6),
-                  _tabChip('Following', 1),
-                ],
-              ),
+            child: Center(
+              child: Text('Feed',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold, fontSize: 18)),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.tune, size: 20),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Customize feed',
-            onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const FeedPrefsScreen())),
           ),
           IconButton(
             tooltip: 'Shortcuts',
@@ -476,31 +466,6 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
         ],
       ),
-      ),
-    );
-  }
-
-  Widget _tabChip(String label, int idx) {
-    final scheme = Theme.of(context).colorScheme;
-    final selected = _tab == idx;
-    return GestureDetector(
-      onTap: () => _setTab(idx),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? scheme.surfaceContainerHigh : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 200),
-          style: TextStyle(
-            color: selected ? scheme.onSurface : scheme.outline,
-            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-          ),
-          child: Text(label),
-        ),
       ),
     );
   }

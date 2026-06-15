@@ -11,6 +11,10 @@ final OkaySpaceApi api = OkaySpaceApi();
 /// listens and scrolls to top + refreshes.
 final ValueNotifier<int> feedScrollSignal = ValueNotifier<int>(0);
 
+/// Which feed tab to show: 0 = Explore, 1 = Following. The right sidebar sets
+/// it; FeedScreen listens and switches.
+final ValueNotifier<int> feedTabSignal = ValueNotifier<int>(0);
+
 /// Count of marketplace offers needing the user's action (pending received +
 /// countered to them) — drives an unread badge on the Marketplace tab.
 final ValueNotifier<int> marketplaceOffersBadge = ValueNotifier<int>(0);
