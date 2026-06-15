@@ -946,7 +946,24 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final r = await geocodePlaces(q, near: _myLocation ?? _center);
       if (!mounted || seq != _searchSeq) return;
       if (r.isEmpty) {
-        if (!fromTyping) showInfo(context, 'No places found for “$q”.');
+        // Natural-language fallback: "food near me" doesn't geocode, so let the
+        // AI clean it to a keyword ("food") and retry once before giving up.
+        if (!fromTyping) {
+          final cleaned = await _aiCleanQuery(q);
+          if (mounted && seq == _searchSeq && cleaned != null && cleaned != q) {
+            final r2 = await geocodePlaces(cleaned, near: _myLocation ?? _center);
+            if (!mounted || seq != _searchSeq) return;
+            if (r2.isNotEmpty) {
+              _addRecent(q);
+              setState(() =>
+                  _searchResults = r2.cast<Map<String, dynamic>>());
+              return;
+            }
+          }
+          if (mounted && seq == _searchSeq) {
+            showInfo(context, 'No places found for “$q”.');
+          }
+        }
         setState(() => _searchResults = const []);
       } else if (r.length == 1 && !fromTyping) {
         _addRecent(q);
@@ -1005,6 +1022,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _searchAiBusy = false);
+    }
+  }
+
+  /// Asks the backend AI to turn a plain-English query into a clean place
+  /// keyword. Returns null when the AI is off/unavailable (caller falls back).
+  Future<String?> _aiCleanQuery(String q) async {
+    try {
+      final res = await api.maps.aiSearch(q);
+      if (res['ai'] != true) return null; // AI not configured — no cleaning
+      final s = '${res['search'] ?? ''}'.trim();
+      return s.isEmpty ? null : s;
+    } catch (_) {
+      return null;
     }
   }
 
